@@ -46,21 +46,24 @@ A reminder progresses through stages over time. Each stage is a more
 attention-demanding way of reaching me. The chain stops only when I press an
 explicit **Done** button.
 
-### 3.1 Escalation stages (in order, low → high)
+### 3.1 Available stages
 
-1. **Silent notification** — appears in the status bar, no sound, no vibration.
-   Also serves as the **pre-emptive heads-up**: if I notice it, I can mark the
-   task done before any noise happens. Optionally mirrored as a *silent*
-   Telegram message.
-2. **Normal notification + sound** — standard notification with the device's
-   default notification sound and vibration.
-3. **Telegram message** — pushed to my Telegram chat via a user-configured bot.
-   This reaches me even when my phone is across the room (I usually have
-   Telegram on my laptop).
-4. **Loud alarm + spoken TTS** — full-screen alarm-clock-style takeover.
-   Pierces Do Not Disturb. Speaks the task aloud via Text-to-Speech (e.g.
-   *"Feed the dog!"*) so I hear it even if the phone isn't visible. **Repeats
-   indefinitely until I press Done.**
+The app supports four stages. The **order and selection** is a global setting
+the user configures (see §3.4). Each stage may appear at most once in the
+chain, and any stage may be omitted entirely if it doesn't suit the user.
+
+- **Silent notification** — appears in the status bar, no sound, no vibration.
+  When configured as the first stage, this also acts as a **pre-alarm
+  heads-up**: it fires *before* the reminder's scheduled time so the user can
+  pre-empt the noisy stages. Optionally mirrored as a *silent* Telegram message
+  (per-group opt-in, see §6).
+- **Normal notification + sound** — standard notification with the device's
+  default notification sound and vibration.
+- **Telegram message** — pushed to the user's Telegram chat via a
+  user-configured bot. Reaches the user even when the phone is across the room.
+- **Loud alarm** — full-screen alarm-clock-style takeover. Pierces Do Not
+  Disturb. Plays the configured alarm sound (default = device's system alarm
+  sound; user-pickable in Settings).
 
 ### 3.2 Acknowledgment
 
@@ -71,29 +74,47 @@ explicit **Done** button.
 
 ### 3.3 Snooze
 
-- Snooze pauses *all visible/audible output* for a chosen duration (default
-  10 min, configurable).
-- **The escalation timer keeps running in the background.** So if I snooze
-  during the silent stage and only acknowledge 20 minutes later, when the
-  snooze ends I may already be at the loud-alarm stage.
-- This is intentional: it prevents the failure mode of snoozing silent
-  notifications forever and never doing the task.
-- Snooze is available as a notification action and inside the alarm activity.
+Snooze is designed so it can't become an infinite-silence trap.
 
-### 3.4 Escalation timing
+- **Snooze advances to the next stage.** Pressing snooze suppresses the current
+  stage's notification/sound and waits until the *next* stage in the chain
+  would have fired anyway — at which point the next stage fires normally.
+  In other words, snooze ≡ "skip ahead to whatever's coming next."
+- **At the final (last-configured) stage**, where there is no "next stage,"
+  snooze pauses for a configurable duration (default **10 minutes**, global
+  setting, per-group overridable) before re-firing the same stage.
+- Snooze is available as a notification action and as a button in the
+  full-screen alarm activity.
 
-- **Global default** escalation schedule (e.g. silent → +5 min → normal sound →
-  +5 min → Telegram → +5 min → loud alarm).
-- **Per-group override.** Each group can define its own escalation schedule
-  (e.g. *Pets* escalates fast; *Self-care* escalates slowly).
-- Timing for each stage is defined as **offset from the reminder's scheduled
-  time** (not "delay since previous stage"), so the model is deterministic and
-  easy to reason about.
+### 3.4 Stage order, selection, and timing
 
-### 3.5 Critical-task fallback
+- **Global stage chain.** The user defines the ordered list of stages (a subset
+  of the four, no repeats) in Settings. This is the default chain for all
+  groups. The recommended default is:
 
-If even the loud-alarm stage is ignored, the alarm **keeps re-firing forever**
-until I press Done. There is no "give up and log as missed" behavior.
+  1. Silent  *(fires 10 min before scheduled time as pre-alarm heads-up)*
+  2. Normal notification + sound  *(fires at scheduled time)*
+  3. Telegram  *(fires +5 min after scheduled time)*
+  4. Loud alarm  *(fires +10 min after scheduled time, then repeats every
+     10 min until Done)*
+
+- **Per-group override.** A group can override both the stage chain *and* the
+  timing offsets (e.g. *Pets* uses the default; *Self-care* uses
+  Silent → Normal only, with no Telegram or alarm).
+- **Timing model.** Each stage in the chain has an **offset relative to the
+  reminder's scheduled time**. The first stage's offset can be negative (e.g.
+  silent pre-alarm at −10 min), zero, or positive. The model is absolute (not
+  "delay since previous stage") so it's deterministic and easy to reason about.
+
+### 3.5 Critical-task fallback: keep firing until Done
+
+- The **last stage in the configured chain repeats forever**, on a fixed cycle,
+  until Done is pressed.
+- The cycle interval defaults to the same 10-minute "final-stage snooze"
+  duration (global setting, per-group overridable).
+- There is no "give up and log as missed" behavior. If the loud alarm is the
+  user's last stage (the recommended default), the loud alarm keeps re-firing
+  every 10 min indefinitely.
 
 ---
 
@@ -145,13 +166,13 @@ Adding a reminder must be friction-free. The Add screen has:
 
 ### 5.1 Channels
 
-- A dedicated **Android notification channel per escalation stage** so I (or
-  Android settings) can independently control behavior per stage:
-  - `nock_silent` — IMPORTANCE_LOW
-  - `nock_normal` — IMPORTANCE_DEFAULT
-  - `nock_telegram_mirror` — IMPORTANCE_MIN (optional, for the silent Telegram
-    mirror at stage 1)
-  - `nock_alarm` — IMPORTANCE_HIGH with `USAGE_ALARM`, bypass DND
+- A dedicated **Android notification channel per stage type** so the user (and
+  the system Settings UI) can independently control behavior per stage:
+  - `nock_silent` — IMPORTANCE_LOW (no sound, no vibration)
+  - `nock_normal` — IMPORTANCE_DEFAULT (system notification sound + vibration)
+  - `nock_alarm` — IMPORTANCE_HIGH with `USAGE_ALARM`, bypasses DND
+- The Telegram stage does not need an Android channel (it's an outbound HTTPS
+  call, not a local notification).
 
 ### 5.2 Do Not Disturb
 
@@ -165,16 +186,17 @@ Adding a reminder must be friction-free. The Add screen has:
   only API on modern Android that reliably fires while Doze/standby is active.
 - Earlier escalation stages can use `setExactAndAllowWhileIdle()` for lower
   battery impact.
-- A foreground **`AlarmService`** owns the active alarm sound + TTS while the
-  user is interacting with the full-screen alarm activity.
+- A foreground **`AlarmService`** owns the active alarm sound while the user is
+  interacting with the full-screen alarm activity.
 
 ### 5.4 Boot behavior
 
 - `BOOT_COMPLETED` receiver reschedules all future reminders.
 - Any reminder whose scheduled time passed while the phone was off **fires
   immediately on boot** (so I don't miss things if my battery dies overnight).
-- The escalation chain restarts at stage 1 (silent) on boot, not at whatever
-  stage it would have reached — to avoid waking me with a sudden alarm.
+- A reminder that fires on boot restarts at the *first* stage of its chain, not
+  whatever stage it would have reached — to avoid jolting the user with a
+  sudden alarm.
 
 ### 5.5 Permissions required
 
@@ -194,15 +216,18 @@ The first-run flow guides me through granting each one and explains *why*.
 
 ## 6. Telegram integration
 
-- **User-provided bot.** I create my own Telegram bot via @BotFather, paste the
-  bot token + my chat ID into the app's settings. No shared backend, no third
-  party between me and Telegram.
+- **User-provided bot.** The user creates their own Telegram bot via
+  @BotFather, then pastes the bot token + chat ID into the app's Settings.
+  No shared backend, no third party between the user and Telegram.
 - The app sends messages directly to the Telegram Bot API from the device.
-- A "Send test message" button in settings confirms the configuration works.
-- Telegram is optional. If unconfigured, that escalation stage is silently
-  skipped and the chain advances to the next stage.
-- The silent-stage mirror message uses `disable_notification: true` so it
-  doesn't ping me.
+- A "Send test message" button in Settings confirms the configuration works.
+- Telegram is optional. If unconfigured or the Telegram stage isn't in the
+  chain, the chain simply advances past it.
+- **Silent-stage Telegram mirror (per-group opt-in).** A group can opt in to
+  also send a Telegram message at the silent stage. When enabled, that message
+  uses `disable_notification: true` so it appears in the chat without pinging
+  the user — useful for seeing the heads-up on a laptop without an audible
+  alert. Off by default.
 
 ---
 
@@ -270,7 +295,6 @@ Recommended best-fit, given the heavy reliance on Android-specific APIs
 - **Async:** Kotlin coroutines + Flow
 - **DI:** Hilt
 - **Telegram:** raw HTTPS calls via OkHttp (the Telegram Bot API is trivial)
-- **TTS:** Android's built-in `TextToSpeech`
 - **Natural-language parsing:** a small custom parser for common patterns; no
   external service.
 - **Cloud sync:** Google Drive REST API (App Folder scope) via the
@@ -304,26 +328,31 @@ scope-creep:
 - Multi-user shared lists / real-time multi-device sync (snapshot sync only)
 - Multi-channel push (SMS, email, ntfy.sh, Discord) — only Telegram in v1
 - Configurable acknowledgment difficulty (puzzles, QR codes, shake-to-dismiss)
+- Spoken Text-to-Speech reminders — alarm is sound-only in v1
 - Voice input for adding reminders
 - Onboarding tutorial
 - Backup formats beyond Google Drive
 - Localization beyond English
+- Repeating the same stage twice in a chain (each stage at most once in v1)
 
 ---
 
-## 12. Open questions / decisions still to make
+## 12. Decisions log
 
-- **App name.** Working title is *Nock* (matching the repo). Confirm or pick
-  another.
-- **Default escalation schedule.** Proposed: silent → +5 min → normal →
-  +5 min → Telegram → +5 min → loud alarm. Confirm intervals.
-- **Default snooze duration.** Proposed: 10 minutes.
-- **Alarm sound.** Proposed: device's default alarm sound, with the option to
-  pick a custom one in Settings.
-- **TTS voice / language.** Proposed: system default voice in the device
-  language.
-- **Pre-emptive Telegram mirror.** Should the silent stage always mirror to
-  Telegram (silently), or only when explicitly enabled per group?
+Resolved during planning — captured here as the source of truth:
+
+- **App name:** *Nock*.
+- **Default stage chain:** Silent → Normal → Telegram → Loud alarm.
+- **Default timing:** Silent at −10 min (pre-alarm heads-up), Normal at 0,
+  Telegram at +5 min, Loud alarm at +10 min (then repeats every 10 min).
+- **Snooze model:** advances to next stage; at the final stage, snoozes for
+  10 min (global default, per-group overridable).
+- **Alarm sound:** device's system default alarm sound, user-pickable in
+  Settings via the system ringtone picker.
+- **TTS:** not in v1. Alarm is sound-only.
+- **Silent-stage Telegram mirror:** per-group opt-in, off by default.
+- **Stage selection:** any of the 4 stages can be omitted from the chain;
+  no stage may appear twice.
 
 ---
 
@@ -337,16 +366,19 @@ exercisable end-to-end on the next slice of functionality.
 2. **M2 — One-shot reminders firing.** Add reminder via form, AlarmManager
    schedules it, single silent notification appears at the right time. Done
    button removes it.
-3. **M3 — Full escalation chain.** Stages 1–4 (silent → normal → Telegram →
-   loud alarm), driven by per-reminder offsets. Snooze with background
-   escalation. Done stops the chain at any stage.
+3. **M3 — Full escalation chain.** All three local stages (silent, normal,
+   loud alarm) driven by per-reminder offsets. Snooze advances to next stage.
+   Last-stage repeat loop. Done stops the chain at any stage.
 4. **M4 — Recurring + interval schedules.** Daily/weekly/monthly recurrence and
    interval-from-last-completion. Boot receiver reschedules everything.
 5. **M5 — Groups + per-group escalation override + pause.**
-6. **M6 — Telegram integration with user bot token.**
-7. **M7 — TTS on the alarm stage.**
+6. **M6 — Globally reorderable stage chain** with per-group override; Settings
+   UI to omit and reorder stages.
+7. **M7 — Telegram integration** (user bot token + per-group silent-mirror
+   opt-in).
 8. **M8 — Natural-language quick-add bar.**
 9. **M9 — Google Drive App Folder sync.**
 10. **M10 — Polish, Material You theming, first signed release on GitHub.**
 
-Stretch (post-v1): home-screen widget, history view, additional push channels.
+Stretch (post-v1): home-screen widget, history view, TTS spoken reminders,
+additional push channels.

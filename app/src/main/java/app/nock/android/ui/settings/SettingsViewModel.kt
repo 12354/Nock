@@ -1,7 +1,9 @@
 package app.nock.android.ui.settings
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.nock.android.R
 import app.nock.android.data.NockRepository
 import app.nock.android.data.SettingsRepository
 import app.nock.android.domain.escalation.EscalationEngine
@@ -13,6 +15,7 @@ import app.nock.android.sync.DriveSyncClient
 import app.nock.android.sync.SyncOutcome
 import app.nock.android.telegram.TelegramSender
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -34,6 +37,7 @@ data class SettingsState(
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
+    @ApplicationContext private val ctx: Context,
     private val settings: SettingsRepository,
     private val repo: NockRepository,
     private val telegram: TelegramSender,
@@ -78,8 +82,10 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             val token = settings.get(SettingsRepository.KEY_TELEGRAM_TOKEN).orEmpty()
             val chat = settings.get(SettingsRepository.KEY_TELEGRAM_CHAT).orEmpty()
-            val res = telegram.sendRaw(token, chat, "🔔 Nock test message", silent = false)
-            statusFlow.value = ("Telegram: ${if (res.ok) "OK" else "error — ${res.errorDescription}"}" to statusFlow.value.second)
+            val res = telegram.sendRaw(token, chat, ctx.getString(R.string.telegram_test_message), silent = false)
+            val msg = if (res.ok) ctx.getString(R.string.status_telegram_ok)
+            else ctx.getString(R.string.status_telegram_error, res.errorDescription.orEmpty())
+            statusFlow.value = (msg to statusFlow.value.second)
         }
     }
 
@@ -97,9 +103,9 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             val r = block()
             val msg = when (r) {
-                is SyncOutcome.Ok -> "Drive: OK"
-                is SyncOutcome.NotSignedIn -> "Drive: sign in required"
-                is SyncOutcome.Error -> "Drive: ${r.message}"
+                is SyncOutcome.Ok -> ctx.getString(R.string.status_drive_ok)
+                is SyncOutcome.NotSignedIn -> ctx.getString(R.string.status_drive_sign_in_required)
+                is SyncOutcome.Error -> ctx.getString(R.string.status_drive_error, r.message)
             }
             statusFlow.value = (statusFlow.value.first to msg)
         }

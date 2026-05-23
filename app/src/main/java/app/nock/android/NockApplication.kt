@@ -1,10 +1,13 @@
 package app.nock.android
 
 import android.app.Application
+import androidx.appcompat.app.AppCompatDelegate
+import androidx.core.os.LocaleListCompat
 import app.nock.android.data.SeedData
 import app.nock.android.data.dao.GroupDao
 import app.nock.android.di.ApplicationScope
 import app.nock.android.notif.NockNotificationChannels
+import app.nock.android.ui.LocaleHelper
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -20,6 +23,10 @@ class NockApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        val tag = LocaleHelper.getLanguageTag(this)
+        val locales = if (tag.isEmpty()) LocaleListCompat.getEmptyLocaleList()
+        else LocaleListCompat.forLanguageTags(tag)
+        AppCompatDelegate.setApplicationLocales(locales)
         channels.ensureCreated()
         appScope.launch {
             if (groupDao.getAll().isEmpty()) {

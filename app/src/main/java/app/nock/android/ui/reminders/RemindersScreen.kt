@@ -17,11 +17,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import app.nock.android.R
 import app.nock.android.domain.model.Group
 import app.nock.android.domain.model.Reminder
+import java.time.format.TextStyle
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -32,12 +37,12 @@ fun RemindersScreen(
 ) {
     val sections by vm.sections.collectAsState()
     Scaffold(
-        topBar = { TopAppBar(title = { Text("Reminders") }) },
+        topBar = { TopAppBar(title = { Text(stringResource(R.string.reminders)) }) },
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = onAddReminder,
                 icon = { Icon(Icons.Filled.Add, contentDescription = null) },
-                text = { Text("Add") }
+                text = { Text(stringResource(R.string.add)) }
             )
         }
     ) { padding ->
@@ -88,7 +93,7 @@ private fun GroupCard(
                 )
                 AssistChip(
                     onClick = onPauseToggle,
-                    label = { Text(if (paused) "Resume" else "Pause") },
+                    label = { Text(stringResource(if (paused) R.string.resume else R.string.pause)) },
                     leadingIcon = {
                         Icon(
                             if (paused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
@@ -97,10 +102,11 @@ private fun GroupCard(
                     }
                 )
             }
+            val ctx = LocalContext.current
             if (section.reminders.isEmpty()) {
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "No reminders in this group.",
+                    stringResource(R.string.reminders_empty_group),
                     color = MaterialTheme.colorScheme.outline,
                     style = MaterialTheme.typography.bodySmall
                 )
@@ -116,13 +122,13 @@ private fun GroupCard(
                         ) {
                             Text(r.name, style = MaterialTheme.typography.bodyLarge)
                             Text(
-                                describe(r),
+                                describe(ctx, r),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.outline
                             )
                         }
                         IconButton(onClick = { onDelete(r) }) {
-                            Icon(Icons.Filled.Delete, contentDescription = "Delete")
+                            Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.delete))
                         }
                     }
                 }
@@ -131,22 +137,27 @@ private fun GroupCard(
     }
 }
 
-private fun describe(r: Reminder): String = when (val s = r.schedule) {
-    is app.nock.android.domain.model.Schedule.OneShot -> "Once"
+private fun describe(ctx: android.content.Context, r: Reminder): String = when (val s = r.schedule) {
+    is app.nock.android.domain.model.Schedule.OneShot -> ctx.getString(R.string.schedule_once)
     is app.nock.android.domain.model.Schedule.Daily -> {
         val times = s.timesOfDayMinutes.sorted().joinToString(", ") { "%02d:%02d".format(it / 60, it % 60) }
-        "Daily at $times"
+        ctx.getString(R.string.schedule_daily_at, times)
     }
     is app.nock.android.domain.model.Schedule.Weekly -> {
-        val days = s.daysOfWeek.sorted().joinToString(", ") { it.name.take(3) }
+        val locale = Locale.getDefault()
+        val days = s.daysOfWeek.sorted().joinToString(", ") { it.getDisplayName(TextStyle.SHORT, locale) }
         val times = s.timesOfDayMinutes.sorted().joinToString(", ") { "%02d:%02d".format(it / 60, it % 60) }
-        "$days at $times"
+        ctx.getString(R.string.schedule_days_at, days, times)
     }
     is app.nock.android.domain.model.Schedule.Monthly ->
-        "Monthly on day ${s.dayOfMonth} at %02d:%02d".format(s.timeOfDayMinutes / 60, s.timeOfDayMinutes % 60)
+        ctx.getString(
+            R.string.schedule_monthly_at,
+            s.dayOfMonth,
+            "%02d:%02d".format(s.timeOfDayMinutes / 60, s.timeOfDayMinutes % 60)
+        )
     is app.nock.android.domain.model.Schedule.IntervalFromLast -> {
         val hrs = s.intervalMs / 3_600_000.0
-        if (hrs >= 1.0) "Every ${"%.1f".format(hrs)} h after last done"
-        else "Every ${s.intervalMs / 60_000} min after last done"
+        if (hrs >= 1.0) ctx.getString(R.string.schedule_every_h_after_done, "%.1f".format(hrs))
+        else ctx.getString(R.string.schedule_every_min_after_done, (s.intervalMs / 60_000).toInt())
     }
 }

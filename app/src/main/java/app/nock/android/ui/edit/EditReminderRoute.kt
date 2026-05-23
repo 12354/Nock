@@ -25,15 +25,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import app.nock.android.R
 import kotlinx.coroutines.launch
 import java.time.DayOfWeek
 import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.ZoneId
+import java.time.format.TextStyle
 import java.util.Calendar
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -49,16 +53,16 @@ fun EditReminderRoute(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(if (reminderId == 0L) "New reminder" else "Edit reminder") },
+                title = { Text(stringResource(if (reminderId == 0L) R.string.edit_title_new else R.string.edit_title_edit)) },
                 navigationIcon = {
                     IconButton(onClick = onDone) {
-                        Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
                     }
                 },
                 actions = {
                     TextButton(onClick = {
                         scope.launch { vm.save(); onDone() }
-                    }) { Text("Save") }
+                    }) { Text(stringResource(R.string.save)) }
                 }
             )
         }
@@ -74,19 +78,19 @@ fun EditReminderRoute(
             OutlinedTextField(
                 value = state.nlInput,
                 onValueChange = vm::updateNl,
-                label = { Text("Quick add (natural language)") },
-                placeholder = { Text("e.g. Feed dog every day at 8am and 6pm — Pets") },
+                label = { Text(stringResource(R.string.edit_quick_add_label)) },
+                placeholder = { Text(stringResource(R.string.edit_quick_add_placeholder)) },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = false,
                 supportingText = {
-                    if (state.nlPreview.isNotBlank()) Text("Parsed: ${state.nlPreview}")
+                    if (state.nlPreview.isNotBlank()) Text(stringResource(R.string.edit_parsed_prefix, state.nlPreview))
                 }
             )
 
             OutlinedTextField(
                 value = state.name,
                 onValueChange = vm::updateName,
-                label = { Text("Name") },
+                label = { Text(stringResource(R.string.edit_name_label)) },
                 modifier = Modifier.fillMaxWidth()
             )
 
@@ -101,13 +105,13 @@ fun EditReminderRoute(
             when (state.scheduleType) {
                 ScheduleKind.ONESHOT -> OneShotEditor(state.oneShotMs, vm::updateOneShot)
                 ScheduleKind.DAILY -> TimesListEditor(
-                    "Times",
+                    stringResource(R.string.edit_times_label),
                     state.dailyTimesMinutes
                 ) { vm.updateDailyTimes(it) }
                 ScheduleKind.WEEKLY -> {
                     WeekdaySelector(state.weeklyDays) { vm.updateWeeklyDays(it) }
                     Spacer(Modifier.height(4.dp))
-                    TimesListEditor("Times", state.weeklyTimesMinutes) { vm.updateWeeklyTimes(it) }
+                    TimesListEditor(stringResource(R.string.edit_times_label), state.weeklyTimesMinutes) { vm.updateWeeklyTimes(it) }
                 }
                 ScheduleKind.MONTHLY -> MonthlyEditor(
                     day = state.monthlyDay,
@@ -124,7 +128,7 @@ fun EditReminderRoute(
 @Composable
 private fun GroupSelector(groups: List<app.nock.android.domain.model.Group>, selectedId: Long, onSelect: (Long) -> Unit) {
     Column {
-        Text("Group", style = MaterialTheme.typography.labelLarge)
+        Text(stringResource(R.string.edit_group_label), style = MaterialTheme.typography.labelLarge)
         Spacer(Modifier.height(8.dp))
         FlowRow {
             groups.forEach { g ->
@@ -151,21 +155,21 @@ private fun GroupSelector(groups: List<app.nock.android.domain.model.Group>, sel
 @Composable
 private fun ScheduleKindSelector(current: ScheduleKind, onChange: (ScheduleKind) -> Unit) {
     val items = listOf(
-        ScheduleKind.ONESHOT to "Once",
-        ScheduleKind.DAILY to "Daily",
-        ScheduleKind.WEEKLY to "Weekly",
-        ScheduleKind.MONTHLY to "Monthly",
-        ScheduleKind.INTERVAL to "Interval",
+        ScheduleKind.ONESHOT to R.string.schedule_kind_once,
+        ScheduleKind.DAILY to R.string.schedule_kind_daily,
+        ScheduleKind.WEEKLY to R.string.schedule_kind_weekly,
+        ScheduleKind.MONTHLY to R.string.schedule_kind_monthly,
+        ScheduleKind.INTERVAL to R.string.schedule_kind_interval,
     )
     Column {
-        Text("Schedule", style = MaterialTheme.typography.labelLarge)
+        Text(stringResource(R.string.edit_schedule_label), style = MaterialTheme.typography.labelLarge)
         Spacer(Modifier.height(8.dp))
         FlowRow {
-            items.forEach { (k, label) ->
+            items.forEach { (k, labelRes) ->
                 FilterChip(
                     selected = current == k,
                     onClick = { onChange(k) },
-                    label = { Text(label) },
+                    label = { Text(stringResource(labelRes)) },
                     modifier = Modifier.padding(end = 8.dp, bottom = 4.dp)
                 )
             }
@@ -178,7 +182,7 @@ private fun OneShotEditor(ms: Long, onChange: (Long) -> Unit) {
     val ctx = LocalContext.current
     val dt = remember(ms) { LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(ms), ZoneId.systemDefault()) }
     Column {
-        Text("Date & time", style = MaterialTheme.typography.labelLarge)
+        Text(stringResource(R.string.edit_date_time_label), style = MaterialTheme.typography.labelLarge)
         Spacer(Modifier.height(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick = {
@@ -217,7 +221,7 @@ private fun TimesListEditor(label: String, times: List<Int>, onChange: (List<Int
                         IconButton(onClick = {
                             onChange(times.toMutableList().also { it.removeAt(idx) })
                         }, modifier = Modifier.size(20.dp)) {
-                            Icon(Icons.Filled.Close, contentDescription = "Remove", modifier = Modifier.size(16.dp))
+                            Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.remove), modifier = Modifier.size(16.dp))
                         }
                     },
                     modifier = Modifier.padding(end = 8.dp, bottom = 4.dp)
@@ -229,7 +233,7 @@ private fun TimesListEditor(label: String, times: List<Int>, onChange: (List<Int
                         onChange((times + (h * 60 + mn)).sorted())
                     }, 9, 0, true).show()
                 },
-                label = { Text("Add time") },
+                label = { Text(stringResource(R.string.edit_add_time)) },
                 leadingIcon = { Icon(Icons.Filled.Add, contentDescription = null) }
             )
         }
@@ -238,8 +242,9 @@ private fun TimesListEditor(label: String, times: List<Int>, onChange: (List<Int
 
 @Composable
 private fun WeekdaySelector(selected: Set<DayOfWeek>, onChange: (Set<DayOfWeek>) -> Unit) {
+    val locale = Locale.getDefault()
     Column {
-        Text("Days", style = MaterialTheme.typography.labelLarge)
+        Text(stringResource(R.string.edit_days_label), style = MaterialTheme.typography.labelLarge)
         Spacer(Modifier.height(8.dp))
         FlowRow {
             DayOfWeek.values().forEach { d ->
@@ -249,7 +254,7 @@ private fun WeekdaySelector(selected: Set<DayOfWeek>, onChange: (Set<DayOfWeek>)
                         val new = selected.toMutableSet().also { if (d in it) it.remove(d) else it.add(d) }
                         onChange(new)
                     },
-                    label = { Text(d.name.take(3)) },
+                    label = { Text(d.getDisplayName(TextStyle.SHORT, locale)) },
                     modifier = Modifier.padding(end = 8.dp, bottom = 4.dp)
                 )
             }
@@ -261,18 +266,18 @@ private fun WeekdaySelector(selected: Set<DayOfWeek>, onChange: (Set<DayOfWeek>)
 private fun MonthlyEditor(day: Int, timeMin: Int, onDay: (Int) -> Unit, onTime: (Int) -> Unit) {
     val ctx = LocalContext.current
     Column {
-        Text("Monthly", style = MaterialTheme.typography.labelLarge)
+        Text(stringResource(R.string.edit_monthly_label), style = MaterialTheme.typography.labelLarge)
         Spacer(Modifier.height(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             OutlinedTextField(
                 value = day.toString(),
                 onValueChange = { it.toIntOrNull()?.let { v -> if (v in 1..31) onDay(v) } },
-                label = { Text("Day") },
+                label = { Text(stringResource(R.string.edit_day_label)) },
                 modifier = Modifier.width(120.dp)
             )
             OutlinedButton(onClick = {
                 TimePickerDialog(ctx, { _, h, mn -> onTime(h * 60 + mn) }, timeMin / 60, timeMin % 60, true).show()
-            }) { Text("at %02d:%02d".format(timeMin / 60, timeMin % 60)) }
+            }) { Text(stringResource(R.string.edit_at_time, "%02d:%02d".format(timeMin / 60, timeMin % 60))) }
         }
     }
 }
@@ -280,12 +285,12 @@ private fun MonthlyEditor(day: Int, timeMin: Int, onDay: (Int) -> Unit, onTime: 
 @Composable
 private fun IntervalEditor(hours: Int, onChange: (Int) -> Unit) {
     Column {
-        Text("Interval after last Done", style = MaterialTheme.typography.labelLarge)
+        Text(stringResource(R.string.edit_interval_label), style = MaterialTheme.typography.labelLarge)
         Spacer(Modifier.height(8.dp))
         OutlinedTextField(
             value = hours.toString(),
             onValueChange = { it.toIntOrNull()?.let { v -> if (v in 1..168) onChange(v) } },
-            label = { Text("Hours") },
+            label = { Text(stringResource(R.string.edit_hours_label)) },
             modifier = Modifier.width(160.dp)
         )
     }

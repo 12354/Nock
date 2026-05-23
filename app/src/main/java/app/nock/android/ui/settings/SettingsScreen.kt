@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
+import androidx.annotation.StringRes
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -29,13 +30,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import app.nock.android.R
 import app.nock.android.domain.model.EscalationChain
 import app.nock.android.domain.model.Group
 import app.nock.android.domain.model.StageConfig
 import app.nock.android.domain.model.StageType
+import app.nock.android.ui.LocaleHelper
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.Scope
@@ -44,11 +48,12 @@ import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 @Composable
 fun SettingsScreen(vm: SettingsViewModel = hiltViewModel()) {
     val state by vm.state.collectAsState()
-    Scaffold(topBar = { TopAppBar(title = { Text("Settings") }) }) { padding ->
+    Scaffold(topBar = { TopAppBar(title = { Text(stringResource(R.string.settings)) }) }) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -57,6 +62,7 @@ fun SettingsScreen(vm: SettingsViewModel = hiltViewModel()) {
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
+            LanguageSection()
             state.chain?.let {
                 StageChainSection(chain = it, onChange = vm::setChain)
             }
@@ -68,9 +74,44 @@ fun SettingsScreen(vm: SettingsViewModel = hiltViewModel()) {
 }
 
 @Composable
+private fun LanguageSection() {
+    val ctx = LocalContext.current
+    val currentTag = LocaleHelper.getLanguageTag(ctx)
+    val options = listOf(
+        "" to R.string.language_system_default,
+        "en" to R.string.language_english,
+        "de" to R.string.language_german,
+    )
+    SectionCard(stringResource(R.string.settings_language_title)) {
+        androidx.compose.foundation.layout.FlowRow {
+            options.forEach { (tag, labelRes) ->
+                FilterChip(
+                    selected = tag == currentTag,
+                    onClick = {
+                        if (tag == currentTag) return@FilterChip
+                        LocaleHelper.setLanguageTag(ctx, tag)
+                        (ctx as? Activity)?.recreate()
+                    },
+                    label = { Text(stringResource(labelRes)) },
+                    modifier = Modifier.padding(end = 8.dp, bottom = 4.dp)
+                )
+            }
+        }
+    }
+}
+
+@StringRes
+private fun stageTypeLabel(type: StageType): Int = when (type) {
+    StageType.SILENT -> R.string.stage_type_silent
+    StageType.NORMAL -> R.string.stage_type_normal
+    StageType.ALARM -> R.string.stage_type_alarm
+    StageType.TELEGRAM -> R.string.stage_type_telegram
+}
+
+@Composable
 private fun StageChainSection(chain: EscalationChain, onChange: (EscalationChain) -> Unit) {
     var local by remember(chain) { mutableStateOf(chain) }
-    SectionCard("Escalation chain (global default)") {
+    SectionCard(stringResource(R.string.settings_escalation_chain_title)) {
         local.stages.forEachIndexed { idx, stage ->
             StageRow(
                 stage = stage,
@@ -102,7 +143,7 @@ private fun StageChainSection(chain: EscalationChain, onChange: (EscalationChain
         val missing = StageType.values().toSet() - local.stages.map { it.type }.toSet()
         if (missing.isNotEmpty()) {
             Spacer(Modifier.height(8.dp))
-            Text("Add stage:", style = MaterialTheme.typography.labelMedium)
+            Text(stringResource(R.string.settings_add_stage), style = MaterialTheme.typography.labelMedium)
             androidx.compose.foundation.layout.FlowRow {
                 missing.forEach { t ->
                     AssistChip(
@@ -111,7 +152,7 @@ private fun StageChainSection(chain: EscalationChain, onChange: (EscalationChain
                             val list = local.stages + StageConfig(t, nextOff)
                             local = EscalationChain(list, local.repeatIntervalMs); onChange(local)
                         },
-                        label = { Text(t.name) },
+                        label = { Text(stringResource(stageTypeLabel(t))) },
                         modifier = Modifier.padding(end = 8.dp, bottom = 4.dp)
                     )
                 }
@@ -119,7 +160,7 @@ private fun StageChainSection(chain: EscalationChain, onChange: (EscalationChain
         }
         Spacer(Modifier.height(8.dp))
         IntervalField(
-            label = "Last-stage repeat interval (minutes)",
+            label = stringResource(R.string.settings_repeat_interval_label),
             valueMin = (local.repeatIntervalMs / 60_000L).toInt()
         ) { newMin ->
             local = local.copy(repeatIntervalMs = newMin * 60_000L); onChange(local)
@@ -142,18 +183,18 @@ private fun StageRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(stage.type.name, fontWeight = FontWeight.SemiBold)
+            Text(stringResource(stageTypeLabel(stage.type)), fontWeight = FontWeight.SemiBold)
             val mins = (stage.offsetMs / 60_000L).toInt()
             OutlinedTextField(
                 value = mins.toString(),
                 onValueChange = { it.toIntOrNull()?.let { v -> onOffsetChange(v * 60_000L) } },
-                label = { Text("Offset (min)") },
+                label = { Text(stringResource(R.string.settings_offset_label)) },
                 modifier = Modifier.width(160.dp).padding(top = 4.dp)
             )
         }
-        IconButton(onClick = onMoveUp, enabled = canMoveUp) { Icon(Icons.Filled.ArrowUpward, contentDescription = "Up") }
-        IconButton(onClick = onMoveDown, enabled = canMoveDown) { Icon(Icons.Filled.ArrowDownward, contentDescription = "Down") }
-        IconButton(onClick = onRemove) { Icon(Icons.Filled.Close, contentDescription = "Remove") }
+        IconButton(onClick = onMoveUp, enabled = canMoveUp) { Icon(Icons.Filled.ArrowUpward, contentDescription = stringResource(R.string.move_up)) }
+        IconButton(onClick = onMoveDown, enabled = canMoveDown) { Icon(Icons.Filled.ArrowDownward, contentDescription = stringResource(R.string.move_down)) }
+        IconButton(onClick = onRemove) { Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.remove)) }
     }
 }
 
@@ -169,7 +210,7 @@ private fun IntervalField(label: String, valueMin: Int, onChange: (Int) -> Unit)
 
 @Composable
 private fun GroupsSection(groups: List<Group>, vm: SettingsViewModel) {
-    SectionCard("Groups") {
+    SectionCard(stringResource(R.string.settings_groups_title)) {
         groups.forEach { g ->
             GroupRow(g, vm)
             HorizontalDivider()
@@ -187,11 +228,11 @@ private fun GroupRow(g: Group, vm: SettingsViewModel) {
         Spacer(Modifier.width(8.dp))
         Text(g.name, modifier = Modifier.weight(1f))
         Text(
-            if (g.overrideChain != null) "custom chain" else "default chain",
+            stringResource(if (g.overrideChain != null) R.string.settings_group_custom_chain else R.string.settings_group_default_chain),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.outline
         )
-        IconButton(onClick = { editing = !editing }) { Icon(Icons.Filled.Edit, contentDescription = "Edit") }
+        IconButton(onClick = { editing = !editing }) { Icon(Icons.Filled.Edit, contentDescription = stringResource(R.string.edit)) }
     }
     if (editing) {
         GroupOverrideEditor(g, vm) { editing = false }
@@ -210,7 +251,7 @@ private fun GroupOverrideEditor(g: Group, vm: SettingsViewModel, onClose: () -> 
                 vm.updateGroup(g.copy(telegramSilentMirror = it))
             })
             Spacer(Modifier.width(8.dp))
-            Text("Mirror silent stage to Telegram")
+            Text(stringResource(R.string.settings_mirror_silent_telegram))
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Switch(checked = override != null, onCheckedChange = { on ->
@@ -218,16 +259,16 @@ private fun GroupOverrideEditor(g: Group, vm: SettingsViewModel, onClose: () -> 
                 vm.updateGroup(g.copy(overrideChain = override))
             })
             Spacer(Modifier.width(8.dp))
-            Text("Custom escalation chain")
+            Text(stringResource(R.string.settings_custom_chain_toggle))
         }
         override?.let { chain ->
-            Text("Override chain", style = MaterialTheme.typography.labelMedium)
+            Text(stringResource(R.string.settings_override_chain), style = MaterialTheme.typography.labelMedium)
             StageChainSection(chain = chain, onChange = {
                 override = it
                 vm.updateGroup(g.copy(overrideChain = it))
             })
         }
-        TextButton(onClick = onClose) { Text("Done editing group") }
+        TextButton(onClick = onClose) { Text(stringResource(R.string.settings_done_editing_group)) }
     }
 }
 
@@ -235,22 +276,22 @@ private fun GroupOverrideEditor(g: Group, vm: SettingsViewModel, onClose: () -> 
 private fun TelegramSection(token: String, chat: String, status: String?, vm: SettingsViewModel) {
     var t by remember(token) { mutableStateOf(token) }
     var c by remember(chat) { mutableStateOf(chat) }
-    SectionCard("Telegram bot") {
+    SectionCard(stringResource(R.string.settings_telegram_title)) {
         OutlinedTextField(
             value = t, onValueChange = { t = it },
-            label = { Text("Bot token") },
+            label = { Text(stringResource(R.string.settings_telegram_token)) },
             modifier = Modifier.fillMaxWidth()
         )
         Spacer(Modifier.height(8.dp))
         OutlinedTextField(
             value = c, onValueChange = { c = it },
-            label = { Text("Chat ID") },
+            label = { Text(stringResource(R.string.settings_telegram_chat_id)) },
             modifier = Modifier.fillMaxWidth()
         )
         Spacer(Modifier.height(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = { vm.setTelegram(t, c) }) { Text("Save") }
-            OutlinedButton(onClick = { vm.setTelegram(t, c); vm.testTelegram() }) { Text("Test send") }
+            Button(onClick = { vm.setTelegram(t, c) }) { Text(stringResource(R.string.save)) }
+            OutlinedButton(onClick = { vm.setTelegram(t, c); vm.testTelegram() }) { Text(stringResource(R.string.settings_test_send)) }
         }
         if (status != null) {
             Spacer(Modifier.height(8.dp))
@@ -267,9 +308,9 @@ private fun DriveSection(email: String?, lastSyncMs: Long?, status: String?, vm:
         runCatching { task.getResult(com.google.android.gms.common.api.ApiException::class.java) }
             .onSuccess { acc -> vm.setDriveEmail(acc.email) }
     }
-    SectionCard("Google Drive (App Folder)") {
+    SectionCard(stringResource(R.string.settings_drive_title)) {
         if (email == null) {
-            Text("Not signed in.")
+            Text(stringResource(R.string.settings_not_signed_in))
             Spacer(Modifier.height(8.dp))
             Button(onClick = {
                 val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
@@ -278,24 +319,27 @@ private fun DriveSection(email: String?, lastSyncMs: Long?, status: String?, vm:
                     .build()
                 val client = GoogleSignIn.getClient(ctx, gso)
                 launcher.launch(client.signInIntent)
-            }) { Text("Sign in") }
+            }) { Text(stringResource(R.string.sign_in)) }
         } else {
-            Text("Signed in as $email")
+            Text(stringResource(R.string.settings_signed_in_as, email))
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = vm::syncPush) { Text("Push now") }
-                OutlinedButton(onClick = vm::syncPull) { Text("Pull now") }
+                Button(onClick = vm::syncPush) { Text(stringResource(R.string.settings_push_now)) }
+                OutlinedButton(onClick = vm::syncPull) { Text(stringResource(R.string.settings_pull_now)) }
                 TextButton(onClick = {
                     val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN).build()
                     GoogleSignIn.getClient(ctx, gso).signOut()
                     vm.setDriveEmail(null)
-                }) { Text("Sign out") }
+                }) { Text(stringResource(R.string.sign_out)) }
             }
             if (lastSyncMs != null) {
                 Spacer(Modifier.height(8.dp))
-                val fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+                val fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm", Locale.getDefault())
                 Text(
-                    "Last sync: " + LocalDateTime.ofInstant(Instant.ofEpochMilli(lastSyncMs), ZoneId.systemDefault()).format(fmt),
+                    stringResource(
+                        R.string.settings_last_sync,
+                        LocalDateTime.ofInstant(Instant.ofEpochMilli(lastSyncMs), ZoneId.systemDefault()).format(fmt)
+                    ),
                     style = MaterialTheme.typography.bodySmall
                 )
             }

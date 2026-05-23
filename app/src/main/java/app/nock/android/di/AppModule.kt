@@ -1,0 +1,49 @@
+package app.nock.android.di
+
+import android.content.Context
+import androidx.room.Room
+import app.nock.android.data.NockDatabase
+import app.nock.android.data.dao.ActiveEscalationDao
+import app.nock.android.data.dao.GroupDao
+import app.nock.android.data.dao.ReminderDao
+import app.nock.android.data.dao.SettingsDao
+import dagger.Module
+import dagger.Provides
+import dagger.hilt.InstallIn
+import dagger.hilt.android.qualifiers.ApplicationContext
+import dagger.hilt.components.SingletonComponent
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import okhttp3.OkHttpClient
+import java.util.concurrent.TimeUnit
+import javax.inject.Qualifier
+import javax.inject.Singleton
+
+@Qualifier annotation class ApplicationScope
+
+@Module
+@InstallIn(SingletonComponent::class)
+object AppModule {
+
+    @Provides @Singleton
+    fun provideDatabase(@ApplicationContext ctx: Context): NockDatabase =
+        Room.databaseBuilder(ctx, NockDatabase::class.java, "nock.db")
+            .fallbackToDestructiveMigration()
+            .build()
+
+    @Provides fun provideGroupDao(db: NockDatabase): GroupDao = db.groupDao()
+    @Provides fun provideReminderDao(db: NockDatabase): ReminderDao = db.reminderDao()
+    @Provides fun provideActiveDao(db: NockDatabase): ActiveEscalationDao = db.activeEscalationDao()
+    @Provides fun provideSettingsDao(db: NockDatabase): SettingsDao = db.settingsDao()
+
+    @Provides @Singleton
+    fun provideOkHttp(): OkHttpClient = OkHttpClient.Builder()
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(20, TimeUnit.SECONDS)
+        .writeTimeout(20, TimeUnit.SECONDS)
+        .build()
+
+    @Provides @Singleton @ApplicationScope
+    fun provideAppScope(): CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+}

@@ -1,0 +1,43 @@
+package app.nock.android.data
+
+import app.nock.android.data.dao.SettingsDao
+import app.nock.android.data.entity.SettingsEntity
+import app.nock.android.data.json.ChainJson
+import app.nock.android.domain.model.DefaultChain
+import app.nock.android.domain.model.EscalationChain
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
+import javax.inject.Inject
+import javax.inject.Singleton
+
+@Singleton
+class SettingsRepository @Inject constructor(
+    private val dao: SettingsDao
+) {
+    companion object {
+        const val KEY_STAGE_CHAIN = "stage_chain"
+        const val KEY_TELEGRAM_TOKEN = "telegram_token"
+        const val KEY_TELEGRAM_CHAT = "telegram_chat"
+        const val KEY_ALARM_SOUND = "alarm_sound_uri"
+        const val KEY_DRIVE_ACCOUNT = "drive_account"
+        const val KEY_DRIVE_LAST_SYNC_MS = "drive_last_sync_ms"
+        const val KEY_DRIVE_LAST_REMOTE_MS = "drive_last_remote_ms"
+    }
+
+    suspend fun getStageChain(): EscalationChain {
+        val v = dao.get(KEY_STAGE_CHAIN) ?: return DefaultChain.CHAIN
+        return runCatching { ChainJson.decode(v) }.getOrDefault(DefaultChain.CHAIN)
+    }
+
+    suspend fun setStageChain(c: EscalationChain) {
+        dao.set(SettingsEntity(KEY_STAGE_CHAIN, ChainJson.encode(c)))
+    }
+
+    suspend fun get(key: String): String? = dao.get(key)
+    suspend fun set(key: String, value: String) = dao.set(SettingsEntity(key, value))
+    suspend fun clear(key: String) = dao.delete(key)
+
+    fun observeAll(): Flow<Map<String, String>> = dao.observeAll().map { items ->
+        items.associate { it.key to it.value }
+    }
+}

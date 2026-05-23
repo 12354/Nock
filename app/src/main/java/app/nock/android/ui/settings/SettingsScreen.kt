@@ -22,8 +22,10 @@ import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -36,6 +38,9 @@ import app.nock.android.domain.model.EscalationChain
 import app.nock.android.domain.model.Group
 import app.nock.android.domain.model.StageConfig
 import app.nock.android.domain.model.StageType
+import app.nock.android.update.UpdateManager
+import app.nock.android.update.UpdateResult
+import app.nock.android.update.UpdateState
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.Scope
@@ -63,6 +68,107 @@ fun SettingsScreen(vm: SettingsViewModel = hiltViewModel()) {
             GroupsSection(state.groups, vm)
             TelegramSection(state.telegramToken, state.telegramChat, state.telegramStatus, vm)
             DriveSection(state.driveEmail, state.driveLastSyncMs, state.driveStatus, vm)
+            UpdateSection()
+        }
+    }
+}
+
+@Composable
+private fun UpdateSection() {
+    val context = LocalContext.current
+    val updateManager = remember { UpdateManager(context) }
+    val scope = rememberCoroutineScope()
+    var updateState by remember { mutableStateOf<UpdateState>(UpdateState.Idle) }
+
+    suspend fun doCheck() {
+        updateState = UpdateState.Checking
+        updateState = when (val result = updateManager.checkForUpdate()) {
+            is UpdateResult.Success ->
+                if (result.info.hasUpdate) UpdateState.Available(result.info)
+                else UpdateState.UpToDate
+            is UpdateResult.Failure -> UpdateState.Error(result.error)
+        }
+    }
+
+    LaunchedEffect(Unit) { doCheck() }
+
+    SectionCard("App update") {
+        when (val s = updateState) {
+            UpdateState.Idle, UpdateState.Checking -> {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Text("Checking for updates…", style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+            is UpdateState.Available -> {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Outlined.SystemUpdate,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Update available", fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "build ${s.info.currentVersionCode} → ${s.info.remoteVersionCode}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.outline
+                        )
+                    }
+                    Button(onClick = {
+                        scope.launch {
+                            updateState = UpdateState.Downloading(0f)
+                            val apk = updateManager.downloadUpdate { progress ->
+                                updateState = UpdateState.Downloading(progress)
+                            }
+                            if (apk != null) {
+                                updateState = UpdateState.Installing
+                                updateManager.installApk(apk)
+                            } else {
+                                updateState = UpdateState.Error("Download failed")
+                            }
+                        }
+                    }) { Text("Update") }
+                }
+            }
+            is UpdateState.Downloading -> {
+                Text(
+                    "Downloading… ${(s.progress * 100).toInt()}%",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Spacer(Modifier.height(8.dp))
+                LinearProgressIndicator(
+                    progress = s.progress,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+            UpdateState.Installing -> {
+                Text("Opening installer…", style = MaterialTheme.typography.bodyMedium)
+            }
+            UpdateState.UpToDate -> {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "You're up to date",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.weight(1f)
+                    )
+                    TextButton(onClick = { scope.launch { doCheck() } }) { Text("Re-check") }
+                }
+            }
+            is UpdateState.Error -> {
+                Text(
+                    s.message,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(onClick = { scope.launch { doCheck() } }) { Text("Retry") }
+            }
         }
     }
 }

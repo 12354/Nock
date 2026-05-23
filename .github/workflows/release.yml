@@ -32,6 +32,11 @@ jobs:
           key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', 'gradle/libs.versions.toml') }}
           restore-keys: gradle-${{ runner.os }}-
 
+      - name: Set versionCode to run number
+        run: |
+          sed -i "s/versionCode = [0-9]\+/versionCode = ${{ github.run_number }}/" app/build.gradle.kts
+          grep 'versionCode' app/build.gradle.kts | head -1
+
       - name: Run unit tests
         run: ./gradlew testDebugUnitTest --stacktrace
 
@@ -48,10 +53,12 @@ jobs:
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
           echo "short_sha=${short_sha}" >> "$GITHUB_OUTPUT"
 
-      - name: Rename APK
+      - name: Prepare release assets
         run: |
           cp app/build/outputs/apk/release/app-release.apk \
              "nock-${{ steps.meta.outputs.version }}-build.${{ github.run_number }}.apk"
+          cp app/build/outputs/apk/release/app-release.apk nock-latest.apk
+          echo "${{ github.run_number }}" > version.txt
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
@@ -62,5 +69,10 @@ jobs:
             Automated release for commit ${{ steps.meta.outputs.short_sha }}.
 
             Install with: `adb install nock-${{ steps.meta.outputs.version }}-build.${{ github.run_number }}.apk`
-          files: nock-${{ steps.meta.outputs.version }}-build.${{ github.run_number }}.apk
+
+            In-app updates pull `nock-latest.apk` and `version.txt` from this release.
+          files: |
+            nock-${{ steps.meta.outputs.version }}-build.${{ github.run_number }}.apk
+            nock-latest.apk
+            version.txt
           generate_release_notes: true

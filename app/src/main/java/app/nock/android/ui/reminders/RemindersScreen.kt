@@ -55,7 +55,7 @@ fun RemindersScreen(
                 GroupCard(
                     section = section,
                     onPauseToggle = {
-                        if (section.group.pausedUntilMs != null) vm.unpauseGroup(section.group)
+                        if (section.group.isPaused(System.currentTimeMillis())) vm.unpauseGroup(section.group)
                         else vm.pauseGroup(section.group, null)
                     },
                     onClickReminder = onEditReminder,

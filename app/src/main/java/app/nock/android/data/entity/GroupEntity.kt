@@ -13,5 +13,6 @@ data class GroupEntity(
     val overrideRepeatIntervalMs: Long?,
     val pausedUntilMs: Long?,
     val telegramSilentMirror: Boolean,
-    val sortIndex: Int
+    val sortIndex: Int,
+    val seedKey: String? = null
 )

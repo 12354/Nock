@@ -7,7 +7,8 @@ data class Group(
     val icon: String,
     val overrideChain: EscalationChain?,
     val pausedUntilMs: Long?,
-    val telegramSilentMirror: Boolean
+    val telegramSilentMirror: Boolean,
+    val seedKey: String? = null
 ) {
     fun isPaused(now: Long): Boolean = pausedUntilMs != null && pausedUntilMs > now
 }

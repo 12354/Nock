@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.nock.android.R
 import app.nock.android.data.NockRepository
+import app.nock.android.data.SeedGroupLocaleSync
 import app.nock.android.data.SettingsRepository
 import app.nock.android.domain.escalation.EscalationEngine
 import app.nock.android.domain.model.EscalationChain
@@ -43,7 +44,12 @@ class SettingsViewModel @Inject constructor(
     private val telegram: TelegramSender,
     private val drive: DriveSyncClient,
     private val engine: EscalationEngine,
+    private val seedGroupLocaleSync: SeedGroupLocaleSync,
 ) : ViewModel() {
+
+    fun syncSeedGroupNames() {
+        viewModelScope.launch { seedGroupLocaleSync.sync() }
+    }
 
     private val statusFlow = MutableStateFlow(Pair<String?, String?>(null, null))
 

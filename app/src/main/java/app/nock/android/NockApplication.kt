@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.os.LocaleListCompat
 import app.nock.android.data.SeedData
+import app.nock.android.data.SeedGroupLocaleSync
 import app.nock.android.data.dao.GroupDao
 import app.nock.android.di.ApplicationScope
 import app.nock.android.notif.NockNotificationChannels
@@ -19,6 +20,7 @@ class NockApplication : Application() {
     @Inject lateinit var channels: NockNotificationChannels
     @Inject lateinit var seedData: SeedData
     @Inject lateinit var groupDao: GroupDao
+    @Inject lateinit var seedGroupLocaleSync: SeedGroupLocaleSync
     @Inject @ApplicationScope lateinit var appScope: CoroutineScope
 
     override fun onCreate() {
@@ -31,6 +33,8 @@ class NockApplication : Application() {
         appScope.launch {
             if (groupDao.getAll().isEmpty()) {
                 groupDao.upsertAll(seedData.toEntities())
+            } else {
+                seedGroupLocaleSync.sync()
             }
         }
     }

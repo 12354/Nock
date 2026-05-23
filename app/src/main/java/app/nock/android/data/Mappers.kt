@@ -14,7 +14,8 @@ fun GroupEntity.toDomain(): Group = Group(
     icon = icon,
     overrideChain = overrideChainJson?.let { runCatching { ChainJson.decode(it) }.getOrNull() },
     pausedUntilMs = pausedUntilMs,
-    telegramSilentMirror = telegramSilentMirror
+    telegramSilentMirror = telegramSilentMirror,
+    seedKey = seedKey
 )
 
 fun ReminderEntity.toDomain(): Reminder = Reminder(

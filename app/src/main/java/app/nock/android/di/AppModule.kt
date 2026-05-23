@@ -2,6 +2,7 @@ package app.nock.android.di
 
 import android.content.Context
 import androidx.room.Room
+import app.nock.android.data.MIGRATION_1_2
 import app.nock.android.data.NockDatabase
 import app.nock.android.data.dao.ActiveEscalationDao
 import app.nock.android.data.dao.GroupDao
@@ -29,6 +30,7 @@ object AppModule {
     @Provides @Singleton
     fun provideDatabase(@ApplicationContext ctx: Context): NockDatabase =
         Room.databaseBuilder(ctx, NockDatabase::class.java, "nock.db")
+            .addMigrations(MIGRATION_1_2)
             .fallbackToDestructiveMigration()
             .build()
 

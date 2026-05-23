@@ -132,4 +132,12 @@
     <string name="nl_preview_monthly">monthly day %1$d</string>
     <string name="nl_preview_interval">every %1$dh</string>
     <string name="default_reminder_name">Reminder</string>
+
+    <!-- Default seed group names -->
+    <string name="seed_group_pets">Pets</string>
+    <string name="seed_group_meds">Meds</string>
+    <string name="seed_group_selfcare">Self-care</string>
+    <string name="seed_group_household">Household</string>
+    <string name="seed_group_work">Work</string>
+    <string name="seed_group_errands">Errands</string>
 </resources>

@@ -43,7 +43,8 @@ class NockRepository @Inject constructor(
             overrideRepeatIntervalMs = g.overrideChain?.repeatIntervalMs,
             pausedUntilMs = g.pausedUntilMs,
             telegramSilentMirror = g.telegramSilentMirror,
-            sortIndex = sortIndex
+            sortIndex = sortIndex,
+            seedKey = g.seedKey
         )
         return groupDao.upsert(entity)
     }

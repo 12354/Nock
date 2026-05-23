@@ -67,7 +67,7 @@ fun SettingsScreen(vm: SettingsViewModel = hiltViewModel()) {
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
-            LanguageSection()
+            LanguageSection(vm)
             state.chain?.let {
                 StageChainSection(chain = it, onChange = vm::setChain)
             }
@@ -180,7 +180,7 @@ private fun UpdateSection() {
 }
 
 @Composable
-private fun LanguageSection() {
+private fun LanguageSection(vm: SettingsViewModel) {
     val ctx = LocalContext.current
     val currentTag = LocaleHelper.getLanguageTag(ctx)
     val options = listOf(
@@ -196,6 +196,7 @@ private fun LanguageSection() {
                     onClick = {
                         if (tag == currentTag) return@FilterChip
                         LocaleHelper.setLanguageTag(ctx, tag)
+                        vm.syncSeedGroupNames()
                         (ctx as? Activity)?.recreate()
                     },
                     label = { Text(stringResource(labelRes)) },

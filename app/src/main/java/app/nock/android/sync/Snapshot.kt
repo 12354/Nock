@@ -34,7 +34,8 @@ data class GroupSnap(
     val overrideRepeatIntervalMs: Long?,
     val pausedUntilMs: Long?,
     val telegramSilentMirror: Boolean,
-    val sortIndex: Int
+    val sortIndex: Int,
+    val seedKey: String? = null
 )
 
 data class ReminderSnap(
@@ -68,7 +69,8 @@ class SnapshotService @Inject constructor(
     suspend fun export(): String {
         val groups = groupDao.getAll().map {
             GroupSnap(it.id, it.name, it.color, it.icon, it.overrideChainJson,
-                it.overrideRepeatIntervalMs, it.pausedUntilMs, it.telegramSilentMirror, it.sortIndex)
+                it.overrideRepeatIntervalMs, it.pausedUntilMs, it.telegramSilentMirror, it.sortIndex,
+                it.seedKey)
         }
         val reminders = reminderDao.getAll().map {
             ReminderSnap(it.id, it.groupId, it.name, it.scheduleType, it.scheduleJson,
@@ -105,7 +107,8 @@ class SnapshotService @Inject constructor(
                 overrideRepeatIntervalMs = it.overrideRepeatIntervalMs,
                 pausedUntilMs = it.pausedUntilMs,
                 telegramSilentMirror = it.telegramSilentMirror,
-                sortIndex = it.sortIndex
+                sortIndex = it.sortIndex,
+                seedKey = it.seedKey,
             )
         })
         reminderDao.upsertAll(snap.reminders.map {

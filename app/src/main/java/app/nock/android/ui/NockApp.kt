@@ -14,21 +14,24 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
+import androidx.annotation.StringRes
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import app.nock.android.R
 import app.nock.android.ui.edit.EditReminderRoute
 import app.nock.android.ui.reminders.RemindersScreen
 import app.nock.android.ui.settings.SettingsScreen
 import app.nock.android.ui.today.TodayScreen
 
-sealed class Tab(val route: String, val label: String, val icon: ImageVector) {
-    object Today : Tab("today", "Today", Icons.Filled.Today)
-    object Reminders : Tab("reminders", "Reminders", Icons.Filled.List)
-    object Settings : Tab("settings", "Settings", Icons.Filled.Settings)
+sealed class Tab(val route: String, @StringRes val labelRes: Int, val icon: ImageVector) {
+    object Today : Tab("today", R.string.today, Icons.Filled.Today)
+    object Reminders : Tab("reminders", R.string.reminders, Icons.Filled.List)
+    object Settings : Tab("settings", R.string.settings, Icons.Filled.Settings)
 }
 
 private val TABS = listOf(Tab.Today, Tab.Reminders, Tab.Settings)
@@ -56,7 +59,7 @@ fun NockApp() {
                                 }
                             },
                             icon = { Icon(tab.icon, contentDescription = null) },
-                            label = { Text(tab.label) }
+                            label = { Text(stringResource(tab.labelRes)) }
                         )
                     }
                 }

@@ -54,7 +54,7 @@ class NotificationPresenter @Inject constructor(
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         val notif = baseBuilder(reminder, group, escalationId, Channels.ALARM)
-            .setContentText("${group.name} — alarm")
+            .setContentText(ctx.getString(R.string.notification_alarm_suffix, group.name))
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setOngoing(true)

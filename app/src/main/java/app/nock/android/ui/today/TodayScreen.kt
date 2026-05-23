@@ -15,13 +15,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import app.nock.android.R
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -31,13 +35,14 @@ fun TodayScreen(
     vm: TodayViewModel = hiltViewModel()
 ) {
     val items by vm.items.collectAsState()
+    val ctx = LocalContext.current
     Scaffold(
-        topBar = { TopAppBar(title = { Text("Today") }) },
+        topBar = { TopAppBar(title = { Text(stringResource(R.string.today)) }) },
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = onAddReminder,
                 icon = { Icon(Icons.Filled.Add, contentDescription = null) },
-                text = { Text("Add") }
+                text = { Text(stringResource(R.string.add)) }
             )
         }
     ) { padding ->
@@ -46,9 +51,9 @@ fun TodayScreen(
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Icon(Icons.Filled.Notifications, contentDescription = null, modifier = Modifier.size(64.dp))
                     Spacer(Modifier.height(12.dp))
-                    Text("No reminders yet", style = MaterialTheme.typography.titleMedium)
+                    Text(stringResource(R.string.today_empty_title), style = MaterialTheme.typography.titleMedium)
                     Spacer(Modifier.height(4.dp))
-                    Text("Tap Add to create your first one.", color = MaterialTheme.colorScheme.outline)
+                    Text(stringResource(R.string.today_empty_subtitle), color = MaterialTheme.colorScheme.outline)
                 }
             }
         } else {
@@ -60,6 +65,7 @@ fun TodayScreen(
                 items(items, key = { it.reminder.id }) { item ->
                     ReminderRow(
                         item = item,
+                        subtitle = subtitle(ctx, item),
                         onDone = { vm.markDone(item.reminder.id) },
                         onClick = { onEditReminder(item.reminder.id) }
                     )
@@ -72,6 +78,7 @@ fun TodayScreen(
 @Composable
 private fun ReminderRow(
     item: TodayItem,
+    subtitle: String,
     onDone: () -> Unit,
     onClick: () -> Unit,
 ) {
@@ -106,34 +113,35 @@ private fun ReminderRow(
             Column(Modifier.weight(1f)) {
                 Text(item.reminder.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 Text(
-                    text = subtitle(item),
+                    text = subtitle,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.outline
                 )
             }
             Spacer(Modifier.width(8.dp))
-            Button(onClick = onDone) { Text("Done") }
+            Button(onClick = onDone) { Text(stringResource(R.string.done)) }
         }
     }
 }
 
-private fun subtitle(item: TodayItem): String {
+private fun subtitle(ctx: android.content.Context, item: TodayItem): String {
     val r = item.reminder
-    val prefix = "${item.group.name} • "
-    val time = r.nextFireAt?.let { formatFireTime(it) } ?: "no next fire"
-    val active = if (item.isActive) " • firing now" else ""
-    return prefix + time + active
+    val sep = " • "
+    val time = r.nextFireAt?.let { formatFireTime(ctx, it) } ?: ctx.getString(R.string.today_no_next_fire)
+    val active = if (item.isActive) sep + ctx.getString(R.string.today_firing_now) else ""
+    return item.group.name + sep + time + active
 }
 
-private fun formatFireTime(ms: Long): String {
+private fun formatFireTime(ctx: android.content.Context, ms: Long): String {
+    val locale = Locale.getDefault()
     val dt = LocalDateTime.ofInstant(Instant.ofEpochMilli(ms), ZoneId.systemDefault())
     val today = LocalDateTime.now()
     val sameDay = dt.toLocalDate() == today.toLocalDate()
     val tomorrow = dt.toLocalDate() == today.toLocalDate().plusDays(1)
-    val timeStr = dt.format(DateTimeFormatter.ofPattern("HH:mm"))
+    val timeStr = dt.format(DateTimeFormatter.ofPattern("HH:mm", locale))
     return when {
-        sameDay -> "Today $timeStr"
-        tomorrow -> "Tomorrow $timeStr"
-        else -> dt.format(DateTimeFormatter.ofPattern("EEE d MMM HH:mm"))
+        sameDay -> ctx.getString(R.string.time_today_at, timeStr)
+        tomorrow -> ctx.getString(R.string.time_tomorrow_at, timeStr)
+        else -> dt.format(DateTimeFormatter.ofPattern("EEE d MMM HH:mm", locale))
     }
 }

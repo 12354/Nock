@@ -15,12 +15,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.content.Context
 import androidx.lifecycle.lifecycleScope
+import app.nock.android.R
 import app.nock.android.data.NockRepository
 import app.nock.android.domain.escalation.EscalationEngine
+import app.nock.android.ui.LocaleHelper
 import app.nock.android.ui.theme.NockTheme
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -32,6 +36,10 @@ class AlarmActivity : ComponentActivity() {
 
     @Inject lateinit var repo: NockRepository
     @Inject lateinit var engine: EscalationEngine
+
+    override fun attachBaseContext(newBase: Context) {
+        super.attachBaseContext(LocaleHelper.wrap(newBase))
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -54,7 +62,7 @@ class AlarmActivity : ComponentActivity() {
         val escalationId = intent.getLongExtra(IntentExtras.EXTRA_ESCALATION_ID, -1L)
         val reminderId = intent.getLongExtra(IntentExtras.EXTRA_REMINDER_ID, -1L)
 
-        val nameState = MutableStateFlow("Alarm")
+        val nameState = MutableStateFlow(getString(R.string.alarm_title))
         val groupNameState = MutableStateFlow("")
         lifecycleScope.launch {
             val r = repo.getReminder(reminderId)
@@ -143,7 +151,7 @@ private fun AlarmScreen(
                         .fillMaxWidth()
                         .height(72.dp)
                 ) {
-                    Text("Done", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.done), fontSize = 22.sp, fontWeight = FontWeight.Bold)
                 }
                 OutlinedButton(
                     onClick = onSnooze,
@@ -151,7 +159,7 @@ private fun AlarmScreen(
                         .fillMaxWidth()
                         .height(56.dp)
                 ) {
-                    Text("Snooze 10 min", fontSize = 18.sp)
+                    Text(stringResource(R.string.snooze_10_min), fontSize = 18.sp)
                 }
             }
         }

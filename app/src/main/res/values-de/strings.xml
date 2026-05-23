@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Nock</string>
+
+    <!-- Common -->
+    <string name="today">Heute</string>
+    <string name="reminders">Erinnerungen</string>
+    <string name="settings">Einstellungen</string>
+    <string name="done">Erledigt</string>
+    <string name="snooze">Schlummern</string>
+    <string name="add">Hinzufügen</string>
+    <string name="save">Speichern</string>
+    <string name="cancel">Abbrechen</string>
+    <string name="delete">Löschen</string>
+    <string name="edit">Bearbeiten</string>
+    <string name="remove">Entfernen</string>
+    <string name="back">Zurück</string>
+    <string name="move_up">Nach oben</string>
+    <string name="move_down">Nach unten</string>
+
+    <!-- Notification channels -->
+    <string name="channel_silent_name">Stille Erinnerungen</string>
+    <string name="channel_silent_desc">Leise Hinweise ohne Ton.</string>
+    <string name="channel_normal_name">Normale Erinnerungen</string>
+    <string name="channel_normal_desc">Standardton und Vibration für Erinnerungen.</string>
+    <string name="channel_alarm_name">Laute Alarme</string>
+    <string name="channel_alarm_desc">Wichtige Alarme, die „Nicht stören" durchbrechen.</string>
+    <string name="channel_service_name">Alarmdienst</string>
+    <string name="channel_service_desc">Hält den aktiven Alarmton am Laufen.</string>
+
+    <!-- Today screen -->
+    <string name="today_empty_title">Noch keine Erinnerungen</string>
+    <string name="today_empty_subtitle">Tippe auf „Hinzufügen", um deine erste zu erstellen.</string>
+    <string name="today_no_next_fire">kein nächster Termin</string>
+    <string name="today_firing_now">läuft jetzt</string>
+    <string name="time_today_at">Heute %1$s</string>
+    <string name="time_tomorrow_at">Morgen %1$s</string>
+
+    <!-- Reminders screen -->
+    <string name="resume">Fortsetzen</string>
+    <string name="pause">Pausieren</string>
+    <string name="reminders_empty_group">Keine Erinnerungen in dieser Gruppe.</string>
+    <string name="schedule_once">Einmalig</string>
+    <string name="schedule_daily_at">Täglich um %1$s</string>
+    <string name="schedule_days_at">%1$s um %2$s</string>
+    <string name="schedule_monthly_at">Monatlich am %1$d. um %2$s</string>
+    <string name="schedule_every_h_after_done">Alle %1$s Std. nach letztem Erledigt</string>
+    <string name="schedule_every_min_after_done">Alle %1$d Min. nach letztem Erledigt</string>
+
+    <!-- Edit reminder screen -->
+    <string name="edit_title_new">Neue Erinnerung</string>
+    <string name="edit_title_edit">Erinnerung bearbeiten</string>
+    <string name="edit_quick_add_label">Schnell hinzufügen (natürliche Sprache)</string>
+    <string name="edit_quick_add_placeholder">z. B. Hund füttern jeden Tag um 8 und 18 Uhr — Haustiere</string>
+    <string name="edit_parsed_prefix">Erkannt: %1$s</string>
+    <string name="edit_name_label">Name</string>
+    <string name="edit_group_label">Gruppe</string>
+    <string name="edit_schedule_label">Zeitplan</string>
+    <string name="schedule_kind_once">Einmalig</string>
+    <string name="schedule_kind_daily">Täglich</string>
+    <string name="schedule_kind_weekly">Wöchentlich</string>
+    <string name="schedule_kind_monthly">Monatlich</string>
+    <string name="schedule_kind_interval">Intervall</string>
+    <string name="edit_date_time_label">Datum &amp; Uhrzeit</string>
+    <string name="edit_times_label">Uhrzeiten</string>
+    <string name="edit_add_time">Zeit hinzufügen</string>
+    <string name="edit_days_label">Tage</string>
+    <string name="edit_monthly_label">Monatlich</string>
+    <string name="edit_day_label">Tag</string>
+    <string name="edit_at_time">um %1$s</string>
+    <string name="edit_interval_label">Intervall nach letztem „Erledigt"</string>
+    <string name="edit_hours_label">Stunden</string>
+
+    <!-- Settings: escalation chain -->
+    <string name="settings_escalation_chain_title">Eskalationskette (globaler Standard)</string>
+    <string name="settings_add_stage">Stufe hinzufügen:</string>
+    <string name="settings_repeat_interval_label">Wiederholintervall der letzten Stufe (Minuten)</string>
+    <string name="settings_offset_label">Versatz (Min)</string>
+
+    <!-- Settings: groups -->
+    <string name="settings_groups_title">Gruppen</string>
+    <string name="settings_group_custom_chain">eigene Kette</string>
+    <string name="settings_group_default_chain">Standardkette</string>
+    <string name="settings_mirror_silent_telegram">Stille Stufe an Telegram spiegeln</string>
+    <string name="settings_custom_chain_toggle">Eigene Eskalationskette</string>
+    <string name="settings_override_chain">Überschreibende Kette</string>
+    <string name="settings_done_editing_group">Gruppenbearbeitung beenden</string>
+
+    <!-- Settings: telegram -->
+    <string name="settings_telegram_title">Telegram-Bot</string>
+    <string name="settings_telegram_token">Bot-Token</string>
+    <string name="settings_telegram_chat_id">Chat-ID</string>
+    <string name="settings_test_send">Test senden</string>
+    <string name="telegram_test_message">🔔 Nock Testnachricht</string>
+    <string name="status_telegram_ok">Telegram: OK</string>
+    <string name="status_telegram_error">Telegram: Fehler — %1$s</string>
+
+    <!-- Settings: Drive -->
+    <string name="settings_drive_title">Google Drive (App-Ordner)</string>
+    <string name="settings_not_signed_in">Nicht angemeldet.</string>
+    <string name="sign_in">Anmelden</string>
+    <string name="settings_signed_in_as">Angemeldet als %1$s</string>
+    <string name="settings_push_now">Jetzt hochladen</string>
+    <string name="settings_pull_now">Jetzt abrufen</string>
+    <string name="sign_out">Abmelden</string>
+    <string name="settings_last_sync">Letzte Synchronisierung: %1$s</string>
+    <string name="status_drive_ok">Drive: OK</string>
+    <string name="status_drive_sign_in_required">Drive: Anmeldung erforderlich</string>
+    <string name="status_drive_error">Drive: %1$s</string>
+
+    <!-- Settings: language -->
+    <string name="settings_language_title">Sprache</string>
+    <string name="language_system_default">Systemstandard</string>
+    <string name="language_english">English</string>
+    <string name="language_german">Deutsch</string>
+
+    <!-- Alarm screen / notifications -->
+    <string name="alarm_title">Alarm</string>
+    <string name="snooze_10_min">10 Min. schlummern</string>
+    <string name="notification_alarm_suffix">%1$s — Alarm</string>
+
+    <!-- Stage types (StageType enum) -->
+    <string name="stage_type_silent">Leise</string>
+    <string name="stage_type_normal">Normal</string>
+    <string name="stage_type_alarm">Alarm</string>
+    <string name="stage_type_telegram">Telegram</string>
+
+    <!-- NL parser preview / fallbacks -->
+    <string name="nl_preview_oneshot">einmalig</string>
+    <string name="nl_preview_daily">täglich um %1$s</string>
+    <string name="nl_preview_weekly">wöchentlich am %1$s</string>
+    <string name="nl_preview_monthly">monatlich am %1$d.</string>
+    <string name="nl_preview_interval">alle %1$d Std.</string>
+    <string name="default_reminder_name">Erinnerung</string>
+</resources>

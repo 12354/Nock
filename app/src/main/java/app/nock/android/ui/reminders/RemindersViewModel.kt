@@ -47,7 +47,8 @@ class RemindersViewModel @Inject constructor(
 
     fun pauseGroup(g: Group, durationMs: Long?) {
         viewModelScope.launch {
-            val until = durationMs?.let { System.currentTimeMillis() + it }
+            val until = if (durationMs == null) Long.MAX_VALUE
+            else System.currentTimeMillis() + durationMs
             repo.setGroupPause(g.id, until)
         }
     }

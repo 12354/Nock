@@ -3,6 +3,8 @@ package app.nock.android.voice
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
@@ -67,12 +69,15 @@ class SpeechToTextManager @Inject constructor(
 
         var resolved = false
         var stopRequested = false
+        var restartScheduled = false
         val transcript = VoiceTranscriptBuffer()
         var recognizer: SpeechRecognizer? = null
+        val handler = Handler(Looper.getMainLooper())
 
         fun resolve(r: SpeechResult) {
             if (resolved) return
             resolved = true
+            handler.removeCallbacksAndMessages(null)
             try { recognizer?.destroy() } catch (_: Throwable) {}
             recognizer = null
             onResult(r)
@@ -82,6 +87,8 @@ class SpeechToTextManager @Inject constructor(
             val text = transcript.current()
             resolve(if (text.isBlank()) SpeechResult.Cancelled else SpeechResult.Final(text))
         }
+
+        var scheduleRestart: ((SpeechRecognizer) -> Unit)? = null
 
         fun startInner() {
             if (resolved) return
@@ -114,21 +121,28 @@ class SpeechToTextManager @Inject constructor(
                         resolveFinal()
                     } else {
                         // Recognizer auto-ended on silence, but the user is still holding the
-                        // button. Tear down and restart so recording continues.
-                        try { rec.destroy() } catch (_: Throwable) {}
-                        startInner()
+                        // button. Schedule a restart on the next main-loop tick so the old
+                        // instance can fully release its audio session — restarting
+                        // synchronously from inside this callback races against the teardown
+                        // and trips ERROR_RECOGNIZER_BUSY / ERROR_CLIENT on many devices.
+                        scheduleRestart?.invoke(rec)
                     }
                 }
 
                 override fun onError(error: Int) {
-                    val recoverable = error == SpeechRecognizer.ERROR_NO_MATCH ||
-                        error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT
+                    val recoverable = when (error) {
+                        SpeechRecognizer.ERROR_NO_MATCH,
+                        SpeechRecognizer.ERROR_SPEECH_TIMEOUT,
+                        SpeechRecognizer.ERROR_RECOGNIZER_BUSY,
+                        SpeechRecognizer.ERROR_CLIENT,
+                        SpeechRecognizer.ERROR_AUDIO -> true
+                        else -> false
+                    }
                     if (recoverable) {
                         transcript.commit("")
                         onPartial(transcript.current())
                         if (!stopRequested) {
-                            try { rec.destroy() } catch (_: Throwable) {}
-                            startInner()
+                            scheduleRestart?.invoke(rec)
                         } else {
                             resolveFinal()
                         }
@@ -146,11 +160,24 @@ class SpeechToTextManager @Inject constructor(
             }
         }
 
+        scheduleRestart = { rec ->
+            if (!resolved && !stopRequested && !restartScheduled) {
+                restartScheduled = true
+                try { rec.destroy() } catch (_: Throwable) {}
+                if (recognizer === rec) recognizer = null
+                handler.postDelayed({
+                    restartScheduled = false
+                    if (!resolved && !stopRequested) startInner()
+                }, RESTART_DELAY_MS)
+            }
+        }
+
         startInner()
 
         return object : Session {
             override fun stop() {
                 stopRequested = true
+                handler.removeCallbacksAndMessages(null)
                 val rec = recognizer ?: run { resolveFinal(); return }
                 try {
                     rec.stopListening()
@@ -160,6 +187,7 @@ class SpeechToTextManager @Inject constructor(
             }
             override fun cancel() {
                 stopRequested = true
+                handler.removeCallbacksAndMessages(null)
                 try { recognizer?.cancel() } catch (_: Throwable) {}
                 resolve(SpeechResult.Cancelled)
             }
@@ -169,6 +197,13 @@ class SpeechToTextManager @Inject constructor(
     private object NoopSession : Session {
         override fun stop() {}
         override fun cancel() {}
+    }
+
+    private companion object {
+        // Small gap between teardown and the next startListening so the previous
+        // recognizer can release the audio session — without it, fast restarts
+        // race the teardown and trip ERROR_RECOGNIZER_BUSY on many OEMs.
+        const val RESTART_DELAY_MS = 75L
     }
 
     private fun errorToMessage(code: Int): String = when (code) {

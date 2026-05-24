@@ -131,7 +131,7 @@ private fun AlarmScreen(
     val ctx = LocalContext.current
     Surface(
         modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.errorContainer
+        color = Color.Black
     ) {
         Column(
             modifier = Modifier
@@ -146,21 +146,21 @@ private fun AlarmScreen(
                     Icons.Filled.Alarm,
                     contentDescription = null,
                     modifier = Modifier.size(96.dp),
-                    tint = MaterialTheme.colorScheme.onErrorContainer
+                    tint = Color.White
                 )
                 Spacer(Modifier.height(24.dp))
                 Text(
                     text = name,
                     fontSize = 36.sp,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onErrorContainer
+                    color = Color.White
                 )
                 if (groupName.isNotBlank()) {
                     Spacer(Modifier.height(8.dp))
                     Text(
                         text = groupName,
                         fontSize = 18.sp,
-                        color = MaterialTheme.colorScheme.onErrorContainer
+                        color = Color.White
                     )
                 }
             }
@@ -183,7 +183,7 @@ private fun AlarmScreen(
                         .fillMaxWidth()
                         .height(56.dp)
                 ) {
-                    Text(stringResource(R.string.snooze_10_min), fontSize = 18.sp)
+                    Text(stringResource(R.string.snooze_10_min), fontSize = 18.sp, color = Color.White)
                 }
             }
         }

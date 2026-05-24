@@ -21,6 +21,20 @@ data class EscalationChain(
     val lastIndex: Int get() = stages.size - 1
 
     fun stage(index: Int): StageConfig = stages[index]
+
+    /**
+     * Index of the latest stage whose offset is <= elapsed time since startedAt.
+     * If no stage has yet come due (we're earlier than every offset), returns 0
+     * so the chain starts at the earliest stage rather than failing.
+     */
+    fun stageDueAt(startedAtMs: Long, nowMs: Long): Int {
+        val elapsed = nowMs - startedAtMs
+        var idx = 0
+        for (i in stages.indices) {
+            if (stages[i].offsetMs <= elapsed) idx = i
+        }
+        return idx
+    }
 }
 
 object DefaultChain {

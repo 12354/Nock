@@ -42,14 +42,19 @@ class EscalationEngine @Inject constructor(
         val now = System.currentTimeMillis()
         if (group.isPaused(now)) return
 
-        val firstStage = chain.stages.first()
+        // If the user schedules an alarm whose early stages are already in
+        // the past (e.g. SILENT @ -10min when the alarm is only 2min away),
+        // jump straight to the latest stage that is already due. Otherwise
+        // those skipped stages would all fire immediately as a burst.
+        val firstIdx = chain.stageDueAt(scheduledAtMs, now)
+        val firstStage = chain.stage(firstIdx)
         val firstFire = max(scheduledAtMs + firstStage.offsetMs, now + 1_000L)
 
         val ent = ActiveEscalationEntity(
             id = 0,
             reminderId = reminder.id,
             startedAtMs = scheduledAtMs,
-            nextStageIndex = 0,
+            nextStageIndex = firstIdx,
             nextFireAtMs = firstFire,
             chainSnapshotJson = ChainJson.encode(chain),
             repeatIntervalMs = chain.repeatIntervalMs
@@ -89,7 +94,15 @@ class EscalationEngine @Inject constructor(
         val chain = runCatching { ChainJson.decode(esc.chainSnapshotJson) }.getOrNull()
             ?: settings.getStageChain()
 
-        val idx = esc.nextStageIndex.coerceIn(0, chain.lastIndex)
+        val now = System.currentTimeMillis()
+        // The stage to fire is the latest one due at `now`, never behind the
+        // stored cursor. This catches up correctly when the OS delivers an
+        // alarm late (Doze, system busy, boot replay, etc.) — instead of
+        // showing whatever earlier stage was queued, we jump to the stage
+        // the user should currently be seeing based on elapsed time.
+        val storedIdx = esc.nextStageIndex.coerceIn(0, chain.lastIndex)
+        val dueIdx = chain.stageDueAt(esc.startedAtMs, now)
+        val idx = max(storedIdx, dueIdx).coerceAtMost(chain.lastIndex)
         val stage = chain.stage(idx)
 
         when (stage.type) {
@@ -106,7 +119,6 @@ class EscalationEngine @Inject constructor(
         }
 
         val isLast = idx == chain.lastIndex
-        val now = System.currentTimeMillis()
         if (isLast) {
             val nextAt = now + chain.repeatIntervalMs
             val updated = esc.copy(nextStageIndex = idx, nextFireAtMs = nextAt)

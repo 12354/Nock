@@ -1,11 +1,8 @@
 package app.nock.android.alarm
 
-import android.app.Notification
-import android.app.NotificationManager
-import android.app.PendingIntent
 import android.app.Service
-import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.media.AudioAttributes
 import android.media.MediaPlayer
 import android.media.RingtoneManager
@@ -13,13 +10,12 @@ import android.net.Uri
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
-import androidx.core.app.NotificationCompat
+import androidx.core.app.ServiceCompat
 import androidx.core.content.getSystemService
 import app.nock.android.R
 import app.nock.android.data.SettingsRepository
 import app.nock.android.data.dao.ActiveEscalationDao
-import app.nock.android.notif.Channels
-import app.nock.android.ui.MainActivity
+import app.nock.android.notif.NotificationPresenter
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -33,6 +29,7 @@ class AlarmService : Service() {
 
     @Inject lateinit var settings: SettingsRepository
     @Inject lateinit var activeDao: ActiveEscalationDao
+    @Inject lateinit var notifier: NotificationPresenter
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var player: MediaPlayer? = null
@@ -48,9 +45,32 @@ class AlarmService : Service() {
         }
         val escalationId = intent?.getLongExtra(IntentExtras.EXTRA_ESCALATION_ID, -1L) ?: -1L
         val reminderId = intent?.getLongExtra(IntentExtras.EXTRA_REMINDER_ID, -1L) ?: -1L
-        // Promote to foreground synchronously so the activity launch below counts
-        // as foreground-initiated (mediaPlayback FGS is exempt from BAL).
-        startForeground(SERVICE_NOTIFICATION_ID, buildServiceNotification(escalationId))
+        val reminderName = intent?.getStringExtra(IntentExtras.EXTRA_REMINDER_NAME)
+            ?: getString(R.string.alarm_title)
+        val groupName = intent?.getStringExtra(IntentExtras.EXTRA_GROUP_NAME).orEmpty()
+
+        // Promote to foreground synchronously with the alarm notification itself
+        // so it's bound to the running service — that's what makes it ongoing
+        // and effectively undismissable while the alarm is ringing. The
+        // mediaPlayback FGS type is also what exempts us from BAL restrictions
+        // when launching the full-screen activity below.
+        val notification = notifier.buildAlarmNotification(
+            escalationId = escalationId,
+            reminderId = reminderId,
+            reminderName = reminderName,
+            groupName = groupName
+        )
+        val notificationId = if (escalationId >= 0L) escalationId.toInt() else FALLBACK_NOTIFICATION_ID
+        ServiceCompat.startForeground(
+            this,
+            notificationId,
+            notification,
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+        )
+
+        ringingEscalationId = if (escalationId >= 0L) escalationId else null
+        ringingReminderId = if (reminderId >= 0L) reminderId else null
+
         scope.launch {
             // Guard against a stale start: Done/Snooze may have already removed
             // the escalation by the time the system delivers our start command,
@@ -134,25 +154,9 @@ class AlarmService : Service() {
         }
     }
 
-    private fun buildServiceNotification(escalationId: Long): Notification {
-        val openIntent = Intent(this, MainActivity::class.java).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-        val openPI = PendingIntent.getActivity(
-            this, 0, openIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-        return NotificationCompat.Builder(this, Channels.SERVICE)
-            .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle(getString(R.string.app_name))
-            .setContentText(getString(R.string.channel_service_desc))
-            .setOngoing(true)
-            .setSilent(true)
-            .setContentIntent(openPI)
-            .build()
-    }
-
     private fun stopAndDie() {
+        ringingEscalationId = null
+        ringingReminderId = null
         try { player?.stop() } catch (_: Throwable) {}
         player?.release()
         player = null
@@ -170,6 +174,8 @@ class AlarmService : Service() {
     }
 
     override fun onDestroy() {
+        ringingEscalationId = null
+        ringingReminderId = null
         try { player?.stop() } catch (_: Throwable) {}
         player?.release()
         wakeLock?.takeIf { it.isHeld }?.release()
@@ -179,6 +185,24 @@ class AlarmService : Service() {
     }
 
     companion object {
-        private const val SERVICE_NOTIFICATION_ID = 0xA1A2
+        private const val FALLBACK_NOTIFICATION_ID = 0xA1A2
+
+        // Tracks the currently-ringing alarm so MainActivity can re-launch
+        // the full-screen view if the user navigated away from it (e.g. via
+        // Home) while the alarm is still ringing.
+        @Volatile var ringingEscalationId: Long? = null
+            private set
+        @Volatile var ringingReminderId: Long? = null
+            private set
+
+        // Called when the engine decides the alarm should stop (Done/Snooze).
+        // Must clear synchronously so MainActivity.onResume — which can fire
+        // immediately after the alarm activity finishes — doesn't see stale
+        // ringing state and bounce the user back into the alarm screen
+        // before Service.onDestroy gets a chance to run.
+        fun clearRingingState() {
+            ringingEscalationId = null
+            ringingReminderId = null
+        }
     }
 }

@@ -13,6 +13,9 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.getSystemService
+import app.nock.android.alarm.AlarmActivity
+import app.nock.android.alarm.AlarmService
+import app.nock.android.alarm.IntentExtras
 import app.nock.android.ui.theme.NockTheme
 import dagger.hilt.android.AndroidEntryPoint
 
@@ -35,6 +38,23 @@ class MainActivity : ComponentActivity() {
             NockTheme {
                 NockApp()
             }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // If an alarm is currently ringing, the full-screen alarm view should
+        // always be on top — re-launch it in case the user navigated away
+        // (e.g. via Home) or its full-screen intent was suppressed earlier.
+        val escalationId = AlarmService.ringingEscalationId
+        val reminderId = AlarmService.ringingReminderId
+        if (escalationId != null) {
+            val intent = Intent(this, AlarmActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                putExtra(IntentExtras.EXTRA_ESCALATION_ID, escalationId)
+                if (reminderId != null) putExtra(IntentExtras.EXTRA_REMINDER_ID, reminderId)
+            }
+            runCatching { startActivity(intent) }
         }
     }
 

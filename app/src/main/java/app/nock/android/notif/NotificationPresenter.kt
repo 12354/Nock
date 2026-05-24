@@ -1,5 +1,6 @@
 package app.nock.android.notif
 
+import android.app.Notification
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
@@ -42,10 +43,29 @@ class NotificationPresenter @Inject constructor(
     }
 
     fun showAlarm(reminder: Reminder, group: Group, escalationId: Long) {
+        // The alarm notification is posted by AlarmService.startForeground() so
+        // it's bound to the running foreground service — that keeps it ongoing
+        // and effectively undismissable while the alarm is ringing. The service
+        // also re-launches the full-screen activity for the same alarm.
+        val svc = Intent(ctx, AlarmService::class.java).apply {
+            putExtra(IntentExtras.EXTRA_ESCALATION_ID, escalationId)
+            putExtra(IntentExtras.EXTRA_REMINDER_ID, reminder.id)
+            putExtra(IntentExtras.EXTRA_REMINDER_NAME, reminder.name)
+            putExtra(IntentExtras.EXTRA_GROUP_NAME, group.name)
+        }
+        androidx.core.content.ContextCompat.startForegroundService(ctx, svc)
+    }
+
+    fun buildAlarmNotification(
+        escalationId: Long,
+        reminderId: Long,
+        reminderName: String,
+        groupName: String
+    ): Notification {
         val fullScreen = Intent(ctx, AlarmActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             putExtra(IntentExtras.EXTRA_ESCALATION_ID, escalationId)
-            putExtra(IntentExtras.EXTRA_REMINDER_ID, reminder.id)
+            putExtra(IntentExtras.EXTRA_REMINDER_ID, reminderId)
         }
         val fullScreenPI = PendingIntent.getActivity(
             ctx,
@@ -53,25 +73,15 @@ class NotificationPresenter @Inject constructor(
             fullScreen,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        val notif = baseBuilder(reminder, group, escalationId, Channels.ALARM)
-            .setContentText(ctx.getString(R.string.notification_alarm_suffix, group.name))
+        return alarmActionsBuilder(escalationId, reminderName)
+            .setContentText(ctx.getString(R.string.notification_alarm_suffix, groupName))
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setOngoing(true)
             .setFullScreenIntent(fullScreenPI, true)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             .build()
-        nm.notify(escalationId.toInt(), notif)
-
-        // The foreground AlarmService is the reliable launcher for the full-screen
-        // activity: its `mediaPlayback` type lets it start an activity from the
-        // background once it's promoted via startForeground(). The notification's
-        // full-screen intent above is the redundant lock-screen path.
-        val svc = Intent(ctx, AlarmService::class.java).apply {
-            putExtra(IntentExtras.EXTRA_ESCALATION_ID, escalationId)
-            putExtra(IntentExtras.EXTRA_REMINDER_ID, reminder.id)
-        }
-        androidx.core.content.ContextCompat.startForegroundService(ctx, svc)
     }
 
     fun cancel(escalationId: Long) {
@@ -83,6 +93,7 @@ class NotificationPresenter @Inject constructor(
     }
 
     fun stopAlarm() {
+        AlarmService.clearRingingState()
         val stop = Intent(ctx, AlarmService::class.java).apply {
             action = IntentExtras.ACTION_STOP_ALARM
         }
@@ -94,6 +105,12 @@ class NotificationPresenter @Inject constructor(
         group: Group,
         escalationId: Long,
         channelId: String
+    ): NotificationCompat.Builder = alarmActionsBuilder(escalationId, reminder.name, channelId)
+
+    private fun alarmActionsBuilder(
+        escalationId: Long,
+        reminderName: String,
+        channelId: String = Channels.ALARM
     ): NotificationCompat.Builder {
         val doneIntent = Intent(ctx, NotificationActionReceiver::class.java).apply {
             putExtra(IntentExtras.EXTRA_ACTION, IntentExtras.ACTION_DONE)
@@ -124,7 +141,7 @@ class NotificationPresenter @Inject constructor(
         )
         return NotificationCompat.Builder(ctx, channelId)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle(reminder.name)
+            .setContentTitle(reminderName)
             .setAutoCancel(false)
             .setOnlyAlertOnce(false)
             .setContentIntent(tapPI)

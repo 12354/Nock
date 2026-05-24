@@ -7,6 +7,7 @@ package app.nock.android.ui.settings
 
 import android.app.Activity
 import android.content.Intent
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -411,9 +412,22 @@ private fun TelegramSection(token: String, chat: String, status: String?, vm: Se
 private fun DriveSection(email: String?, lastSyncMs: Long?, status: String?, vm: SettingsViewModel) {
     val ctx = LocalContext.current
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == Activity.RESULT_CANCELED && result.data == null) {
+            vm.setDriveStatus(ctx.getString(R.string.status_drive_sign_in_cancelled))
+            return@rememberLauncherForActivityResult
+        }
         val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
         runCatching { task.getResult(com.google.android.gms.common.api.ApiException::class.java) }
-            .onSuccess { acc -> vm.setDriveEmail(acc.email) }
+            .onSuccess { acc ->
+                vm.setDriveEmail(acc.email)
+                vm.setDriveStatus(null)
+            }
+            .onFailure { e ->
+                val code = (e as? com.google.android.gms.common.api.ApiException)?.statusCode
+                val detail = if (code != null) "code $code: ${e.message ?: ""}" else (e.message ?: e::class.simpleName ?: "unknown")
+                Log.w("DriveSignIn", "Google sign-in failed: $detail", e)
+                vm.setDriveStatus(ctx.getString(R.string.status_drive_sign_in_failed, detail))
+            }
     }
     SectionCard(stringResource(R.string.settings_drive_title)) {
         if (email == null) {
@@ -425,7 +439,11 @@ private fun DriveSection(email: String?, lastSyncMs: Long?, status: String?, vm:
                     .requestScopes(Scope(DriveScopes.DRIVE_APPDATA))
                     .build()
                 val client = GoogleSignIn.getClient(ctx, gso)
-                launcher.launch(client.signInIntent)
+                // Sign out first so a cached account with a stale/invalid grant doesn't make the
+                // picker close with no observable effect.
+                client.signOut().addOnCompleteListener {
+                    launcher.launch(client.signInIntent)
+                }
             }) { Text(stringResource(R.string.sign_in)) }
         } else {
             Text(stringResource(R.string.settings_signed_in_as, email))

@@ -107,6 +107,8 @@
     <string name="status_drive_ok">Drive: OK</string>
     <string name="status_drive_sign_in_required">Drive: Anmeldung erforderlich</string>
     <string name="status_drive_error">Drive: %1$s</string>
+    <string name="status_drive_sign_in_failed">Anmeldung fehlgeschlagen — %1$s</string>
+    <string name="status_drive_sign_in_cancelled">Anmeldung abgebrochen.</string>
 
     <!-- Settings: language -->
     <string name="settings_language_title">Sprache</string>

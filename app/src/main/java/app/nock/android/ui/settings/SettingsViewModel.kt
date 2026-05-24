@@ -102,6 +102,10 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    fun setDriveStatus(message: String?) {
+        statusFlow.value = (statusFlow.value.first to message)
+    }
+
     fun syncPush() = runDrive { drive.pushSnapshot() }
     fun syncPull() = runDrive { drive.pullIfNewer() }
 

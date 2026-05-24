@@ -107,6 +107,8 @@
     <string name="status_drive_ok">Drive: OK</string>
     <string name="status_drive_sign_in_required">Drive: sign in required</string>
     <string name="status_drive_error">Drive: %1$s</string>
+    <string name="status_drive_sign_in_failed">Sign-in failed — %1$s</string>
+    <string name="status_drive_sign_in_cancelled">Sign-in cancelled.</string>
 
     <!-- Settings: language -->
     <string name="settings_language_title">Language</string>

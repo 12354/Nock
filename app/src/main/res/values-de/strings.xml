@@ -141,6 +141,32 @@
     <string name="nl_preview_on_unlock">beim Entsperren des Geräts</string>
     <string name="default_reminder_name">Erinnerung</string>
 
+    <!-- Voice alarm -->
+    <string name="voice_idle_prompt">Mikrofon halten und Alarm beschreiben</string>
+    <string name="voice_listening">Höre zu…</string>
+    <string name="voice_thinking">Erinnerung wird erstellt…</string>
+    <string name="voice_hold_hint">z. B. „Erinnere mich, jeden Dienstag um 20 Uhr den Müll rauszubringen"</string>
+    <string name="voice_success_prefix">Erstellt: %1$s</string>
+    <string name="voice_error_prefix">Sprachfehler: %1$s</string>
+    <string name="voice_error_empty_transcript">Keine Sprache erkannt</string>
+    <string name="voice_error_no_groups">Keine Gruppen vorhanden — erst eine anlegen</string>
+    <string name="voice_error_bad_json">Modellantwort konnte nicht gelesen werden</string>
+    <string name="voice_error_bad_schedule">Konnte daraus keinen Zeitplan erzeugen</string>
+    <string name="voice_error_missing_field">Modellantwort fehlt Feld: %1$s</string>
+    <string name="voice_error_unknown_schedule">Unbekannter Zeitplantyp: %1$s</string>
+    <string name="voice_error_save_failed">Erinnerung konnte nicht gespeichert werden</string>
+
+    <!-- Voice alarm widget -->
+    <string name="widget_voice_alarm_label">Sprach-Alarm</string>
+    <string name="widget_voice_alarm_description">Gedrückt halten, um einen Sprach-Alarm aufzunehmen</string>
+
+    <!-- Settings: DeepSeek -->
+    <string name="settings_deepseek_title">Sprache → KI-Alarm (DeepSeek)</string>
+    <string name="settings_deepseek_api_key">DeepSeek API-Schlüssel</string>
+    <string name="settings_deepseek_model">Modell</string>
+    <string name="settings_deepseek_base_url">Basis-URL</string>
+    <string name="settings_deepseek_help">Gesprochener Text wird auf dem Gerät transkribiert und an diesen DeepSeek-kompatiblen Endpoint gesendet, um eine Erinnerung daraus zu erzeugen.</string>
+
     <!-- Default seed group names -->
     <string name="seed_group_pets">Haustiere</string>
     <string name="seed_group_meds">Medikamente</string>

@@ -22,6 +22,12 @@ class SettingsRepository @Inject constructor(
         const val KEY_DRIVE_ACCOUNT = "drive_account"
         const val KEY_DRIVE_LAST_SYNC_MS = "drive_last_sync_ms"
         const val KEY_DRIVE_LAST_REMOTE_MS = "drive_last_remote_ms"
+        const val KEY_DEEPSEEK_API_KEY = "deepseek_api_key"
+        const val KEY_DEEPSEEK_MODEL = "deepseek_model"
+        const val KEY_DEEPSEEK_BASE_URL = "deepseek_base_url"
+
+        const val DEFAULT_DEEPSEEK_MODEL = "deepseek-v4-flash"
+        const val DEFAULT_DEEPSEEK_BASE_URL = "https://api.deepseek.com"
     }
 
     suspend fun getStageChain(): EscalationChain {

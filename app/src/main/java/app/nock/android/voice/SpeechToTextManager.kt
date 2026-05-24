@@ -23,7 +23,10 @@ sealed class SpeechResult {
  * Lifecycle: caller invokes [start] when the user presses, [stop] when they release.
  * Recording continues for as long as the session is open — if the platform recognizer
  * auto-ends on silence before [stop] is called, the manager transparently restarts it
- * and accumulates the transcript so the user can pause without losing the session.
+ * so the user can pause without losing the session. The running transcript is tracked
+ * by [VoiceTranscriptBuffer], whose contract is that the text it returns only ever
+ * grows for the lifetime of one session — pauses, partial-result regressions, and
+ * stingy onResults can never delete words the user already saw transcribed.
  *
  * Must be created and used from the main thread (SpeechRecognizer requirement).
  */
@@ -64,29 +67,8 @@ class SpeechToTextManager @Inject constructor(
 
         var resolved = false
         var stopRequested = false
-        val accumulated = StringBuilder()
-        var currentPartial = ""
+        val transcript = VoiceTranscriptBuffer()
         var recognizer: SpeechRecognizer? = null
-
-        fun combinedText(): String = buildString {
-            append(accumulated)
-            if (currentPartial.isNotBlank()) {
-                if (isNotEmpty()) append(' ')
-                append(currentPartial)
-            }
-        }.trim()
-
-        // Commit whatever the current recognizer instance produced (preferring the final
-        // text from onResults, falling back to the latest partial) into the running
-        // transcript so a brief pause never throws away what the user just said.
-        fun commitSegment(finalText: String) {
-            val text = finalText.ifBlank { currentPartial }
-            if (text.isNotBlank()) {
-                if (accumulated.isNotEmpty()) accumulated.append(' ')
-                accumulated.append(text.trim())
-            }
-            currentPartial = ""
-        }
 
         fun resolve(r: SpeechResult) {
             if (resolved) return
@@ -97,7 +79,7 @@ class SpeechToTextManager @Inject constructor(
         }
 
         fun resolveFinal() {
-            val text = combinedText()
+            val text = transcript.current()
             resolve(if (text.isBlank()) SpeechResult.Cancelled else SpeechResult.Final(text))
         }
 
@@ -105,7 +87,6 @@ class SpeechToTextManager @Inject constructor(
             if (resolved) return
             val rec = SpeechRecognizer.createSpeechRecognizer(ctx)
             recognizer = rec
-            currentPartial = ""
             rec.setRecognitionListener(object : RecognitionListener {
                 override fun onReadyForSpeech(params: Bundle?) {}
                 override fun onBeginningOfSpeech() {}
@@ -117,10 +98,9 @@ class SpeechToTextManager @Inject constructor(
                     val text = partialResults
                         ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                         ?.firstOrNull()
-                    if (!text.isNullOrBlank()) {
-                        currentPartial = text
-                        onPartial(combinedText())
-                    }
+                        .orEmpty()
+                    transcript.onPartial(text)
+                    onPartial(transcript.current())
                 }
 
                 override fun onResults(results: Bundle?) {
@@ -128,7 +108,8 @@ class SpeechToTextManager @Inject constructor(
                         ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                         ?.firstOrNull()
                         .orEmpty()
-                    commitSegment(text)
+                    transcript.commit(text)
+                    onPartial(transcript.current())
                     if (stopRequested) {
                         resolveFinal()
                     } else {
@@ -143,9 +124,8 @@ class SpeechToTextManager @Inject constructor(
                     val recoverable = error == SpeechRecognizer.ERROR_NO_MATCH ||
                         error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT
                     if (recoverable) {
-                        // The platform never delivered onResults for this segment, so the
-                        // only transcript we have is the latest partial — preserve it.
-                        commitSegment("")
+                        transcript.commit("")
+                        onPartial(transcript.current())
                         if (!stopRequested) {
                             try { rec.destroy() } catch (_: Throwable) {}
                             startInner()

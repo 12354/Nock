@@ -34,12 +34,16 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 
+// A gesture-cancel (tryAwaitRelease returning false because a parent claimed
+// the pointer, or the finger drifted off the hit area) is ambiguous: the user
+// was speaking and almost certainly wants whatever they said to be processed.
+// We always route to onPressEnd so the recognizer's transcript survives —
+// see VoiceTranscriptBuffer for the matching "never lose text" contract.
 @Composable
 fun HoldToRecordButton(
     isRecording: Boolean,
     onPressStart: () -> Unit,
     onPressEnd: () -> Unit,
-    onCancel: () -> Unit,
     enabled: Boolean = true,
     modifier: Modifier = Modifier,
     size: Dp = 72.dp,
@@ -95,8 +99,8 @@ fun HoldToRecordButton(
                             return@detectTapGestures
                         }
                         onPressStart()
-                        val released = tryAwaitRelease()
-                        if (released) onPressEnd() else onCancel()
+                        tryAwaitRelease()
+                        onPressEnd()
                     }
                 )
             },

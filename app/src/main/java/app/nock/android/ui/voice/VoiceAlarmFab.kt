@@ -64,8 +64,7 @@ fun VoiceAlarmFab(
             isRecording = state is VoiceAlarmUiState.Listening,
             enabled = state !is VoiceAlarmUiState.Thinking,
             onPressStart = { vm.startListening() },
-            onPressEnd = { vm.stopListening() },
-            onCancel = { vm.cancel() }
+            onPressEnd = { vm.stopListening() }
         )
     }
 }

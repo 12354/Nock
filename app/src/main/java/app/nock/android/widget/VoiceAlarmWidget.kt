@@ -17,13 +17,9 @@ import androidx.glance.appwidget.provideContent
 import androidx.glance.background
 import androidx.glance.layout.Alignment
 import androidx.glance.layout.Box
-import androidx.glance.layout.Column
 import androidx.glance.layout.fillMaxSize
 import androidx.glance.layout.padding
 import androidx.glance.layout.size
-import androidx.glance.text.FontWeight
-import androidx.glance.text.Text
-import androidx.glance.text.TextStyle
 import app.nock.android.R
 import app.nock.android.ui.voice.VoiceAlarmActivity
 
@@ -42,29 +38,17 @@ class VoiceAlarmWidget : GlanceAppWidget() {
         Box(
             modifier = GlanceModifier
                 .fillMaxSize()
-                .padding(8.dp)
+                .padding(4.dp)
                 .background(GlanceTheme.colors.primaryContainer)
                 .cornerRadius(20.dp)
                 .clickable(actionStartActivity<VoiceAlarmActivity>()),
             contentAlignment = Alignment.Center
         ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Image(
-                    provider = ImageProvider(R.drawable.ic_widget_mic),
-                    contentDescription = null,
-                    modifier = GlanceModifier.size(40.dp)
-                )
-                Text(
-                    text = context.getString(R.string.widget_voice_alarm_label),
-                    style = TextStyle(
-                        color = GlanceTheme.colors.onPrimaryContainer,
-                        fontWeight = FontWeight.Medium
-                    )
-                )
-            }
+            Image(
+                provider = ImageProvider(R.drawable.ic_widget_mic),
+                contentDescription = context.getString(R.string.widget_voice_alarm_label),
+                modifier = GlanceModifier.size(24.dp)
+            )
         }
     }
 }

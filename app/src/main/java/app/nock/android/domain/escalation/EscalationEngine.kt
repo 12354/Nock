@@ -43,11 +43,21 @@ class EscalationEngine @Inject constructor(
         val now = System.currentTimeMillis()
         if (group.isPaused(now)) return
 
-        // If the user schedules an alarm whose early stages are already in
-        // the past (e.g. SILENT @ -10min when the alarm is only 2min away),
-        // jump straight to the latest stage that is already due. Otherwise
-        // those skipped stages would all fire immediately as a burst.
-        val firstIdx = chain.stageDueAt(scheduledAtMs, now)
+        // OnUnlock reminders use the unlock event itself as the trigger, not
+        // as a "deadline" to warn before. Pre-trigger stages (offset ≤ 0) and
+        // the at-trigger stage would otherwise all fire seconds after unlock;
+        // skip them and start at the first strictly-future stage so the
+        // escalation actually escalates over time.
+        val firstIdx = if (reminder.schedule is Schedule.OnUnlock) {
+            val firstFuture = chain.stages.indexOfFirst { it.offsetMs > 0 }
+            if (firstFuture >= 0) firstFuture else chain.stageDueAt(scheduledAtMs, now)
+        } else {
+            // If the user schedules an alarm whose early stages are already in
+            // the past (e.g. SILENT @ -10min when the alarm is only 2min away),
+            // jump straight to the latest stage that is already due. Otherwise
+            // those skipped stages would all fire immediately as a burst.
+            chain.stageDueAt(scheduledAtMs, now)
+        }
         val firstStage = chain.stage(firstIdx)
         val firstFire = max(scheduledAtMs + firstStage.offsetMs, now + 1_000L)
 

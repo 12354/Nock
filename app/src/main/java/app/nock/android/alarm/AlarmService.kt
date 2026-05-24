@@ -17,6 +17,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.content.getSystemService
 import app.nock.android.R
 import app.nock.android.data.SettingsRepository
+import app.nock.android.data.dao.ActiveEscalationDao
 import app.nock.android.notif.Channels
 import app.nock.android.ui.MainActivity
 import dagger.hilt.android.AndroidEntryPoint
@@ -31,6 +32,7 @@ import javax.inject.Inject
 class AlarmService : Service() {
 
     @Inject lateinit var settings: SettingsRepository
+    @Inject lateinit var activeDao: ActiveEscalationDao
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var player: MediaPlayer? = null
@@ -49,11 +51,18 @@ class AlarmService : Service() {
         // Promote to foreground synchronously so the activity launch below counts
         // as foreground-initiated (mediaPlayback FGS is exempt from BAL).
         startForeground(SERVICE_NOTIFICATION_ID, buildServiceNotification(escalationId))
-        acquireWakeLock()
-        if (escalationId >= 0L) {
+        scope.launch {
+            // Guard against a stale start: Done/Snooze may have already removed
+            // the escalation by the time the system delivers our start command,
+            // and we don't want to ring or launch the full-screen activity then.
+            if (escalationId < 0L || activeDao.getById(escalationId) == null) {
+                stopAndDie()
+                return@launch
+            }
+            acquireWakeLock()
             launchAlarmActivity(escalationId, reminderId)
+            startSound()
         }
-        scope.launch { startSound() }
         // REDELIVER_INTENT so a killed alarm restarts with its original IDs.
         return START_REDELIVER_INTENT
     }

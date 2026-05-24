@@ -33,6 +33,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -98,6 +101,21 @@ private fun UpdateSection() {
     }
 
     LaunchedEffect(Unit) { doCheck() }
+
+    // The system installer is a separate activity: when the user cancels (or
+    // even completes) it, our activity resumes. If we left the UI parked on
+    // "Opening installer…" the user could never retry. Re-check on resume so
+    // the section returns to either Available (cancelled) or UpToDate (installed).
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME && updateState is UpdateState.Installing) {
+                scope.launch { doCheck() }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     SectionCard("App update") {
         when (val s = updateState) {

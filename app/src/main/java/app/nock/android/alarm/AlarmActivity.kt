@@ -23,6 +23,7 @@ import android.content.Context
 import androidx.lifecycle.lifecycleScope
 import app.nock.android.R
 import app.nock.android.data.NockRepository
+import app.nock.android.data.dao.ActiveEscalationDao
 import app.nock.android.domain.escalation.EscalationEngine
 import app.nock.android.ui.LocaleHelper
 import app.nock.android.ui.theme.NockTheme
@@ -36,6 +37,7 @@ class AlarmActivity : ComponentActivity() {
 
     @Inject lateinit var repo: NockRepository
     @Inject lateinit var engine: EscalationEngine
+    @Inject lateinit var activeDao: ActiveEscalationDao
 
     private val nameState = MutableStateFlow("")
     private val groupNameState = MutableStateFlow("")
@@ -101,6 +103,15 @@ class AlarmActivity : ComponentActivity() {
         escalationIdState.value = escalationId
         groupNameState.value = ""
         lifecycleScope.launch {
+            // Guard against stale launches: the notification's full-screen
+            // intent and AlarmService.startActivity are both queued by the
+            // system and can fire seconds after the user pressed Done on the
+            // notification. If the escalation row is already gone, don't
+            // re-show the alarm.
+            if (escalationId >= 0L && activeDao.getById(escalationId) == null) {
+                finish()
+                return@launch
+            }
             val r = if (reminderId >= 0L) repo.getReminder(reminderId) else null
             if (r != null) {
                 nameState.value = r.name

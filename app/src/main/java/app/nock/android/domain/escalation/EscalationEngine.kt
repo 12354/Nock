@@ -8,6 +8,7 @@ import app.nock.android.data.entity.ActiveEscalationEntity
 import app.nock.android.data.json.ChainJson
 import app.nock.android.domain.model.EscalationChain
 import app.nock.android.domain.model.Reminder
+import app.nock.android.domain.model.Schedule
 import app.nock.android.domain.model.StageConfig
 import app.nock.android.domain.model.StageType
 import app.nock.android.notif.NotificationPresenter
@@ -176,6 +177,20 @@ class EscalationEngine @Inject constructor(
         activeDao.delete(esc)
     }
 
+    // Triggered by UnlockReceiver. Fires any armed OnUnlock reminders by
+    // starting their escalation chain "now". Skips reminders that are
+    // already actively escalating so a re-unlock during the escalation
+    // window doesn't spawn a second chain for the same reminder.
+    suspend fun fireUnlockReminders() {
+        val now = System.currentTimeMillis()
+        repo.getAllReminders().forEach { reminder ->
+            if (reminder.schedule !is Schedule.OnUnlock) return@forEach
+            if (reminder.nextFireAt == null) return@forEach
+            if (activeDao.getByReminderId(reminder.id) != null) return@forEach
+            startEscalationAt(reminder, now)
+        }
+    }
+
     suspend fun rescheduleAll() {
         activeDao.getAll().forEach { esc ->
             val chain = runCatching { ChainJson.decode(esc.chainSnapshotJson) }.getOrNull() ?: return@forEach
@@ -183,6 +198,9 @@ class EscalationEngine @Inject constructor(
             scheduler.scheduleStage(esc.id, esc.nextFireAtMs, type)
         }
         repo.getAllReminders().forEach { reminder ->
+            // OnUnlock reminders are event-triggered, never time-triggered;
+            // boot/time changes must not fire them.
+            if (reminder.schedule is Schedule.OnUnlock) return@forEach
             val active = activeDao.getByReminderId(reminder.id)
             if (active != null) return@forEach
             val now = System.currentTimeMillis()

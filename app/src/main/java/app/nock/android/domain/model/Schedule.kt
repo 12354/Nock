@@ -53,6 +53,17 @@ sealed class Schedule {
         }
     }
 
+    // Fires the next time the device is unlocked after it was armed.
+    // nextFireFrom returns the arming timestamp as a sentinel so the row
+    // sorts naturally and rescheduleAll can tell pending from completed —
+    // actual delivery happens via UnlockReceiver, not AlarmManager.
+    data class OnUnlock(val armedAtMs: Long) : Schedule() {
+        override fun nextFireFrom(now: Long, lastCompletedAt: Long?, zone: ZoneId): Long? {
+            if (lastCompletedAt != null && lastCompletedAt >= armedAtMs) return null
+            return armedAtMs
+        }
+    }
+
     companion object {
         private fun nextDailyOrWeekly(
             now: Long,

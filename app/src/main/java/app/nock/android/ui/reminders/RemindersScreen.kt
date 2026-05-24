@@ -160,4 +160,9 @@ private fun describe(ctx: android.content.Context, r: Reminder): String = when (
         if (hrs >= 1.0) ctx.getString(R.string.schedule_every_h_after_done, "%.1f".format(hrs))
         else ctx.getString(R.string.schedule_every_min_after_done, (s.intervalMs / 60_000).toInt())
     }
+    is app.nock.android.domain.model.Schedule.OnUnlock ->
+        if (r.lastCompletedAt != null && r.lastCompletedAt >= s.armedAtMs)
+            ctx.getString(R.string.schedule_on_unlock_fired)
+        else
+            ctx.getString(R.string.schedule_on_unlock_armed)
 }

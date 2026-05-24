@@ -46,6 +46,8 @@
     <string name="schedule_monthly_at">Monthly on day %1$d at %2$s</string>
     <string name="schedule_every_h_after_done">Every %1$s h after last done</string>
     <string name="schedule_every_min_after_done">Every %1$d min after last done</string>
+    <string name="schedule_on_unlock_armed">On next device unlock</string>
+    <string name="schedule_on_unlock_fired">On unlock (fired)</string>
 
     <!-- Edit reminder screen -->
     <string name="edit_title_new">New reminder</string>
@@ -61,6 +63,9 @@
     <string name="schedule_kind_weekly">Weekly</string>
     <string name="schedule_kind_monthly">Monthly</string>
     <string name="schedule_kind_interval">Interval</string>
+    <string name="schedule_kind_on_unlock">On unlock</string>
+    <string name="edit_on_unlock_label">When device is unlocked</string>
+    <string name="edit_on_unlock_description">Fires the next time you unlock your device — handy for things to remember to do soon, like after a shower.</string>
     <string name="edit_date_time_label">Date &amp; time</string>
     <string name="edit_times_label">Times</string>
     <string name="edit_add_time">Add time</string>
@@ -133,6 +138,7 @@
     <string name="nl_preview_weekly">weekly on %1$s</string>
     <string name="nl_preview_monthly">monthly day %1$d</string>
     <string name="nl_preview_interval">every %1$dh</string>
+    <string name="nl_preview_on_unlock">when device is unlocked</string>
     <string name="default_reminder_name">Reminder</string>
 
     <!-- Default seed group names -->

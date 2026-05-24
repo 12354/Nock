@@ -34,6 +34,9 @@ data class SettingsState(
     val telegramStatus: String? = null,
     val driveStatus: String? = null,
     val groups: List<Group> = emptyList(),
+    val deepSeekApiKey: String = "",
+    val deepSeekModel: String = SettingsRepository.DEFAULT_DEEPSEEK_MODEL,
+    val deepSeekBaseUrl: String = SettingsRepository.DEFAULT_DEEPSEEK_BASE_URL,
 )
 
 @HiltViewModel
@@ -69,7 +72,12 @@ class SettingsViewModel @Inject constructor(
             driveLastSyncMs = kv[SettingsRepository.KEY_DRIVE_LAST_SYNC_MS]?.toLongOrNull(),
             telegramStatus = status.first,
             driveStatus = status.second,
-            groups = groups
+            groups = groups,
+            deepSeekApiKey = kv[SettingsRepository.KEY_DEEPSEEK_API_KEY].orEmpty(),
+            deepSeekModel = kv[SettingsRepository.KEY_DEEPSEEK_MODEL]?.takeIf { it.isNotBlank() }
+                ?: SettingsRepository.DEFAULT_DEEPSEEK_MODEL,
+            deepSeekBaseUrl = kv[SettingsRepository.KEY_DEEPSEEK_BASE_URL]?.takeIf { it.isNotBlank() }
+                ?: SettingsRepository.DEFAULT_DEEPSEEK_BASE_URL,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsState())
 
@@ -127,5 +135,13 @@ class SettingsViewModel @Inject constructor(
 
     fun deleteGroup(g: Group) {
         viewModelScope.launch { repo.deleteGroup(g) }
+    }
+
+    fun setDeepSeek(apiKey: String, model: String, baseUrl: String) {
+        viewModelScope.launch {
+            settings.set(SettingsRepository.KEY_DEEPSEEK_API_KEY, apiKey)
+            settings.set(SettingsRepository.KEY_DEEPSEEK_MODEL, model.ifBlank { SettingsRepository.DEFAULT_DEEPSEEK_MODEL })
+            settings.set(SettingsRepository.KEY_DEEPSEEK_BASE_URL, baseUrl.ifBlank { SettingsRepository.DEFAULT_DEEPSEEK_BASE_URL })
+        }
     }
 }

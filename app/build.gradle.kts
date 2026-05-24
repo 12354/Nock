@@ -104,6 +104,9 @@ dependencies {
     implementation(libs.moshi)
     implementation(libs.moshi.kotlin)
 
+    implementation(libs.glance.appwidget)
+    implementation(libs.glance.material3)
+
     implementation(libs.play.services.auth)
     implementation(libs.google.api.client.android) {
         exclude(group = "org.apache.httpcomponents")

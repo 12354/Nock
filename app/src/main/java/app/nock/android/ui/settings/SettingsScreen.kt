@@ -77,6 +77,7 @@ fun SettingsScreen(vm: SettingsViewModel = hiltViewModel()) {
             }
             GroupsSection(state.groups, vm)
             TelegramSection(state.telegramToken, state.telegramChat, state.telegramStatus, vm)
+            DeepSeekSection(state.deepSeekApiKey, state.deepSeekModel, state.deepSeekBaseUrl, vm)
             DriveSection(state.driveEmail, state.driveLastSyncMs, state.driveStatus, vm)
             UpdateSection()
         }
@@ -491,6 +492,46 @@ private fun DriveSection(email: String?, lastSyncMs: Long?, status: String?, vm:
             Spacer(Modifier.height(8.dp))
             Text(status, style = MaterialTheme.typography.bodySmall)
         }
+    }
+}
+
+@Composable
+private fun DeepSeekSection(apiKey: String, model: String, baseUrl: String, vm: SettingsViewModel) {
+    var k by remember(apiKey) { mutableStateOf(apiKey) }
+    var m by remember(model) { mutableStateOf(model) }
+    var u by remember(baseUrl) { mutableStateOf(baseUrl) }
+    SectionCard(stringResource(R.string.settings_deepseek_title)) {
+        Text(
+            stringResource(R.string.settings_deepseek_help),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.outline
+        )
+        Spacer(Modifier.height(8.dp))
+        OutlinedTextField(
+            value = k,
+            onValueChange = { k = it },
+            label = { Text(stringResource(R.string.settings_deepseek_api_key)) },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth()
+        )
+        Spacer(Modifier.height(8.dp))
+        OutlinedTextField(
+            value = m,
+            onValueChange = { m = it },
+            label = { Text(stringResource(R.string.settings_deepseek_model)) },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth()
+        )
+        Spacer(Modifier.height(8.dp))
+        OutlinedTextField(
+            value = u,
+            onValueChange = { u = it },
+            label = { Text(stringResource(R.string.settings_deepseek_base_url)) },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth()
+        )
+        Spacer(Modifier.height(8.dp))
+        Button(onClick = { vm.setDeepSeek(k, m, u) }) { Text(stringResource(R.string.save)) }
     }
 }
 

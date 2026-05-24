@@ -25,6 +25,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import app.nock.android.R
 import app.nock.android.domain.model.Group
 import app.nock.android.domain.model.Reminder
+import app.nock.android.ui.voice.VoiceAlarmFab
 import java.time.format.TextStyle
 import java.util.Locale
 
@@ -39,11 +40,17 @@ fun RemindersScreen(
     Scaffold(
         topBar = { TopAppBar(title = { Text(stringResource(R.string.reminders)) }) },
         floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = onAddReminder,
-                icon = { Icon(Icons.Filled.Add, contentDescription = null) },
-                text = { Text(stringResource(R.string.add)) }
-            )
+            Column(
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                VoiceAlarmFab()
+                ExtendedFloatingActionButton(
+                    onClick = onAddReminder,
+                    icon = { Icon(Icons.Filled.Add, contentDescription = null) },
+                    text = { Text(stringResource(R.string.add)) }
+                )
+            }
         }
     ) { padding ->
         LazyColumn(

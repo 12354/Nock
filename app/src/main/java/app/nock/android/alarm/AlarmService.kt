@@ -35,6 +35,7 @@ class AlarmService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var player: MediaPlayer? = null
     private var wakeLock: PowerManager.WakeLock? = null
+    private var screenWakeLock: PowerManager.WakeLock? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -44,10 +45,35 @@ class AlarmService : Service() {
             return START_NOT_STICKY
         }
         val escalationId = intent?.getLongExtra(IntentExtras.EXTRA_ESCALATION_ID, -1L) ?: -1L
+        val reminderId = intent?.getLongExtra(IntentExtras.EXTRA_REMINDER_ID, -1L) ?: -1L
+        // Promote to foreground synchronously so the activity launch below counts
+        // as foreground-initiated (mediaPlayback FGS is exempt from BAL).
         startForeground(SERVICE_NOTIFICATION_ID, buildServiceNotification(escalationId))
         acquireWakeLock()
+        if (escalationId >= 0L) {
+            launchAlarmActivity(escalationId, reminderId)
+        }
         scope.launch { startSound() }
-        return START_STICKY
+        // REDELIVER_INTENT so a killed alarm restarts with its original IDs.
+        return START_REDELIVER_INTENT
+    }
+
+    private fun launchAlarmActivity(escalationId: Long, reminderId: Long) {
+        val intent = Intent(this, AlarmActivity::class.java).apply {
+            addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                    Intent.FLAG_ACTIVITY_NO_USER_ACTION
+            )
+            putExtra(IntentExtras.EXTRA_ESCALATION_ID, escalationId)
+            putExtra(IntentExtras.EXTRA_REMINDER_ID, reminderId)
+        }
+        try {
+            startActivity(intent)
+        } catch (_: Throwable) {
+            // Background-activity-launch denial: the notification's full-screen
+            // intent is the lock-screen fallback and will still trigger.
+        }
     }
 
     private fun acquireWakeLock() {
@@ -58,6 +84,19 @@ class AlarmService : Service() {
         ).apply {
             setReferenceCounted(false)
             acquire(10 * 60_000L)
+        }
+        // Short SCREEN_BRIGHT|ACQUIRE_CAUSES_WAKEUP nudges devices whose
+        // setTurnScreenOn() path is unreliable (some Samsung/Xiaomi builds).
+        // These flags are deprecated but still honored.
+        @Suppress("DEPRECATION")
+        screenWakeLock = pm.newWakeLock(
+            PowerManager.SCREEN_BRIGHT_WAKE_LOCK or
+                PowerManager.ACQUIRE_CAUSES_WAKEUP or
+                PowerManager.ON_AFTER_RELEASE,
+            "nock:alarm-screen"
+        ).apply {
+            setReferenceCounted(false)
+            acquire(5_000L)
         }
     }
 
@@ -110,6 +149,8 @@ class AlarmService : Service() {
         player = null
         wakeLock?.takeIf { it.isHeld }?.release()
         wakeLock = null
+        screenWakeLock?.takeIf { it.isHeld }?.release()
+        screenWakeLock = null
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             stopForeground(STOP_FOREGROUND_REMOVE)
         } else {
@@ -123,6 +164,7 @@ class AlarmService : Service() {
         try { player?.stop() } catch (_: Throwable) {}
         player?.release()
         wakeLock?.takeIf { it.isHeld }?.release()
+        screenWakeLock?.takeIf { it.isHeld }?.release()
         scope.cancel()
         super.onDestroy()
     }

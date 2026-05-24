@@ -1,6 +1,7 @@
 package app.nock.android.ui
 
 import android.app.AlarmManager
+import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -45,6 +46,17 @@ class MainActivity : ComponentActivity() {
             val am = getSystemService<AlarmManager>()
             if (am != null && !am.canScheduleExactAlarms()) {
                 val intent = Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM)
+                    .setData(Uri.parse("package:$packageName"))
+                runCatching { startActivity(intent) }
+            }
+        }
+        // Android 14+ reclassified USE_FULL_SCREEN_INTENT as a special-access
+        // permission. Without it the full-screen alarm activity never launches
+        // from a locked screen, defeating the whole point of the loud stage.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            val nm = getSystemService<NotificationManager>()
+            if (nm != null && !nm.canUseFullScreenIntent()) {
+                val intent = Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT)
                     .setData(Uri.parse("package:$packageName"))
                 runCatching { startActivity(intent) }
             }

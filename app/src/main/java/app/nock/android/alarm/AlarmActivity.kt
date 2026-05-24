@@ -1,7 +1,7 @@
 package app.nock.android.alarm
 
 import android.app.KeyguardManager
-import android.os.Build
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -37,40 +37,19 @@ class AlarmActivity : ComponentActivity() {
     @Inject lateinit var repo: NockRepository
     @Inject lateinit var engine: EscalationEngine
 
+    private val nameState = MutableStateFlow("")
+    private val groupNameState = MutableStateFlow("")
+    private val escalationIdState = MutableStateFlow(-1L)
+
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleHelper.wrap(newBase))
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-            setShowWhenLocked(true)
-            setTurnScreenOn(true)
-        } else {
-            @Suppress("DEPRECATION")
-            window.addFlags(
-                android.view.WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
-                    android.view.WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
-                    android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
-            )
-        }
-        val km = getSystemService(KEYGUARD_SERVICE) as KeyguardManager
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-            km.requestDismissKeyguard(this, null)
-        }
-
-        val escalationId = intent.getLongExtra(IntentExtras.EXTRA_ESCALATION_ID, -1L)
-        val reminderId = intent.getLongExtra(IntentExtras.EXTRA_REMINDER_ID, -1L)
-
-        val nameState = MutableStateFlow(getString(R.string.alarm_title))
-        val groupNameState = MutableStateFlow("")
-        lifecycleScope.launch {
-            val r = repo.getReminder(reminderId)
-            if (r != null) {
-                nameState.value = r.name
-                groupNameState.value = repo.getGroup(r.groupId)?.name.orEmpty()
-            }
-        }
+        applyAlarmWindowFlags()
+        nameState.value = getString(R.string.alarm_title)
+        bindFromIntent(intent)
 
         setContent {
             NockTheme {
@@ -80,18 +59,52 @@ class AlarmActivity : ComponentActivity() {
                     name = name,
                     groupName = groupName,
                     onDone = {
+                        val id = escalationIdState.value
                         lifecycleScope.launch {
-                            engine.done(escalationId)
+                            if (id >= 0L) engine.done(id)
                             finish()
                         }
                     },
                     onSnooze = {
+                        val id = escalationIdState.value
                         lifecycleScope.launch {
-                            engine.snooze(escalationId)
+                            if (id >= 0L) engine.snooze(id)
                             finish()
                         }
                     }
                 )
+            }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        // singleTask launchMode reuses the activity for subsequent alarms; without
+        // re-reading the intent the screen would still show the previous alarm.
+        applyAlarmWindowFlags()
+        bindFromIntent(intent)
+    }
+
+    private fun applyAlarmWindowFlags() {
+        // minSdk is 29 so the O_MR1+ activity-level APIs are always available.
+        setShowWhenLocked(true)
+        setTurnScreenOn(true)
+        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        val km = getSystemService(KEYGUARD_SERVICE) as? KeyguardManager
+        km?.requestDismissKeyguard(this, null)
+    }
+
+    private fun bindFromIntent(intent: Intent?) {
+        val escalationId = intent?.getLongExtra(IntentExtras.EXTRA_ESCALATION_ID, -1L) ?: -1L
+        val reminderId = intent?.getLongExtra(IntentExtras.EXTRA_REMINDER_ID, -1L) ?: -1L
+        escalationIdState.value = escalationId
+        groupNameState.value = ""
+        lifecycleScope.launch {
+            val r = if (reminderId >= 0L) repo.getReminder(reminderId) else null
+            if (r != null) {
+                nameState.value = r.name
+                groupNameState.value = repo.getGroup(r.groupId)?.name.orEmpty()
             }
         }
     }

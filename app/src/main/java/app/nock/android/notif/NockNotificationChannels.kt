@@ -13,10 +13,12 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 object Channels {
-    const val SILENT = "nock_silent"
-    const val NORMAL = "nock_normal"
-    const val ALARM = "nock_alarm"
+    const val SILENT = "nock_silent_v2"
+    const val NORMAL = "nock_normal_v2"
+    const val ALARM = "nock_alarm_v2"
     const val SERVICE = "nock_service"
+
+    val LEGACY_IDS = listOf("nock_silent", "nock_normal", "nock_alarm")
 }
 
 @Singleton
@@ -27,11 +29,13 @@ class NockNotificationChannels @Inject constructor(
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val nm = ctx.getSystemService<NotificationManager>() ?: return
 
+        Channels.LEGACY_IDS.forEach { nm.deleteNotificationChannel(it) }
+
         nm.createNotificationChannel(
             NotificationChannel(
                 Channels.SILENT,
                 ctx.getString(R.string.channel_silent_name),
-                NotificationManager.IMPORTANCE_LOW
+                NotificationManager.IMPORTANCE_HIGH
             ).apply {
                 description = ctx.getString(R.string.channel_silent_desc)
                 setSound(null, null)
@@ -44,7 +48,7 @@ class NockNotificationChannels @Inject constructor(
             NotificationChannel(
                 Channels.NORMAL,
                 ctx.getString(R.string.channel_normal_name),
-                NotificationManager.IMPORTANCE_DEFAULT
+                NotificationManager.IMPORTANCE_HIGH
             ).apply {
                 description = ctx.getString(R.string.channel_normal_desc)
                 val sound = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
@@ -57,12 +61,6 @@ class NockNotificationChannels @Inject constructor(
             }
         )
 
-        val alarmAttrs = AudioAttributes.Builder()
-            .setUsage(AudioAttributes.USAGE_ALARM)
-            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-            .build()
-        val alarmSound = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
-
         nm.createNotificationChannel(
             NotificationChannel(
                 Channels.ALARM,
@@ -70,7 +68,7 @@ class NockNotificationChannels @Inject constructor(
                 NotificationManager.IMPORTANCE_HIGH
             ).apply {
                 description = ctx.getString(R.string.channel_alarm_desc)
-                setSound(alarmSound, alarmAttrs)
+                setSound(null, null)
                 enableVibration(true)
                 setBypassDnd(true)
                 lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC

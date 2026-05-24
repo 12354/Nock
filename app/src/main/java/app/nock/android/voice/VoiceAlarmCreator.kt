@@ -53,7 +53,7 @@ class VoiceAlarmCreator @Inject constructor(
 
         val now = LocalDateTime.now()
         val zone = ZoneId.systemDefault()
-        val system = buildSystemPrompt(now, zone, groups.map { it.name })
+        val system = buildSystemPrompt(now, zone, groups)
 
         return when (val r = deepSeek.complete(system, trimmed, jsonMode = true)) {
             is DeepSeekResult.Error -> VoiceAlarmOutcome.Failed(r.message)
@@ -159,10 +159,13 @@ class VoiceAlarmCreator @Inject constructor(
         return out
     }
 
-    private fun buildSystemPrompt(now: LocalDateTime, zone: ZoneId, groupNames: List<String>): String {
+    private fun buildSystemPrompt(now: LocalDateTime, zone: ZoneId, groups: List<app.nock.android.domain.model.Group>): String {
         val fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss")
         val dow = now.dayOfWeek.name
-        val groupList = groupNames.joinToString(", ")
+        val groupCatalog = groups.joinToString("\n") { g ->
+            val desc = SEED_GROUP_DESCRIPTIONS[g.seedKey]
+            if (desc != null) "              - \"${g.name}\" — $desc" else "              - \"${g.name}\" (custom group)"
+        }
         return """
             You convert a spoken phrase into a JSON specification for a single reminder/alarm.
 
@@ -175,22 +178,44 @@ class VoiceAlarmCreator @Inject constructor(
             - dayOfMonth (integer 1-31, required for MONTHLY).
             - timeOfDay ("HH:mm" string, required for MONTHLY): 24-hour clock.
             - intervalMinutes (integer >= 1, required for INTERVAL): minutes between firings, measured from the user's last "Done".
-            - groupHint (string, optional): MUST be one of the user's existing groups if specified.
+            - groupHint (string, optional): MUST exactly match one of the group names listed below (verbatim, case-insensitive).
 
-            Rules:
+            Schedule rules:
             - Prefer ONESHOT for an unambiguous single event ("tomorrow at 3pm", "in 20 minutes").
             - Prefer DAILY / WEEKLY when the user says "every day", "each morning", "every Monday and Wednesday", etc.
             - Prefer INTERVAL when the user says "every 4 hours" or "every 30 minutes" (the time between firings, not a fixed time of day).
             - Prefer ON_UNLOCK only when the user explicitly says something like "next time I unlock my phone".
             - "in N minutes/hours" => ONESHOT, oneShotIso = now + that duration.
             - Times like "8" / "8pm" / "20:00" => "20:00" (HH:mm).
-            - If the user mentions one of the existing groups by name or topic, set groupHint to that group name verbatim.
             - All times are interpreted in the user's local time zone.
+
+            Group selection (be careful — this is often the wrong field):
+            - Before emitting JSON, think about the SUBJECT of the reminder (what is being done, for whom/what), not the wording.
+            - Match that subject to the best group from the catalog below using the descriptions, not just name overlap.
+            - Heuristics: take a pill / vitamin / insulin / inhaler => meds. Walk / feed / vet / groom an animal => pets.
+              Stretch / drink water / meditate / sleep / hygiene / journal => self-care.
+              Buy / pick up / shop / appointment / pharmacy / bank => errands.
+              Vacuum / laundry / dishes / trash / water plants / bills => household.
+              Meeting / call / deadline / report / email / study => work.
+            - If the user explicitly names a group ("add to Pets"), use that name verbatim and ignore the heuristics.
+            - If no group clearly fits, OMIT groupHint entirely — do NOT pick a random one and do NOT invent a name.
 
             Context:
             - Current local datetime: ${now.format(fmt)} (${zone.id})
             - Day of week today: $dow
-            - Available group names (case-insensitive): $groupList
+            - Available groups:
+$groupCatalog
         """.trimIndent()
+    }
+
+    companion object {
+        private val SEED_GROUP_DESCRIPTIONS = mapOf(
+            "pets" to "anything about pets or animals: feeding, walking, vet visits, grooming, litter box, cage cleaning.",
+            "meds" to "medication and supplements: taking pills, vitamins, insulin, inhaler, prescription refills, doctor-prescribed treatments.",
+            "selfcare" to "personal wellness and habits: exercise, stretching, hydration, meditation, hygiene, skincare, sleep, journaling.",
+            "household" to "chores done at home: cleaning, laundry, dishes, trash, watering plants, repairs, recurring home bills.",
+            "work" to "job and study tasks: meetings, calls, deadlines, projects, emails, reports, classes.",
+            "errands" to "tasks done outside the home: shopping, pickups, appointments, deliveries, banking, post office.",
+        )
     }
 }

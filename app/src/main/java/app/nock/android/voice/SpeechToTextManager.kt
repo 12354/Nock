@@ -76,6 +76,18 @@ class SpeechToTextManager @Inject constructor(
             }
         }.trim()
 
+        // Commit whatever the current recognizer instance produced (preferring the final
+        // text from onResults, falling back to the latest partial) into the running
+        // transcript so a brief pause never throws away what the user just said.
+        fun commitSegment(finalText: String) {
+            val text = finalText.ifBlank { currentPartial }
+            if (text.isNotBlank()) {
+                if (accumulated.isNotEmpty()) accumulated.append(' ')
+                accumulated.append(text.trim())
+            }
+            currentPartial = ""
+        }
+
         fun resolve(r: SpeechResult) {
             if (resolved) return
             resolved = true
@@ -116,11 +128,7 @@ class SpeechToTextManager @Inject constructor(
                         ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                         ?.firstOrNull()
                         .orEmpty()
-                    if (text.isNotBlank()) {
-                        if (accumulated.isNotEmpty()) accumulated.append(' ')
-                        accumulated.append(text)
-                    }
-                    currentPartial = ""
+                    commitSegment(text)
                     if (stopRequested) {
                         resolveFinal()
                     } else {
@@ -134,13 +142,16 @@ class SpeechToTextManager @Inject constructor(
                 override fun onError(error: Int) {
                     val recoverable = error == SpeechRecognizer.ERROR_NO_MATCH ||
                         error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT
-                    if (recoverable && !stopRequested) {
-                        try { rec.destroy() } catch (_: Throwable) {}
-                        startInner()
-                        return
-                    }
-                    if (recoverable && stopRequested) {
-                        resolveFinal()
+                    if (recoverable) {
+                        // The platform never delivered onResults for this segment, so the
+                        // only transcript we have is the latest partial — preserve it.
+                        commitSegment("")
+                        if (!stopRequested) {
+                            try { rec.destroy() } catch (_: Throwable) {}
+                            startInner()
+                        } else {
+                            resolveFinal()
+                        }
                         return
                     }
                     resolve(SpeechResult.Error(errorToMessage(error)))

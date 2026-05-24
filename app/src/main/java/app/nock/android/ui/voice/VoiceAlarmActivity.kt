@@ -84,7 +84,6 @@ private fun VoiceAlarmScreen(
                     enabled = state !is VoiceAlarmUiState.Thinking && state !is VoiceAlarmUiState.Success,
                     onPressStart = { vm.startListening() },
                     onPressEnd = { vm.stopListening() },
-                    onCancel = { vm.cancel() },
                     size = 120.dp
                 )
                 Spacer(Modifier.height(8.dp))

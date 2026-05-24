@@ -63,12 +63,15 @@ class NotificationPresenter @Inject constructor(
             .build()
         nm.notify(escalationId.toInt(), notif)
 
+        // The foreground AlarmService is the reliable launcher for the full-screen
+        // activity: its `mediaPlayback` type lets it start an activity from the
+        // background once it's promoted via startForeground(). The notification's
+        // full-screen intent above is the redundant lock-screen path.
         val svc = Intent(ctx, AlarmService::class.java).apply {
             putExtra(IntentExtras.EXTRA_ESCALATION_ID, escalationId)
             putExtra(IntentExtras.EXTRA_REMINDER_ID, reminder.id)
         }
         androidx.core.content.ContextCompat.startForegroundService(ctx, svc)
-        ctx.startActivity(fullScreen)
     }
 
     fun cancel(escalationId: Long) {

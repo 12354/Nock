@@ -55,7 +55,7 @@ fun RemindersScreen(
     ) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding),
-            contentPadding = PaddingValues(12.dp),
+            contentPadding = PaddingValues(start = 12.dp, top = 12.dp, end = 12.dp, bottom = 144.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             items(sections, key = { it.group.id }) { section ->

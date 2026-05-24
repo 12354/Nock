@@ -40,7 +40,7 @@ data class EditState(
     val nlPreview: String = "",
 )
 
-enum class ScheduleKind { ONESHOT, DAILY, WEEKLY, MONTHLY, INTERVAL }
+enum class ScheduleKind { ONESHOT, DAILY, WEEKLY, MONTHLY, INTERVAL, ON_UNLOCK }
 
 @HiltViewModel
 class EditReminderViewModel @Inject constructor(
@@ -71,6 +71,7 @@ class EditReminderViewModel @Inject constructor(
                 is Schedule.Weekly -> ScheduleKind.WEEKLY
                 is Schedule.Monthly -> ScheduleKind.MONTHLY
                 is Schedule.IntervalFromLast -> ScheduleKind.INTERVAL
+                is Schedule.OnUnlock -> ScheduleKind.ON_UNLOCK
             }
             _state.update {
                 it.copy(
@@ -136,6 +137,7 @@ class EditReminderViewModel @Inject constructor(
             scheduleType = ScheduleKind.INTERVAL,
             intervalHours = (s.intervalMs / 3_600_000L).toInt().coerceAtLeast(1)
         )
+        is Schedule.OnUnlock -> st.copy(scheduleType = ScheduleKind.ON_UNLOCK)
     }
 
     private fun describeSchedule(s: Schedule): String {
@@ -155,6 +157,7 @@ class EditReminderViewModel @Inject constructor(
                 R.string.nl_preview_interval,
                 (s.intervalMs / 3_600_000L).toInt()
             )
+            is Schedule.OnUnlock -> ctx.getString(R.string.nl_preview_on_unlock)
         }
     }
 
@@ -175,7 +178,11 @@ class EditReminderViewModel @Inject constructor(
         )
         engine.cancelActive(id)
         val r = repo.getReminder(id) ?: return
-        if (nextFire != null) engine.startEscalationAt(r, nextFire)
+        // OnUnlock reminders are armed in the DB; the actual fire happens
+        // when UnlockReceiver observes ACTION_USER_PRESENT, not on save.
+        if (nextFire != null && schedule !is Schedule.OnUnlock) {
+            engine.startEscalationAt(r, nextFire)
+        }
     }
 
     private fun buildSchedule(s: EditState): Schedule = when (s.scheduleType) {
@@ -184,5 +191,6 @@ class EditReminderViewModel @Inject constructor(
         ScheduleKind.WEEKLY -> Schedule.Weekly(s.weeklyDays, s.weeklyTimesMinutes)
         ScheduleKind.MONTHLY -> Schedule.Monthly(s.monthlyDay, s.monthlyTimeMinutes)
         ScheduleKind.INTERVAL -> Schedule.IntervalFromLast(s.intervalHours * 3_600_000L)
+        ScheduleKind.ON_UNLOCK -> Schedule.OnUnlock(System.currentTimeMillis())
     }
 }

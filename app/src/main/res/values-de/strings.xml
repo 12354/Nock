@@ -46,6 +46,8 @@
     <string name="schedule_monthly_at">Monatlich am %1$d. um %2$s</string>
     <string name="schedule_every_h_after_done">Alle %1$s Std. nach letztem Erledigt</string>
     <string name="schedule_every_min_after_done">Alle %1$d Min. nach letztem Erledigt</string>
+    <string name="schedule_on_unlock_armed">Beim nächsten Entsperren</string>
+    <string name="schedule_on_unlock_fired">Beim Entsperren (ausgelöst)</string>
 
     <!-- Edit reminder screen -->
     <string name="edit_title_new">Neue Erinnerung</string>
@@ -61,6 +63,9 @@
     <string name="schedule_kind_weekly">Wöchentlich</string>
     <string name="schedule_kind_monthly">Monatlich</string>
     <string name="schedule_kind_interval">Intervall</string>
+    <string name="schedule_kind_on_unlock">Beim Entsperren</string>
+    <string name="edit_on_unlock_label">Wenn das Gerät entsperrt wird</string>
+    <string name="edit_on_unlock_description">Wird beim nächsten Entsperren des Geräts ausgelöst — praktisch für Dinge, an die du dich bald erinnern willst, z. B. nach dem Duschen.</string>
     <string name="edit_date_time_label">Datum &amp; Uhrzeit</string>
     <string name="edit_times_label">Uhrzeiten</string>
     <string name="edit_add_time">Zeit hinzufügen</string>
@@ -133,6 +138,7 @@
     <string name="nl_preview_weekly">wöchentlich am %1$s</string>
     <string name="nl_preview_monthly">monatlich am %1$d.</string>
     <string name="nl_preview_interval">alle %1$d Std.</string>
+    <string name="nl_preview_on_unlock">beim Entsperren des Geräts</string>
     <string name="default_reminder_name">Erinnerung</string>
 
     <!-- Default seed group names -->

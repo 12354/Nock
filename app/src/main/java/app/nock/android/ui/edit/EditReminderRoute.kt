@@ -120,6 +120,7 @@ fun EditReminderRoute(
                     onTime = vm::updateMonthlyTime
                 )
                 ScheduleKind.INTERVAL -> IntervalEditor(state.intervalHours, vm::updateIntervalHours)
+                ScheduleKind.ON_UNLOCK -> OnUnlockEditor()
             }
         }
     }
@@ -160,6 +161,7 @@ private fun ScheduleKindSelector(current: ScheduleKind, onChange: (ScheduleKind)
         ScheduleKind.WEEKLY to R.string.schedule_kind_weekly,
         ScheduleKind.MONTHLY to R.string.schedule_kind_monthly,
         ScheduleKind.INTERVAL to R.string.schedule_kind_interval,
+        ScheduleKind.ON_UNLOCK to R.string.schedule_kind_on_unlock,
     )
     Column {
         Text(stringResource(R.string.edit_schedule_label), style = MaterialTheme.typography.labelLarge)
@@ -293,6 +295,25 @@ private fun IntervalEditor(hours: Int, onChange: (Int) -> Unit) {
             label = { Text(stringResource(R.string.edit_hours_label)) },
             modifier = Modifier.width(160.dp)
         )
+    }
+}
+
+@Composable
+private fun OnUnlockEditor() {
+    Column {
+        Text(stringResource(R.string.edit_on_unlock_label), style = MaterialTheme.typography.labelLarge)
+        Spacer(Modifier.height(8.dp))
+        Surface(
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(
+                text = stringResource(R.string.edit_on_unlock_description),
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(12.dp)
+            )
+        }
     }
 }
 

@@ -11,8 +11,12 @@ import app.nock.android.domain.model.Group
 import app.nock.android.domain.model.Reminder
 import app.nock.android.domain.model.Schedule
 import app.nock.android.parse.NaturalLanguageParser
+import app.nock.android.voice.DeepSeekParseResult
+import app.nock.android.voice.DeepSeekReminderParser
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -38,6 +42,8 @@ data class EditState(
     val groups: List<Group> = emptyList(),
     val nlInput: String = "",
     val nlPreview: String = "",
+    val nlThinking: Boolean = false,
+    val nlError: String? = null,
 )
 
 enum class ScheduleKind { ONESHOT, DAILY, WEEKLY, MONTHLY, INTERVAL, ON_UNLOCK }
@@ -47,11 +53,14 @@ class EditReminderViewModel @Inject constructor(
     @ApplicationContext private val ctx: Context,
     private val repo: NockRepository,
     private val engine: EscalationEngine,
+    private val deepSeekParser: DeepSeekReminderParser,
     savedState: SavedStateHandle
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(EditState())
     val state: StateFlow<EditState> = _state.asStateFlow()
+
+    private var aiDebounceJob: Job? = null
 
     init {
         viewModelScope.launch {
@@ -113,9 +122,50 @@ class EditReminderViewModel @Inject constructor(
                 nlInput = input,
                 nlPreview = parsed.schedule?.let { describeSchedule(it) } ?: "",
                 groupId = newGroupId,
-                name = parsed.name.takeIf { it.isNotBlank() } ?: st.name
+                name = parsed.name.takeIf { it.isNotBlank() } ?: st.name,
+                nlError = null,
+                nlThinking = false,
             )
             applySchedule(st2, parsed.schedule)
+        }
+        scheduleDeepSeek(input)
+    }
+
+    private fun scheduleDeepSeek(input: String) {
+        aiDebounceJob?.cancel()
+        if (input.trim().isEmpty()) return
+        aiDebounceJob = viewModelScope.launch {
+            delay(AI_DEBOUNCE_MS)
+            val groups = _state.value.groups
+            if (groups.isEmpty()) return@launch
+            if (!deepSeekParser.isConfigured()) return@launch
+            _state.update { it.copy(nlThinking = true) }
+            val result = deepSeekParser.parse(input, groups)
+            // Drop result if the user has typed more since we sent the request.
+            if (_state.value.nlInput != input) return@launch
+            when (result) {
+                is DeepSeekParseResult.Ok -> applyDeepSeek(result)
+                is DeepSeekParseResult.NotConfigured -> _state.update { it.copy(nlThinking = false) }
+                is DeepSeekParseResult.Failed -> _state.update {
+                    it.copy(nlThinking = false, nlError = result.message)
+                }
+            }
+        }
+    }
+
+    private fun applyDeepSeek(r: DeepSeekParseResult.Ok) {
+        _state.update { st ->
+            val newGroupId = r.groupHint?.let { hint ->
+                st.groups.firstOrNull { it.name.equals(hint, ignoreCase = true) }?.id
+            } ?: st.groupId
+            val st2 = st.copy(
+                nlPreview = describeSchedule(r.schedule),
+                groupId = newGroupId,
+                name = r.name?.takeIf { it.isNotBlank() } ?: st.name,
+                nlThinking = false,
+                nlError = null,
+            )
+            applySchedule(st2, r.schedule)
         }
     }
 
@@ -192,5 +242,9 @@ class EditReminderViewModel @Inject constructor(
         ScheduleKind.MONTHLY -> Schedule.Monthly(s.monthlyDay, s.monthlyTimeMinutes)
         ScheduleKind.INTERVAL -> Schedule.IntervalFromLast(s.intervalHours * 3_600_000L)
         ScheduleKind.ON_UNLOCK -> Schedule.OnUnlock(System.currentTimeMillis())
+    }
+
+    companion object {
+        private const val AI_DEBOUNCE_MS = 800L
     }
 }

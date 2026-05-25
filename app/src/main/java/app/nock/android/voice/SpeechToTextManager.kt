@@ -39,13 +39,22 @@ sealed class SpeechResult {
  * transcript and the "keep going across pauses" policy — that's the only
  * place where the accumulated text outlives any single recognizer instance.
  *
+ * Every call, intent extra, and listener callback is logged through
+ * [VoiceLogger] so problems can be reproduced and reported by copying the
+ * log out of Settings.
+ *
  * Must be created and used from the main thread (SpeechRecognizer requirement).
  */
 @Singleton
 class SpeechToTextManager @Inject constructor(
     @ApplicationContext private val ctx: Context,
+    private val logger: VoiceLogger,
 ) {
-    fun isAvailable(): Boolean = SpeechRecognizer.isRecognitionAvailable(ctx)
+    fun isAvailable(): Boolean {
+        val available = SpeechRecognizer.isRecognitionAvailable(ctx)
+        logger.log(TAG, "isAvailable() = $available")
+        return available
+    }
 
     interface Session {
         fun stop()
@@ -57,7 +66,10 @@ class SpeechToTextManager @Inject constructor(
         onPartial: (String) -> Unit = {},
         onResult: (SpeechResult) -> Unit
     ): Session {
-        if (!isAvailable()) {
+        logger.log(TAG, "start(languageTag=$languageTag) called")
+
+        if (!SpeechRecognizer.isRecognitionAvailable(ctx)) {
+            logger.log(TAG, "start → recognizer NOT available; emitting Error")
             onResult(SpeechResult.Error("Speech recognition not available on this device"))
             return NoopSession
         }
@@ -75,15 +87,29 @@ class SpeechToTextManager @Inject constructor(
             putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 60_000)
             putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 60_000)
         }
+        logger.log(TAG, "intent extras: model=FREE_FORM, partial=true, lang=$tag, " +
+            "callingPackage=${ctx.packageName}, completeSilence=60000ms, " +
+            "possiblyCompleteSilence=60000ms, minimumLength=60000ms")
 
         var resolved = false
         var lastPartial = ""
         var recognizer: SpeechRecognizer? = null
 
         fun resolve(r: SpeechResult) {
-            if (resolved) return
+            if (resolved) {
+                logger.log(TAG, "resolve($r) ignored — already resolved")
+                return
+            }
             resolved = true
-            try { recognizer?.destroy() } catch (_: Throwable) {}
+            val summary = when (r) {
+                is SpeechResult.Final -> "Final(\"${r.text}\")"
+                is SpeechResult.Error -> "Error(\"${r.message}\")"
+                is SpeechResult.Cancelled -> "Cancelled"
+            }
+            logger.log(TAG, "resolve → $summary (lastPartial=\"$lastPartial\")")
+            try { recognizer?.destroy() } catch (t: Throwable) {
+                logger.log(TAG, "recognizer.destroy() threw: ${t.message}")
+            }
             recognizer = null
             onResult(r)
         }
@@ -95,25 +121,39 @@ class SpeechToTextManager @Inject constructor(
             return if (f.length >= p.length) f else p
         }
 
+        logger.log(TAG, "createSpeechRecognizer() …")
         val rec = try {
             SpeechRecognizer.createSpeechRecognizer(ctx)
         } catch (t: Throwable) {
+            logger.log(TAG, "createSpeechRecognizer threw: ${t.message}; emitting Error")
             onResult(SpeechResult.Error(t.message ?: "Failed to create recognizer"))
             return NoopSession
         }
+        logger.log(TAG, "createSpeechRecognizer OK")
         recognizer = rec
         rec.setRecognitionListener(object : RecognitionListener {
-            override fun onReadyForSpeech(params: Bundle?) {}
-            override fun onBeginningOfSpeech() {}
-            override fun onRmsChanged(rmsdB: Float) {}
-            override fun onBufferReceived(buffer: ByteArray?) {}
-            override fun onEndOfSpeech() {}
+            override fun onReadyForSpeech(params: Bundle?) {
+                logger.log(TAG, "← onReadyForSpeech")
+            }
+            override fun onBeginningOfSpeech() {
+                logger.log(TAG, "← onBeginningOfSpeech")
+            }
+            override fun onRmsChanged(rmsdB: Float) {
+                // Fires 20+ times/sec — too noisy to log every call.
+            }
+            override fun onBufferReceived(buffer: ByteArray?) {
+                // Fires very frequently — skip.
+            }
+            override fun onEndOfSpeech() {
+                logger.log(TAG, "← onEndOfSpeech")
+            }
 
             override fun onPartialResults(partialResults: Bundle?) {
                 val text = partialResults
                     ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                     ?.firstOrNull()
                     .orEmpty()
+                logger.log(TAG, "← onPartialResults \"$text\"")
                 if (text.isBlank()) return
                 lastPartial = text
                 onPartial(text)
@@ -124,11 +164,13 @@ class SpeechToTextManager @Inject constructor(
                     ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                     ?.firstOrNull()
                     .orEmpty()
+                logger.log(TAG, "← onResults \"$text\" (lastPartial=\"$lastPartial\")")
                 val finalText = bestText(text)
                 resolve(if (finalText.isBlank()) SpeechResult.Cancelled else SpeechResult.Final(finalText))
             }
 
             override fun onError(error: Int) {
+                logger.log(TAG, "← onError code=$error (${errorToMessage(error)}) lastPartial=\"$lastPartial\"")
                 // If the user said anything at all this session, keep it — emit Final
                 // instead of Error so the caller's accumulator can hold on to it.
                 val text = lastPartial.trim()
@@ -139,26 +181,41 @@ class SpeechToTextManager @Inject constructor(
                 }
             }
 
-            override fun onEvent(eventType: Int, params: Bundle?) {}
+            override fun onEvent(eventType: Int, params: Bundle?) {
+                logger.log(TAG, "← onEvent type=$eventType")
+            }
         })
         try {
+            logger.log(TAG, "rec.startListening() …")
             rec.startListening(intent)
+            logger.log(TAG, "rec.startListening() returned")
         } catch (t: Throwable) {
+            logger.log(TAG, "rec.startListening threw: ${t.message}")
             resolve(SpeechResult.Error(t.message ?: "startListening failed"))
         }
 
         return object : Session {
             override fun stop() {
-                val r = recognizer ?: return
+                logger.log(TAG, "Session.stop() called")
+                val r = recognizer
+                if (r == null) {
+                    logger.log(TAG, "Session.stop() — recognizer already null")
+                    return
+                }
                 try {
                     r.stopListening()
-                } catch (_: Throwable) {
+                    logger.log(TAG, "rec.stopListening() returned")
+                } catch (t: Throwable) {
+                    logger.log(TAG, "rec.stopListening threw: ${t.message}")
                     val text = lastPartial.trim()
                     resolve(if (text.isBlank()) SpeechResult.Cancelled else SpeechResult.Final(text))
                 }
             }
             override fun cancel() {
-                try { recognizer?.cancel() } catch (_: Throwable) {}
+                logger.log(TAG, "Session.cancel() called")
+                try { recognizer?.cancel() } catch (t: Throwable) {
+                    logger.log(TAG, "rec.cancel threw: ${t.message}")
+                }
                 resolve(SpeechResult.Cancelled)
             }
         }
@@ -180,5 +237,9 @@ class SpeechToTextManager @Inject constructor(
         SpeechRecognizer.ERROR_SERVER -> "Speech server error"
         SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "No speech detected"
         else -> "Speech recognition error ($code)"
+    }
+
+    private companion object {
+        const val TAG = "STT"
     }
 }

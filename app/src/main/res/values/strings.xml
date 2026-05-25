@@ -167,6 +167,15 @@
     <string name="settings_deepseek_base_url">Base URL</string>
     <string name="settings_deepseek_help">Spoken text is transcribed on-device, then sent to this DeepSeek-compatible endpoint to be turned into a reminder.</string>
 
+    <!-- Settings: Voice diagnostics -->
+    <string name="settings_voice_log_title">Voice diagnostics</string>
+    <string name="settings_voice_log_help">Append-only log of every call to the speech recognizer and every callback received. Share this when reporting a voice-input bug.</string>
+    <string name="settings_voice_log_refresh">Refresh</string>
+    <string name="settings_voice_log_copy">Copy</string>
+    <string name="settings_voice_log_clear">Clear</string>
+    <string name="settings_voice_log_empty">(no log entries yet — try the voice button)</string>
+    <string name="settings_voice_log_copied">Voice log copied to clipboard</string>
+
     <!-- Default seed group names -->
     <string name="seed_group_pets">Pets</string>
     <string name="seed_group_meds">Meds</string>

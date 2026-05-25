@@ -35,6 +35,14 @@ sealed class SpeechResult {
  *  * onError with nothing yet : Error.
  *  * stop with no recognizer alive : Final / Cancelled depending on partial.
  *
+ * Internal segmentation: many recognizers (Google Speech Services on Pixel,
+ * for one) silently segment on mid-utterance silence — they reset their
+ * partial buffer to "" and then start delivering fresh partials for the
+ * next chunk, all WITHOUT firing onResults until the very end. We detect
+ * that pattern (a blank onPartialResults after a non-blank one) and emit
+ * [onSegmentComplete] with the previous partial so the caller can commit
+ * it before the next chunk's text replaces it on screen.
+ *
  * No internal restart loop. The caller (the ViewModel) owns the persistent
  * transcript and the "keep going across pauses" policy — that's the only
  * place where the accumulated text outlives any single recognizer instance.
@@ -64,6 +72,7 @@ class SpeechToTextManager @Inject constructor(
     fun start(
         languageTag: String? = null,
         onPartial: (String) -> Unit = {},
+        onSegmentComplete: (String) -> Unit = {},
         onResult: (SpeechResult) -> Unit
     ): Session {
         logger.log(TAG, "start(languageTag=$languageTag) called")
@@ -154,7 +163,19 @@ class SpeechToTextManager @Inject constructor(
                     ?.firstOrNull()
                     .orEmpty()
                 logger.log(TAG, "← onPartialResults \"$text\"")
-                if (text.isBlank()) return
+                if (text.isBlank()) {
+                    // Recognizer reset its internal partial buffer — this is the
+                    // "I just internally finalized that segment on silence" signal.
+                    // Surface the prior partial as a committed segment so the
+                    // caller can stash it before the next chunk's text arrives.
+                    val prev = lastPartial.trim()
+                    if (prev.isNotEmpty()) {
+                        logger.log(TAG, "  blank partial after \"$prev\" → onSegmentComplete")
+                        lastPartial = ""
+                        onSegmentComplete(prev)
+                    }
+                    return
+                }
                 lastPartial = text
                 onPartial(text)
             }

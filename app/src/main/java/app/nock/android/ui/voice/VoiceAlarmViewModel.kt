@@ -28,10 +28,17 @@ sealed class VoiceAlarmUiState {
  * Hold-to-record voice alarm flow.
  *
  * The persistent transcript lives here, not in the recognizer. SpeechToTextManager
- * is a one-shot wrapper — when the recognizer auto-ends on silence we commit its
- * text to [accumulated], spin up a new recognizer, and keep going. The displayed
- * string is always [accumulated] + the current session's last partial, so a
- * mid-pause auto-end can't visibly reset the text.
+ * is a one-shot wrapper that emits three streams of callbacks:
+ *  * onPartial — the current segment's growing text.
+ *  * onSegmentComplete — the recognizer just internally finalized a segment
+ *    (mid-utterance silence). We commit it to [accumulated] right away,
+ *    BEFORE the next chunk's partials replace it on screen.
+ *  * onResult — Final / Cancelled / Error when the recognizer ends entirely.
+ *
+ * Whenever a session ends mid-hold (auto-end, recoverable error, anything),
+ * we commit and spin up a new recognizer. The displayed string is always
+ * [accumulated] + the current session's last partial, so a mid-pause segment
+ * break can't visibly reset the text.
  *
  * Every press, callback, commit, and restart is logged through [VoiceLogger] so
  * the user can copy a full transcript of what happened out of Settings.
@@ -82,6 +89,16 @@ class VoiceAlarmViewModel @Inject constructor(
                 sessionPartial = partial
                 val display = displayedText()
                 logger.log(TAG, "onPartial \"$partial\" → display=\"$display\"")
+                publishListening()
+            },
+            onSegmentComplete = { segment ->
+                // Recognizer internally finalized a segment without firing
+                // onResults — commit now so the next chunk's partials can't
+                // erase it.
+                val before = accumulated
+                commitSegment(segment)
+                sessionPartial = ""
+                logger.log(TAG, "onSegmentComplete \"$segment\": \"$before\" → \"$accumulated\"")
                 publishListening()
             },
             onResult = { result ->

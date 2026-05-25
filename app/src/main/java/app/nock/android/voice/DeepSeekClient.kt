@@ -10,12 +10,13 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
 
 sealed class DeepSeekResult {
     data class Ok(val content: String) : DeepSeekResult()
-    data class Error(val message: String) : DeepSeekResult()
+    data class Error(val message: String, val transient: Boolean = false) : DeepSeekResult()
 }
 
 data class DeepSeekMessage(val role: String, val content: String)
@@ -74,7 +75,11 @@ class DeepSeekClient @Inject constructor(
             client.newCall(request).execute().use { resp ->
                 val raw = resp.body?.string().orEmpty()
                 if (!resp.isSuccessful) {
-                    return@withContext DeepSeekResult.Error("HTTP ${resp.code}: ${raw.take(200)}")
+                    val transient = resp.code == 429 || resp.code in 500..599
+                    return@withContext DeepSeekResult.Error(
+                        "HTTP ${resp.code}: ${raw.take(200)}",
+                        transient = transient
+                    )
                 }
                 val parsed = runCatching { responseAdapter.fromJson(raw) }.getOrNull()
                 val content = parsed?.choices?.firstOrNull()?.message?.content
@@ -85,7 +90,12 @@ class DeepSeekClient @Inject constructor(
                 }
             }
         } catch (t: Throwable) {
-            DeepSeekResult.Error(t.message ?: t::class.simpleName ?: "unknown")
+            // SocketTimeoutException, ConnectException, UnknownHostException, etc. are all IOException —
+            // these are the things worth retrying. Anything else (programming error) we surface as terminal.
+            DeepSeekResult.Error(
+                t.message ?: t::class.simpleName ?: "unknown",
+                transient = t is IOException
+            )
         }
     }
 }

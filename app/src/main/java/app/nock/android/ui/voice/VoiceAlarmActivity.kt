@@ -120,7 +120,7 @@ private fun StatusText(state: VoiceAlarmUiState) {
         }
         is VoiceAlarmUiState.Success ->
             Text(
-                stringResource(R.string.voice_success_prefix, state.reminderName),
+                state.message,
                 style = MaterialTheme.typography.titleMedium,
                 color = Color.White,
                 fontWeight = FontWeight.SemiBold,

@@ -38,7 +38,7 @@ fun VoiceAlarmFab(
     LaunchedEffect(state) {
         when (val s = state) {
             is VoiceAlarmUiState.Success -> {
-                snackbar.showSnackbar(message = s.reminderName)
+                snackbar.showSnackbar(message = s.message)
                 vm.reset()
             }
             is VoiceAlarmUiState.Error -> {

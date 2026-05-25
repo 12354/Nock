@@ -23,7 +23,7 @@ sealed class DeepSeekParseResult {
         val groupHint: String?,
     ) : DeepSeekParseResult()
     object NotConfigured : DeepSeekParseResult()
-    data class Failed(val message: String) : DeepSeekParseResult()
+    data class Failed(val message: String, val transient: Boolean = false) : DeepSeekParseResult()
 }
 
 @Singleton
@@ -50,7 +50,7 @@ class DeepSeekReminderParser @Inject constructor(
         val system = buildSystemPrompt(now, zone, groups)
 
         return when (val r = deepSeek.complete(system, trimmed, jsonMode = true)) {
-            is DeepSeekResult.Error -> DeepSeekParseResult.Failed(r.message)
+            is DeepSeekResult.Error -> DeepSeekParseResult.Failed(r.message, transient = r.transient)
             is DeepSeekResult.Ok -> buildResult(r.content, now, zone)
         }
     }

@@ -149,6 +149,14 @@
     <string name="voice_error_missing_field">Modellantwort fehlt Feld: %1$s</string>
     <string name="voice_error_unknown_schedule">Unbekannter Zeitplantyp: %1$s</string>
     <string name="voice_error_save_failed">Erinnerung konnte nicht gespeichert werden</string>
+    <string name="voice_captured">Gespeichert — wird im Hintergrund verarbeitet</string>
+
+    <!-- Pending voice reminders (transient transcripts being processed by DeepSeek) -->
+    <string name="pending_voice_title">Sprach-Erinnerung wird verarbeitet</string>
+    <string name="pending_voice_processing">Wird bearbeitet…</string>
+    <string name="pending_voice_failed_prefix">Erstellung fehlgeschlagen: %1$s</string>
+    <string name="pending_voice_not_configured">DeepSeek API-Schlüssel nicht gesetzt</string>
+    <string name="pending_voice_retry">Erneut versuchen</string>
 
     <!-- Voice alarm widget -->
     <string name="widget_voice_alarm_label">Sprach-Alarm</string>

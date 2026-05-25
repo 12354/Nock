@@ -3,9 +3,11 @@ package app.nock.android.di
 import android.content.Context
 import androidx.room.Room
 import app.nock.android.data.MIGRATION_1_2
+import app.nock.android.data.MIGRATION_2_3
 import app.nock.android.data.NockDatabase
 import app.nock.android.data.dao.ActiveEscalationDao
 import app.nock.android.data.dao.GroupDao
+import app.nock.android.data.dao.PendingVoiceReminderDao
 import app.nock.android.data.dao.ReminderDao
 import app.nock.android.data.dao.SettingsDao
 import dagger.Module
@@ -30,7 +32,7 @@ object AppModule {
     @Provides @Singleton
     fun provideDatabase(@ApplicationContext ctx: Context): NockDatabase =
         Room.databaseBuilder(ctx, NockDatabase::class.java, "nock.db")
-            .addMigrations(MIGRATION_1_2)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
             .fallbackToDestructiveMigration()
             .build()
 
@@ -38,6 +40,8 @@ object AppModule {
     @Provides fun provideReminderDao(db: NockDatabase): ReminderDao = db.reminderDao()
     @Provides fun provideActiveDao(db: NockDatabase): ActiveEscalationDao = db.activeEscalationDao()
     @Provides fun provideSettingsDao(db: NockDatabase): SettingsDao = db.settingsDao()
+    @Provides fun providePendingVoiceReminderDao(db: NockDatabase): PendingVoiceReminderDao =
+        db.pendingVoiceReminderDao()
 
     @Provides @Singleton
     fun provideOkHttp(): OkHttpClient = OkHttpClient.Builder()

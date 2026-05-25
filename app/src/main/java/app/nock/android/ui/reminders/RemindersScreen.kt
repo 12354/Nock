@@ -11,6 +11,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -19,10 +20,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import app.nock.android.R
+import app.nock.android.data.entity.PendingVoiceReminderEntity
 import app.nock.android.domain.model.Group
 import app.nock.android.domain.model.Reminder
 import app.nock.android.ui.voice.VoiceAlarmFab
@@ -37,6 +40,7 @@ fun RemindersScreen(
     vm: RemindersViewModel = hiltViewModel()
 ) {
     val sections by vm.sections.collectAsState()
+    val pending by vm.pending.collectAsState()
     Scaffold(
         topBar = { TopAppBar(title = { Text(stringResource(R.string.reminders)) }) },
         floatingActionButton = {
@@ -58,6 +62,13 @@ fun RemindersScreen(
             contentPadding = PaddingValues(start = 12.dp, top = 12.dp, end = 12.dp, bottom = 144.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            items(pending, key = { "pending-${it.id}" }) { entry ->
+                PendingVoiceCard(
+                    entry = entry,
+                    onRetry = { vm.retryPending(entry) },
+                    onDelete = { vm.deletePending(entry) }
+                )
+            }
             items(sections, key = { it.group.id }) { section ->
                 GroupCard(
                     section = section,
@@ -138,6 +149,71 @@ private fun GroupCard(
                             Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.delete))
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PendingVoiceCard(
+    entry: PendingVoiceReminderEntity,
+    onRetry: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    val hasError = entry.lastError != null
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Column(Modifier.padding(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (!hasError) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp
+                    )
+                    Spacer(Modifier.width(8.dp))
+                }
+                Text(
+                    stringResource(R.string.pending_voice_title),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "“${entry.transcript}”",
+                style = MaterialTheme.typography.bodyMedium,
+                fontStyle = FontStyle.Italic
+            )
+            Spacer(Modifier.height(6.dp))
+            val statusText = entry.lastError?.let {
+                stringResource(R.string.pending_voice_failed_prefix, it)
+            } ?: stringResource(R.string.pending_voice_processing)
+            Text(
+                statusText,
+                style = MaterialTheme.typography.bodySmall,
+                color = if (hasError) MaterialTheme.colorScheme.error
+                else MaterialTheme.colorScheme.outline
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+                horizontalArrangement = Arrangement.End
+            ) {
+                if (hasError) {
+                    TextButton(onClick = onRetry) {
+                        Icon(Icons.Filled.Refresh, contentDescription = null)
+                        Spacer(Modifier.width(4.dp))
+                        Text(stringResource(R.string.pending_voice_retry))
+                    }
+                }
+                TextButton(onClick = onDelete) {
+                    Icon(Icons.Filled.Delete, contentDescription = null)
+                    Spacer(Modifier.width(4.dp))
+                    Text(stringResource(R.string.delete))
                 }
             }
         }

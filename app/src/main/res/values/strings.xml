@@ -149,6 +149,14 @@
     <string name="voice_error_missing_field">Model response missing field: %1$s</string>
     <string name="voice_error_unknown_schedule">Unknown schedule type: %1$s</string>
     <string name="voice_error_save_failed">Failed to save reminder</string>
+    <string name="voice_captured">Saved — processing in background</string>
+
+    <!-- Pending voice reminders (transient transcripts being processed by DeepSeek) -->
+    <string name="pending_voice_title">Processing voice reminder</string>
+    <string name="pending_voice_processing">Working on it…</string>
+    <string name="pending_voice_failed_prefix">Couldn\'t create: %1$s</string>
+    <string name="pending_voice_not_configured">DeepSeek API key not set</string>
+    <string name="pending_voice_retry">Retry</string>
 
     <!-- Voice alarm widget -->
     <string name="widget_voice_alarm_label">Voice alarm</string>

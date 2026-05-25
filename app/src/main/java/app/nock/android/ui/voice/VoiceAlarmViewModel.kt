@@ -20,7 +20,7 @@ sealed class VoiceAlarmUiState {
     object Idle : VoiceAlarmUiState()
     data class Listening(val partial: String) : VoiceAlarmUiState()
     data class Thinking(val transcript: String) : VoiceAlarmUiState()
-    data class Success(val reminderName: String) : VoiceAlarmUiState()
+    data class Success(val message: String) : VoiceAlarmUiState()
     data class Error(val message: String) : VoiceAlarmUiState()
 }
 
@@ -217,7 +217,7 @@ class VoiceAlarmViewModel @Inject constructor(
             val outcome = creator.createFromTranscript(text)
             logger.log(TAG, "createFromTranscript outcome=${outcome::class.simpleName}")
             _state.value = when (outcome) {
-                is VoiceAlarmOutcome.Created -> VoiceAlarmUiState.Success(outcome.reminder.name)
+                is VoiceAlarmOutcome.Captured -> VoiceAlarmUiState.Success(outcome.message)
                 is VoiceAlarmOutcome.Failed -> VoiceAlarmUiState.Error(outcome.message)
             }
         }

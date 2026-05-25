@@ -12,6 +12,7 @@ import app.nock.android.data.dao.GroupDao
 import app.nock.android.di.ApplicationScope
 import app.nock.android.notif.NockNotificationChannels
 import app.nock.android.ui.LocaleHelper
+import app.nock.android.voice.PendingVoiceProcessor
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -24,6 +25,7 @@ class NockApplication : Application() {
     @Inject lateinit var seedData: SeedData
     @Inject lateinit var groupDao: GroupDao
     @Inject lateinit var seedGroupLocaleSync: SeedGroupLocaleSync
+    @Inject lateinit var pendingVoiceProcessor: PendingVoiceProcessor
     @Inject @ApplicationScope lateinit var appScope: CoroutineScope
 
     override fun onCreate() {
@@ -46,5 +48,6 @@ class NockApplication : Application() {
                 seedGroupLocaleSync.sync()
             }
         }
+        pendingVoiceProcessor.kickAll()
     }
 }

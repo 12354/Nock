@@ -6,10 +6,12 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import app.nock.android.data.dao.ActiveEscalationDao
 import app.nock.android.data.dao.GroupDao
+import app.nock.android.data.dao.PendingVoiceReminderDao
 import app.nock.android.data.dao.ReminderDao
 import app.nock.android.data.dao.SettingsDao
 import app.nock.android.data.entity.ActiveEscalationEntity
 import app.nock.android.data.entity.GroupEntity
+import app.nock.android.data.entity.PendingVoiceReminderEntity
 import app.nock.android.data.entity.ReminderEntity
 import app.nock.android.data.entity.SettingsEntity
 
@@ -18,9 +20,10 @@ import app.nock.android.data.entity.SettingsEntity
         GroupEntity::class,
         ReminderEntity::class,
         ActiveEscalationEntity::class,
-        SettingsEntity::class
+        SettingsEntity::class,
+        PendingVoiceReminderEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = true
 )
 abstract class NockDatabase : RoomDatabase() {
@@ -28,10 +31,26 @@ abstract class NockDatabase : RoomDatabase() {
     abstract fun reminderDao(): ReminderDao
     abstract fun activeEscalationDao(): ActiveEscalationDao
     abstract fun settingsDao(): SettingsDao
+    abstract fun pendingVoiceReminderDao(): PendingVoiceReminderDao
 }
 
 val MIGRATION_1_2 = object : Migration(1, 2) {
     override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL("ALTER TABLE groups ADD COLUMN seedKey TEXT")
+    }
+}
+
+val MIGRATION_2_3 = object : Migration(2, 3) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `pending_voice_reminders` (" +
+                "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`transcript` TEXT NOT NULL, " +
+                "`createdAt` INTEGER NOT NULL, " +
+                "`lastAttemptAt` INTEGER, " +
+                "`attemptCount` INTEGER NOT NULL, " +
+                "`lastError` TEXT" +
+                ")"
+        )
     }
 }

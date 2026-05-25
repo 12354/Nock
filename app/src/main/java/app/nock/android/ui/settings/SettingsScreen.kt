@@ -37,8 +37,11 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.hilt.navigation.compose.hiltViewModel
 import app.nock.android.R
 import app.nock.android.domain.model.EscalationChain
@@ -78,6 +81,7 @@ fun SettingsScreen(vm: SettingsViewModel = hiltViewModel()) {
             GroupsSection(state.groups, vm)
             TelegramSection(state.telegramToken, state.telegramChat, state.telegramStatus, vm)
             DeepSeekSection(state.deepSeekApiKey, state.deepSeekModel, state.deepSeekBaseUrl, vm)
+            VoiceDiagnosticsSection(vm)
             DriveSection(state.driveEmail, state.driveLastSyncMs, state.driveStatus, vm)
             UpdateSection()
         }
@@ -543,5 +547,62 @@ private fun SectionCard(title: String, content: @Composable ColumnScope.() -> Un
             Spacer(Modifier.height(12.dp))
             content()
         }
+    }
+}
+
+@Composable
+private fun VoiceDiagnosticsSection(vm: SettingsViewModel) {
+    val clipboard = LocalClipboardManager.current
+    val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
+    var logText by remember { mutableStateOf(vm.voiceLogDump()) }
+    val copiedMsg = stringResource(R.string.settings_voice_log_copied)
+
+    SectionCard(stringResource(R.string.settings_voice_log_title)) {
+        Text(
+            stringResource(R.string.settings_voice_log_help),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.outline
+        )
+        Spacer(Modifier.height(12.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = { logText = vm.voiceLogDump() }) {
+                Text(stringResource(R.string.settings_voice_log_refresh))
+            }
+            Button(onClick = {
+                val snapshot = vm.voiceLogDump()
+                logText = snapshot
+                clipboard.setText(AnnotatedString(snapshot))
+                scope.launch { snackbarHostState.showSnackbar(copiedMsg) }
+            }) {
+                Text(stringResource(R.string.settings_voice_log_copy))
+            }
+            OutlinedButton(onClick = {
+                vm.clearVoiceLog()
+                logText = ""
+            }) {
+                Text(stringResource(R.string.settings_voice_log_clear))
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        Surface(
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            shape = MaterialTheme.shapes.small,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Box(
+                modifier = Modifier
+                    .heightIn(max = 360.dp)
+                    .verticalScroll(rememberScrollState())
+                    .padding(8.dp)
+            ) {
+                Text(
+                    text = logText.ifBlank { stringResource(R.string.settings_voice_log_empty) },
+                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        SnackbarHost(hostState = snackbarHostState, modifier = Modifier.fillMaxWidth())
     }
 }

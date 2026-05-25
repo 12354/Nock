@@ -54,7 +54,6 @@
     <string name="edit_title_edit">Edit reminder</string>
     <string name="edit_quick_add_label">Quick add (natural language)</string>
     <string name="edit_quick_add_placeholder">e.g. Feed dog every day at 8am and 6pm — Pets</string>
-    <string name="edit_parsed_prefix">Parsed: %1$s</string>
     <string name="edit_ai_thinking">AI is thinking…</string>
     <string name="edit_ai_error_prefix">AI error: %1$s</string>
     <string name="edit_name_label">Name</string>
@@ -134,13 +133,6 @@
     <string name="stage_type_alarm">Alarm</string>
     <string name="stage_type_telegram">Telegram</string>
 
-    <!-- NL parser preview / fallbacks -->
-    <string name="nl_preview_oneshot">one-shot</string>
-    <string name="nl_preview_daily">daily at %1$s</string>
-    <string name="nl_preview_weekly">weekly on %1$s</string>
-    <string name="nl_preview_monthly">monthly day %1$d</string>
-    <string name="nl_preview_interval">every %1$dh</string>
-    <string name="nl_preview_on_unlock">when device is unlocked</string>
     <string name="default_reminder_name">Reminder</string>
 
     <!-- Voice alarm -->

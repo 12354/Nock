@@ -54,7 +54,6 @@
     <string name="edit_title_edit">Erinnerung bearbeiten</string>
     <string name="edit_quick_add_label">Schnell hinzufügen (natürliche Sprache)</string>
     <string name="edit_quick_add_placeholder">z. B. Hund füttern jeden Tag um 8 und 18 Uhr — Haustiere</string>
-    <string name="edit_parsed_prefix">Erkannt: %1$s</string>
     <string name="edit_ai_thinking">KI denkt nach…</string>
     <string name="edit_ai_error_prefix">KI-Fehler: %1$s</string>
     <string name="edit_name_label">Name</string>
@@ -134,13 +133,6 @@
     <string name="stage_type_alarm">Alarm</string>
     <string name="stage_type_telegram">Telegram</string>
 
-    <!-- NL parser preview / fallbacks -->
-    <string name="nl_preview_oneshot">einmalig</string>
-    <string name="nl_preview_daily">täglich um %1$s</string>
-    <string name="nl_preview_weekly">wöchentlich am %1$s</string>
-    <string name="nl_preview_monthly">monatlich am %1$d.</string>
-    <string name="nl_preview_interval">alle %1$d Std.</string>
-    <string name="nl_preview_on_unlock">beim Entsperren des Geräts</string>
     <string name="default_reminder_name">Erinnerung</string>
 
     <!-- Voice alarm -->

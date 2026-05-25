@@ -90,7 +90,6 @@ fun EditReminderRoute(
                             color = MaterialTheme.colorScheme.error
                         )
                         state.nlThinking -> Text(stringResource(R.string.edit_ai_thinking))
-                        state.nlPreview.isNotBlank() -> Text(stringResource(R.string.edit_parsed_prefix, state.nlPreview))
                     }
                 }
             )

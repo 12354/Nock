@@ -8,9 +8,7 @@ import app.nock.android.R
 import app.nock.android.data.NockRepository
 import app.nock.android.domain.escalation.EscalationEngine
 import app.nock.android.domain.model.Group
-import app.nock.android.domain.model.Reminder
 import app.nock.android.domain.model.Schedule
-import app.nock.android.parse.NaturalLanguageParser
 import app.nock.android.voice.DeepSeekParseResult
 import app.nock.android.voice.DeepSeekReminderParser
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -23,8 +21,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.DayOfWeek
-import java.time.format.TextStyle
-import java.util.Locale
 import javax.inject.Inject
 
 data class EditState(
@@ -41,7 +37,6 @@ data class EditState(
     val intervalHours: Int = 8,
     val groups: List<Group> = emptyList(),
     val nlInput: String = "",
-    val nlPreview: String = "",
     val nlThinking: Boolean = false,
     val nlError: String? = null,
 )
@@ -113,20 +108,11 @@ class EditReminderViewModel @Inject constructor(
     fun updateIntervalHours(h: Int) = _state.update { it.copy(intervalHours = h) }
 
     fun updateNl(input: String) {
-        val parsed = NaturalLanguageParser.parse(input)
-        _state.update { st ->
-            val newGroupId = parsed.groupHint?.let { hint ->
-                st.groups.firstOrNull { it.name.equals(hint, ignoreCase = true) }?.id
-            } ?: st.groupId
-            val st2 = st.copy(
+        _state.update {
+            it.copy(
                 nlInput = input,
-                nlPreview = parsed.schedule?.let { describeSchedule(it) } ?: "",
-                groupId = newGroupId,
-                name = parsed.name.takeIf { it.isNotBlank() } ?: st.name,
                 nlError = null,
-                nlThinking = false,
             )
-            applySchedule(st2, parsed.schedule)
         }
         scheduleDeepSeek(input)
     }
@@ -159,7 +145,6 @@ class EditReminderViewModel @Inject constructor(
                 st.groups.firstOrNull { it.name.equals(hint, ignoreCase = true) }?.id
             } ?: st.groupId
             val st2 = st.copy(
-                nlPreview = describeSchedule(r.schedule),
                 groupId = newGroupId,
                 name = r.name?.takeIf { it.isNotBlank() } ?: st.name,
                 nlThinking = false,
@@ -188,27 +173,6 @@ class EditReminderViewModel @Inject constructor(
             intervalHours = (s.intervalMs / 3_600_000L).toInt().coerceAtLeast(1)
         )
         is Schedule.OnUnlock -> st.copy(scheduleType = ScheduleKind.ON_UNLOCK)
-    }
-
-    private fun describeSchedule(s: Schedule): String {
-        val locale = Locale.getDefault()
-        return when (s) {
-            is Schedule.OneShot -> ctx.getString(R.string.nl_preview_oneshot)
-            is Schedule.Daily -> ctx.getString(
-                R.string.nl_preview_daily,
-                s.timesOfDayMinutes.joinToString { "%02d:%02d".format(it / 60, it % 60) }
-            )
-            is Schedule.Weekly -> ctx.getString(
-                R.string.nl_preview_weekly,
-                s.daysOfWeek.joinToString { it.getDisplayName(TextStyle.SHORT, locale) }
-            )
-            is Schedule.Monthly -> ctx.getString(R.string.nl_preview_monthly, s.dayOfMonth)
-            is Schedule.IntervalFromLast -> ctx.getString(
-                R.string.nl_preview_interval,
-                (s.intervalMs / 3_600_000L).toInt()
-            )
-            is Schedule.OnUnlock -> ctx.getString(R.string.nl_preview_on_unlock)
-        }
     }
 
     suspend fun save() {

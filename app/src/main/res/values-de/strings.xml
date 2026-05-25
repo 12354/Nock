@@ -55,6 +55,8 @@
     <string name="edit_quick_add_label">Schnell hinzufügen (natürliche Sprache)</string>
     <string name="edit_quick_add_placeholder">z. B. Hund füttern jeden Tag um 8 und 18 Uhr — Haustiere</string>
     <string name="edit_parsed_prefix">Erkannt: %1$s</string>
+    <string name="edit_ai_thinking">KI denkt nach…</string>
+    <string name="edit_ai_error_prefix">KI-Fehler: %1$s</string>
     <string name="edit_name_label">Name</string>
     <string name="edit_group_label">Gruppe</string>
     <string name="edit_schedule_label">Zeitplan</string>

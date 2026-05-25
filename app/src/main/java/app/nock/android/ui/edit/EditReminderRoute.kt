@@ -82,8 +82,16 @@ fun EditReminderRoute(
                 placeholder = { Text(stringResource(R.string.edit_quick_add_placeholder)) },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = false,
+                isError = state.nlError != null,
                 supportingText = {
-                    if (state.nlPreview.isNotBlank()) Text(stringResource(R.string.edit_parsed_prefix, state.nlPreview))
+                    when {
+                        state.nlError != null -> Text(
+                            stringResource(R.string.edit_ai_error_prefix, state.nlError!!),
+                            color = MaterialTheme.colorScheme.error
+                        )
+                        state.nlThinking -> Text(stringResource(R.string.edit_ai_thinking))
+                        state.nlPreview.isNotBlank() -> Text(stringResource(R.string.edit_parsed_prefix, state.nlPreview))
+                    }
                 }
             )
 

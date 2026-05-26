@@ -12,6 +12,7 @@ import app.nock.android.domain.escalation.EscalationEngine
 import app.nock.android.domain.model.EscalationChain
 import app.nock.android.domain.model.Group
 import app.nock.android.domain.model.Reminder
+import app.nock.android.domain.model.Schedule
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -81,10 +82,14 @@ class TodayViewModel @Inject constructor(
             if (active != null) engine.done(active.id)
             else {
                 val r = repo.getReminder(reminderId) ?: return@launch
+                engine.cancelActive(reminderId)
+                if (r.schedule is Schedule.OneShot || r.schedule is Schedule.OnUnlock) {
+                    repo.deleteReminder(r)
+                    return@launch
+                }
                 val now = System.currentTimeMillis()
                 val next = r.schedule.nextFireFrom(now, now)
                 repo.updateFireState(reminderId, next, now)
-                engine.cancelActive(reminderId)
                 if (next != null) {
                     engine.startEscalationAt(r.copy(lastCompletedAt = now, nextFireAt = next), next)
                 }

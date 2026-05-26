@@ -1,6 +1,5 @@
 package app.nock.android.alarm
 
-import android.app.KeyguardManager
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -92,9 +91,20 @@ class AlarmActivity : ComponentActivity() {
         // minSdk is 29 so the O_MR1+ activity-level APIs are always available.
         setShowWhenLocked(true)
         setTurnScreenOn(true)
-        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        val km = getSystemService(KEYGUARD_SERVICE) as? KeyguardManager
-        km?.requestDismissKeyguard(this, null)
+        // Belt-and-suspenders: some OEM builds (Samsung/Xiaomi) only honor the
+        // legacy window flags when the activity launches from the keyguard, so
+        // set both the modern APIs above and the deprecated flags below.
+        @Suppress("DEPRECATION")
+        window.addFlags(
+            android.view.WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                android.view.WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON or
+                android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+        )
+        // Intentionally NOT calling KeyguardManager.requestDismissKeyguard():
+        // on a secured keyguard it triggers the system unlock prompt, which
+        // takes over the screen and hides the alarm activity until the user
+        // authenticates. The alarm UI itself sits above the keyguard via
+        // setShowWhenLocked, and Done/Snooze work fine from the lock screen.
     }
 
     private fun bindFromIntent(intent: Intent?) {

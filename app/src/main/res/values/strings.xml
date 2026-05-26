@@ -101,6 +101,27 @@
     <string name="settings_override_chain">Override chain</string>
     <string name="settings_done_editing_group">Done editing group</string>
 
+    <!-- Group editor -->
+    <string name="group_editor_title_new">New group</string>
+    <string name="group_editor_title_edit">Edit group</string>
+    <string name="group_editor_reminders_count">%1$d reminder</string>
+    <string name="group_editor_reminders_count_plural">%1$d reminders</string>
+    <string name="group_editor_section_color">Color</string>
+    <string name="group_editor_section_icon">Icon</string>
+    <string name="group_editor_section_pause">Pause</string>
+    <string name="group_editor_section_chain">Escalation chain</string>
+    <string name="group_editor_pause_title">Pause this group</string>
+    <string name="group_editor_pause_sub">Prevents new fires. Active escalations still play.</string>
+    <string name="group_editor_custom_chain_title">Use custom chain</string>
+    <string name="group_editor_custom_chain_sub">Override the default for this group</string>
+    <string name="group_editor_edit_stages">Edit stages</string>
+    <string name="group_editor_mirror_silent_telegram_sub">Sends a silent Telegram message at the heads-up stage</string>
+    <string name="group_editor_chain_summary_default">Using the default chain</string>
+
+    <!-- Quick-add styling -->
+    <string name="edit_quick_add_hint">Quick add — type it in plain English</string>
+    <string name="edit_quick_add_parsed">Parsed: %1$s</string>
+
     <!-- Settings: telegram -->
     <string name="settings_telegram_title">Telegram bot</string>
     <string name="settings_telegram_token">Bot token</string>

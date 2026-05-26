@@ -57,6 +57,18 @@ val GroupIconChoices: List<Pair<String, ImageVector>> = listOf(
     "School" to Icons.Outlined.School,
 )
 
+/** Available picker colors for the group editor — mirrors the seed palette. */
+val GroupColorChoices: List<Long> = listOf(
+    0xFFFFB070L, // pets
+    0xFFFF6B6B, // meds
+    0xFFB388FF, // self-care
+    0xFF80CBC4, // household
+    0xFF8AB4F8, // work
+    0xFFF6BF26, // errands
+    0xFFF48FB1,
+    0xFFA5D6A7,
+)
+
 /** Circle with the group icon tinted in its color over a 22% tinted background. */
 @Composable
 fun GroupAvatar(group: Group, size: Dp = 40.dp) {

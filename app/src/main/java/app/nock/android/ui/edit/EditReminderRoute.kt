@@ -4,7 +4,9 @@ package app.nock.android.ui.edit
 
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -12,11 +14,18 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.rememberCoroutineScope
@@ -26,16 +35,26 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.TransformedText
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.input.OffsetMapping
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import app.nock.android.R
+import app.nock.android.ui.components.stageIcon
+import app.nock.android.ui.components.stageTypeLabel
 import kotlinx.coroutines.launch
 import java.time.DayOfWeek
 import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.ZoneId
-import java.time.format.TextStyle
+import java.time.format.TextStyle as JTextStyle
 import java.util.Calendar
 import java.util.Locale
 
@@ -52,11 +71,11 @@ fun EditReminderRoute(
 
     Scaffold(
         topBar = {
-            TopAppBar(
+            CenterAlignedTopAppBar(
                 title = { Text(stringResource(if (reminderId == 0L) R.string.edit_title_new else R.string.edit_title_edit)) },
                 navigationIcon = {
                     IconButton(onClick = onDone) {
-                        Icon(Icons.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
+                        Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.back))
                     }
                 },
                 actions = {
@@ -71,34 +90,22 @@ fun EditReminderRoute(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(16.dp)
-                .verticalScroll(rememberScrollState()),
+                .verticalScroll(rememberScrollState())
+                .padding(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            OutlinedTextField(
-                value = state.nlInput,
-                onValueChange = vm::updateNl,
-                label = { Text(stringResource(R.string.edit_quick_add_label)) },
-                placeholder = { Text(stringResource(R.string.edit_quick_add_placeholder)) },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = false,
-                isError = state.nlError != null,
-                supportingText = {
-                    when {
-                        state.nlError != null -> Text(
-                            stringResource(R.string.edit_ai_error_prefix, state.nlError!!),
-                            color = MaterialTheme.colorScheme.error
-                        )
-                        state.nlThinking -> Text(stringResource(R.string.edit_ai_thinking))
-                    }
-                }
-            )
+            QuickAddCard(state, vm::updateNl)
+
+            HorizontalDivider(modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp))
 
             OutlinedTextField(
                 value = state.name,
                 onValueChange = vm::updateName,
                 label = { Text(stringResource(R.string.edit_name_label)) },
-                modifier = Modifier.fillMaxWidth()
+                singleLine = true,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
             )
 
             GroupSelector(
@@ -129,32 +136,248 @@ fun EditReminderRoute(
                 ScheduleKind.INTERVAL -> IntervalEditor(state.intervalHours, vm::updateIntervalHours)
                 ScheduleKind.ON_UNLOCK -> OnUnlockEditor()
             }
+
+            EscalationSummary(state)
         }
     }
 }
 
 @Composable
-private fun GroupSelector(groups: List<app.nock.android.domain.model.Group>, selectedId: Long, onSelect: (Long) -> Unit) {
-    Column {
-        Text(stringResource(R.string.edit_group_label), style = MaterialTheme.typography.labelLarge)
-        Spacer(Modifier.height(8.dp))
-        FlowRow {
+private fun QuickAddCard(state: EditState, onChange: (String) -> Unit) {
+    val primary = MaterialTheme.colorScheme.primary
+    val onSurface = MaterialTheme.colorScheme.onSurface
+    val onSurfaceVar = MaterialTheme.colorScheme.onSurfaceVariant
+    val selectedGroupName = state.groups.firstOrNull { it.id == state.groupId }?.name
+    val selectedGroupColor = state.groups.firstOrNull { it.id == state.groupId }?.color?.let { Color(it) }
+
+    Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(start = 4.dp, bottom = 6.dp)
+        ) {
+            Icon(
+                Icons.Filled.AutoAwesome,
+                contentDescription = null,
+                tint = primary,
+                modifier = Modifier.size(14.dp)
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(
+                stringResource(R.string.edit_quick_add_hint),
+                style = MaterialTheme.typography.labelMedium,
+                color = onSurfaceVar
+            )
+        }
+
+        Surface(
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = RoundedCornerShape(16.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(
+                    width = 1.dp,
+                    color = primary.copy(alpha = 0.4f),
+                    shape = RoundedCornerShape(16.dp)
+                ),
+        ) {
+            Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                BasicTextField(
+                    value = state.nlInput,
+                    onValueChange = onChange,
+                    textStyle = TextStyle(
+                        color = onSurface,
+                        fontSize = 16.sp,
+                        lineHeight = 24.sp,
+                    ),
+                    cursorBrush = androidx.compose.ui.graphics.SolidColor(primary),
+                    visualTransformation = QuickAddTransformation(
+                        primaryHighlight = primary.copy(alpha = 0.25f),
+                        groupName = selectedGroupName,
+                        groupHighlight = selectedGroupColor?.copy(alpha = 0.25f)
+                    ),
+                    decorationBox = { inner ->
+                        if (state.nlInput.isEmpty()) {
+                            Text(
+                                stringResource(R.string.edit_quick_add_placeholder),
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = onSurfaceVar
+                            )
+                        }
+                        inner()
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                if (state.nlThinking) {
+                    Spacer(Modifier.height(8.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(14.dp),
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            stringResource(R.string.edit_ai_thinking),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = onSurfaceVar
+                        )
+                    }
+                } else if (state.nlError != null) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        stringResource(R.string.edit_ai_error_prefix, state.nlError!!),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                } else if (state.nlInput.isNotBlank()) {
+                    val summary = parsedSummary(state)
+                    if (summary != null) {
+                        Spacer(Modifier.height(8.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Filled.CheckCircle,
+                                contentDescription = null,
+                                tint = Color(0xFF80CBC4),
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                stringResource(R.string.edit_quick_add_parsed, summary),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = onSurfaceVar
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Build the "parsed" one-liner from current state if anything has been resolved. */
+private fun parsedSummary(state: EditState): String? {
+    if (state.groups.isEmpty()) return null
+    val groupName = state.groups.firstOrNull { it.id == state.groupId }?.name ?: return null
+    val schedulePart: String = when (state.scheduleType) {
+        ScheduleKind.DAILY -> {
+            val times = state.dailyTimesMinutes.sorted().joinToString(" and ") {
+                "%02d:%02d".format(it / 60, it % 60)
+            }
+            "daily at $times"
+        }
+        ScheduleKind.WEEKLY -> {
+            val locale = Locale.getDefault()
+            val days = state.weeklyDays.sorted().joinToString(", ") {
+                it.getDisplayName(JTextStyle.SHORT, locale)
+            }
+            val times = state.weeklyTimesMinutes.sorted().joinToString(" and ") {
+                "%02d:%02d".format(it / 60, it % 60)
+            }
+            "$days at $times"
+        }
+        ScheduleKind.MONTHLY -> "monthly on day ${state.monthlyDay} at %02d:%02d".format(
+            state.monthlyTimeMinutes / 60, state.monthlyTimeMinutes % 60
+        )
+        ScheduleKind.INTERVAL -> "every ${state.intervalHours}h after done"
+        ScheduleKind.ONESHOT -> {
+            val dt = LocalDateTime.ofInstant(
+                java.time.Instant.ofEpochMilli(state.oneShotMs),
+                ZoneId.systemDefault()
+            )
+            "once on %04d-%02d-%02d at %02d:%02d".format(
+                dt.year, dt.monthValue, dt.dayOfMonth, dt.hour, dt.minute
+            )
+        }
+        ScheduleKind.ON_UNLOCK -> "on next unlock"
+    }
+    return "$schedulePart, group $groupName"
+}
+
+private val TIME_PATTERNS = listOf(
+    Regex("""\b\d{1,2}:\d{2}\b""", RegexOption.IGNORE_CASE),
+    Regex("""\b\d{1,2}\s*(?:am|pm)\b""", RegexOption.IGNORE_CASE),
+    Regex("""\bevery\s+\d+\s*(?:m|min|mins|h|hr|hrs|hour|hours|minute|minutes)\b""", RegexOption.IGNORE_CASE),
+    Regex("""\bevery\s+(?:day|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b""", RegexOption.IGNORE_CASE),
+    Regex("""\b(?:daily|weekly|monthly|tomorrow|today)\b""", RegexOption.IGNORE_CASE),
+)
+
+private class QuickAddTransformation(
+    private val primaryHighlight: Color,
+    private val groupName: String?,
+    private val groupHighlight: Color?,
+) : VisualTransformation {
+    override fun filter(text: AnnotatedString): TransformedText {
+        val raw = text.text
+        val ranges = mutableListOf<Triple<Int, Int, Color>>()
+        TIME_PATTERNS.forEach { rx ->
+            rx.findAll(raw).forEach { m ->
+                ranges.add(Triple(m.range.first, m.range.last + 1, primaryHighlight))
+            }
+        }
+        if (groupName != null && groupHighlight != null) {
+            val rx = Regex("\\b" + Regex.escape(groupName) + "\\b", RegexOption.IGNORE_CASE)
+            rx.findAll(raw).forEach { m ->
+                ranges.add(Triple(m.range.first, m.range.last + 1, groupHighlight))
+            }
+        }
+        val annotated = buildAnnotatedString {
+            append(raw)
+            ranges.forEach { (s, e, c) ->
+                addStyle(SpanStyle(background = c), s, e)
+            }
+        }
+        return TransformedText(annotated, OffsetMapping.Identity)
+    }
+}
+
+@Composable
+private fun GroupSelector(
+    groups: List<app.nock.android.domain.model.Group>,
+    selectedId: Long,
+    onSelect: (Long) -> Unit
+) {
+    Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+        Text(
+            stringResource(R.string.edit_group_label).uppercase(Locale.getDefault()),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
+        )
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
             groups.forEach { g ->
                 val selected = g.id == selectedId
-                FilterChip(
-                    selected = selected,
+                val color = Color(g.color)
+                Surface(
                     onClick = { onSelect(g.id) },
-                    label = { Text(g.name) },
-                    leadingIcon = {
-                        Box(
-                            modifier = Modifier
-                                .size(12.dp)
-                                .clip(CircleShape)
-                                .background(Color(g.color))
+                    shape = RoundedCornerShape(8.dp),
+                    color = if (selected) color.copy(alpha = 0.22f) else Color.Transparent,
+                    border = if (selected) null else androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        MaterialTheme.colorScheme.outline
+                    ),
+                    contentColor = if (selected) color else MaterialTheme.colorScheme.onSurfaceVariant
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(
+                            imageVector = app.nock.android.ui.components.groupIconFor(g.icon),
+                            contentDescription = null,
+                            tint = if (selected) color else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(16.dp)
                         )
-                    },
-                    modifier = Modifier.padding(end = 8.dp, bottom = 4.dp)
-                )
+                        Text(
+                            g.name,
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal
+                        )
+                    }
+                }
             }
         }
     }
@@ -170,16 +393,22 @@ private fun ScheduleKindSelector(current: ScheduleKind, onChange: (ScheduleKind)
         ScheduleKind.INTERVAL to R.string.schedule_kind_interval,
         ScheduleKind.ON_UNLOCK to R.string.schedule_kind_on_unlock,
     )
-    Column {
-        Text(stringResource(R.string.edit_schedule_label), style = MaterialTheme.typography.labelLarge)
-        Spacer(Modifier.height(8.dp))
-        FlowRow {
+    Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+        Text(
+            stringResource(R.string.edit_schedule_label).uppercase(Locale.getDefault()),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
+        )
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
             items.forEach { (k, labelRes) ->
                 FilterChip(
                     selected = current == k,
                     onClick = { onChange(k) },
-                    label = { Text(stringResource(labelRes)) },
-                    modifier = Modifier.padding(end = 8.dp, bottom = 4.dp)
+                    label = { Text(stringResource(labelRes)) }
                 )
             }
         }
@@ -190,7 +419,7 @@ private fun ScheduleKindSelector(current: ScheduleKind, onChange: (ScheduleKind)
 private fun OneShotEditor(ms: Long, onChange: (Long) -> Unit) {
     val ctx = LocalContext.current
     val dt = remember(ms) { LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(ms), ZoneId.systemDefault()) }
-    Column {
+    Column(modifier = Modifier.padding(horizontal = 16.dp)) {
         Text(stringResource(R.string.edit_date_time_label), style = MaterialTheme.typography.labelLarge)
         Spacer(Modifier.height(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -214,12 +443,21 @@ private fun OneShotEditor(ms: Long, onChange: (Long) -> Unit) {
 @Composable
 private fun TimesListEditor(label: String, times: List<Int>, onChange: (List<Int>) -> Unit) {
     val ctx = LocalContext.current
-    Column {
-        Text(label, style = MaterialTheme.typography.labelLarge)
-        Spacer(Modifier.height(8.dp))
-        FlowRow {
+    val primary = MaterialTheme.colorScheme.primary
+    Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+        Text(
+            label.uppercase(Locale.getDefault()),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
+        )
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
             times.forEachIndexed { idx, m ->
-                AssistChip(
+                FilterChip(
+                    selected = true,
                     onClick = {
                         TimePickerDialog(ctx, { _, h, mn ->
                             onChange(times.toMutableList().also { it[idx] = h * 60 + mn }.sorted())
@@ -227,13 +465,20 @@ private fun TimesListEditor(label: String, times: List<Int>, onChange: (List<Int
                     },
                     label = { Text("%02d:%02d".format(m / 60, m % 60)) },
                     trailingIcon = {
-                        IconButton(onClick = {
-                            onChange(times.toMutableList().also { it.removeAt(idx) })
-                        }, modifier = Modifier.size(20.dp)) {
-                            Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.remove), modifier = Modifier.size(16.dp))
-                        }
+                        Icon(
+                            Icons.Filled.Close,
+                            contentDescription = stringResource(R.string.remove),
+                            modifier = Modifier
+                                .size(16.dp)
+                                .clickable {
+                                    onChange(times.toMutableList().also { it.removeAt(idx) })
+                                }
+                        )
                     },
-                    modifier = Modifier.padding(end = 8.dp, bottom = 4.dp)
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = primary.copy(alpha = 0.22f),
+                        selectedLabelColor = MaterialTheme.colorScheme.onSurface,
+                    )
                 )
             }
             AssistChip(
@@ -252,10 +497,17 @@ private fun TimesListEditor(label: String, times: List<Int>, onChange: (List<Int
 @Composable
 private fun WeekdaySelector(selected: Set<DayOfWeek>, onChange: (Set<DayOfWeek>) -> Unit) {
     val locale = Locale.getDefault()
-    Column {
-        Text(stringResource(R.string.edit_days_label), style = MaterialTheme.typography.labelLarge)
-        Spacer(Modifier.height(8.dp))
-        FlowRow {
+    Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+        Text(
+            stringResource(R.string.edit_days_label).uppercase(locale),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
+        )
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
             DayOfWeek.values().forEach { d ->
                 FilterChip(
                     selected = d in selected,
@@ -263,8 +515,7 @@ private fun WeekdaySelector(selected: Set<DayOfWeek>, onChange: (Set<DayOfWeek>)
                         val new = selected.toMutableSet().also { if (d in it) it.remove(d) else it.add(d) }
                         onChange(new)
                     },
-                    label = { Text(d.getDisplayName(TextStyle.SHORT, locale)) },
-                    modifier = Modifier.padding(end = 8.dp, bottom = 4.dp)
+                    label = { Text(d.getDisplayName(JTextStyle.SHORT, locale)) }
                 )
             }
         }
@@ -274,7 +525,7 @@ private fun WeekdaySelector(selected: Set<DayOfWeek>, onChange: (Set<DayOfWeek>)
 @Composable
 private fun MonthlyEditor(day: Int, timeMin: Int, onDay: (Int) -> Unit, onTime: (Int) -> Unit) {
     val ctx = LocalContext.current
-    Column {
+    Column(modifier = Modifier.padding(horizontal = 16.dp)) {
         Text(stringResource(R.string.edit_monthly_label), style = MaterialTheme.typography.labelLarge)
         Spacer(Modifier.height(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -293,7 +544,7 @@ private fun MonthlyEditor(day: Int, timeMin: Int, onDay: (Int) -> Unit, onTime: 
 
 @Composable
 private fun IntervalEditor(hours: Int, onChange: (Int) -> Unit) {
-    Column {
+    Column(modifier = Modifier.padding(horizontal = 16.dp)) {
         Text(stringResource(R.string.edit_interval_label), style = MaterialTheme.typography.labelLarge)
         Spacer(Modifier.height(8.dp))
         OutlinedTextField(
@@ -307,7 +558,7 @@ private fun IntervalEditor(hours: Int, onChange: (Int) -> Unit) {
 
 @Composable
 private fun OnUnlockEditor() {
-    Column {
+    Column(modifier = Modifier.padding(horizontal = 16.dp)) {
         Text(stringResource(R.string.edit_on_unlock_label), style = MaterialTheme.typography.labelLarge)
         Spacer(Modifier.height(8.dp))
         Surface(
@@ -324,3 +575,88 @@ private fun OnUnlockEditor() {
     }
 }
 
+@Composable
+private fun EscalationSummary(state: EditState) {
+    val g = state.groups.firstOrNull { it.id == state.groupId } ?: return
+    val chain = g.overrideChain ?: app.nock.android.domain.model.DefaultChain.CHAIN
+    val accent = Color(g.color)
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        shape = RoundedCornerShape(16.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Filled.Bolt,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    "Escalation",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier.weight(1f)
+                )
+                Icon(
+                    Icons.Filled.ChevronRight,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                buildAnnotatedString {
+                    append("Using ")
+                    pushStyle(SpanStyle(color = MaterialTheme.colorScheme.onSurface))
+                    append(g.name)
+                    pop()
+                    append(" group chain")
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(8.dp))
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                chain.stages.forEachIndexed { idx, stage ->
+                    Surface(
+                        color = accent.copy(alpha = 0.18f),
+                        shape = CircleShape,
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                imageVector = stageIcon(stage.type),
+                                contentDescription = null,
+                                tint = accent,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Text(
+                                stringResource(stageTypeLabel(stage.type)),
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Medium,
+                            )
+                        }
+                    }
+                    if (idx < chain.stages.lastIndex) {
+                        Text(
+                            "→",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.labelSmall,
+                            modifier = Modifier.align(Alignment.CenterVertically)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}

@@ -97,6 +97,8 @@
     <string name="edit_at_time">at %1$s</string>
     <string name="edit_interval_label">Interval after last Done</string>
     <string name="edit_hours_label">Hours</string>
+    <string name="edit_escalation_section">Escalation</string>
+    <string name="edit_using_group_chain">Using %1$s group chain</string>
 
     <!-- Settings: escalation chain -->
     <string name="settings_escalation_chain_title">Escalation chain (global default)</string>

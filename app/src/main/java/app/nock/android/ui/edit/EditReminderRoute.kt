@@ -605,7 +605,7 @@ private fun EscalationSummary(state: EditState) {
                 )
                 Spacer(Modifier.width(12.dp))
                 Text(
-                    "Escalation",
+                    stringResource(R.string.edit_escalation_section),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Medium,
                     modifier = Modifier.weight(1f)
@@ -617,13 +617,15 @@ private fun EscalationSummary(state: EditState) {
                 )
             }
             Spacer(Modifier.height(8.dp))
+            val template = stringResource(R.string.edit_using_group_chain)
+            val parts = template.split("%1\$s", limit = 2)
             Text(
                 buildAnnotatedString {
-                    append("Using ")
+                    append(parts[0])
                     pushStyle(SpanStyle(color = MaterialTheme.colorScheme.onSurface))
                     append(g.name)
                     pop()
-                    append(" group chain")
+                    if (parts.size > 1) append(parts[1])
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant

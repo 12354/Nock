@@ -3,8 +3,6 @@ package app.nock.android.notif
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
-import android.media.AudioAttributes
-import android.media.RingtoneManager
 import android.os.Build
 import androidx.core.content.getSystemService
 import app.nock.android.R
@@ -14,11 +12,10 @@ import javax.inject.Singleton
 
 object Channels {
     const val SILENT = "nock_silent_v2"
-    const val NORMAL = "nock_normal_v2"
     const val ALARM = "nock_alarm_v2"
     const val SERVICE = "nock_service"
 
-    val LEGACY_IDS = listOf("nock_silent", "nock_normal", "nock_alarm")
+    val LEGACY_IDS = listOf("nock_silent", "nock_normal", "nock_alarm", "nock_normal_v2")
 }
 
 @Singleton
@@ -41,23 +38,6 @@ class NockNotificationChannels @Inject constructor(
                 setSound(null, null)
                 enableVibration(false)
                 setShowBadge(false)
-            }
-        )
-
-        nm.createNotificationChannel(
-            NotificationChannel(
-                Channels.NORMAL,
-                ctx.getString(R.string.channel_normal_name),
-                NotificationManager.IMPORTANCE_HIGH
-            ).apply {
-                description = ctx.getString(R.string.channel_normal_desc)
-                val sound = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
-                val attrs = AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_NOTIFICATION)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                    .build()
-                setSound(sound, attrs)
-                enableVibration(true)
             }
         )
 

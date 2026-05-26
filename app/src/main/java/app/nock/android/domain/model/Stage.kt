@@ -1,6 +1,6 @@
 package app.nock.android.domain.model
 
-enum class StageType { SILENT, NORMAL, TELEGRAM, ALARM }
+enum class StageType { SILENT, TELEGRAM, ALARM_VIBRATE, ALARM }
 
 data class StageConfig(
     val type: StageType,
@@ -41,8 +41,8 @@ object DefaultChain {
     val CHAIN = EscalationChain(
         stages = listOf(
             StageConfig(StageType.SILENT, -10 * 60_000L),
-            StageConfig(StageType.NORMAL, 0L),
             StageConfig(StageType.TELEGRAM, 5 * 60_000L),
+            StageConfig(StageType.ALARM_VIBRATE, 8 * 60_000L),
             StageConfig(StageType.ALARM, 10 * 60_000L),
         ),
         repeatIntervalMs = 10 * 60_000L

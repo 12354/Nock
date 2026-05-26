@@ -10,6 +10,9 @@ import android.net.Uri
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import androidx.core.app.ServiceCompat
 import androidx.core.content.getSystemService
 import app.nock.android.R
@@ -33,6 +36,7 @@ class AlarmService : Service() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var player: MediaPlayer? = null
+    private var vibrator: Vibrator? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var screenWakeLock: PowerManager.WakeLock? = null
 
@@ -48,6 +52,7 @@ class AlarmService : Service() {
         val reminderName = intent?.getStringExtra(IntentExtras.EXTRA_REMINDER_NAME)
             ?: getString(R.string.alarm_title)
         val groupName = intent?.getStringExtra(IntentExtras.EXTRA_GROUP_NAME).orEmpty()
+        val vibrationOnly = intent?.getBooleanExtra(IntentExtras.EXTRA_VIBRATION_ONLY, false) ?: false
 
         // Promote to foreground synchronously with the alarm notification itself
         // so it's bound to the running service — that's what makes it ongoing
@@ -81,7 +86,7 @@ class AlarmService : Service() {
             }
             acquireWakeLock()
             launchAlarmActivity(escalationId, reminderId)
-            startSound()
+            if (vibrationOnly) startVibration() else startSound()
         }
         // REDELIVER_INTENT so a killed alarm restarts with its original IDs.
         return START_REDELIVER_INTENT
@@ -154,12 +159,43 @@ class AlarmService : Service() {
         }
     }
 
+    private fun startVibration() {
+        val v = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            getSystemService<VibratorManager>()?.defaultVibrator
+        } else {
+            @Suppress("DEPRECATION")
+            getSystemService(VIBRATOR_SERVICE) as? Vibrator
+        }
+        if (v == null || !v.hasVibrator()) return
+        vibrator = v
+        // Wait 0ms, vibrate 800ms, pause 500ms — repeat from index 0 so the
+        // pattern loops until stopAndDie() cancels it.
+        val timings = longArrayOf(0L, 800L, 500L)
+        val amplitudes = intArrayOf(0, 255, 0)
+        try {
+            val attrs = AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_ALARM)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                .build()
+            val effect = if (v.hasAmplitudeControl()) {
+                VibrationEffect.createWaveform(timings, amplitudes, 0)
+            } else {
+                VibrationEffect.createWaveform(timings, 0)
+            }
+            v.vibrate(effect, attrs)
+        } catch (_: Throwable) {
+            vibrator = null
+        }
+    }
+
     private fun stopAndDie() {
         ringingEscalationId = null
         ringingReminderId = null
         try { player?.stop() } catch (_: Throwable) {}
         player?.release()
         player = null
+        try { vibrator?.cancel() } catch (_: Throwable) {}
+        vibrator = null
         wakeLock?.takeIf { it.isHeld }?.release()
         wakeLock = null
         screenWakeLock?.takeIf { it.isHeld }?.release()
@@ -178,6 +214,8 @@ class AlarmService : Service() {
         ringingReminderId = null
         try { player?.stop() } catch (_: Throwable) {}
         player?.release()
+        try { vibrator?.cancel() } catch (_: Throwable) {}
+        vibrator = null
         wakeLock?.takeIf { it.isHeld }?.release()
         screenWakeLock?.takeIf { it.isHeld }?.release()
         scope.cancel()

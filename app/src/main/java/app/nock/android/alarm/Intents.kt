@@ -6,6 +6,7 @@ object IntentExtras {
     const val EXTRA_REMINDER_NAME = "reminder_name"
     const val EXTRA_GROUP_NAME = "group_name"
     const val EXTRA_ACTION = "action"
+    const val EXTRA_VIBRATION_ONLY = "vibration_only"
 
     const val ACTION_FIRE = "fire"
     const val ACTION_DONE = "done"

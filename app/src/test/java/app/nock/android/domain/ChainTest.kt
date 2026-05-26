@@ -35,7 +35,7 @@ class ChainTest {
         val chain = EscalationChain(
             stages = listOf(
                 StageConfig(StageType.SILENT, -5 * 60_000L),
-                StageConfig(StageType.NORMAL, 0L),
+                StageConfig(StageType.ALARM, 0L),
             ),
             repeatIntervalMs = 15 * 60_000L
         )
@@ -52,18 +52,18 @@ class ChainTest {
         val chain = DefaultChain.CHAIN
         // 10 min before scheduled time -> SILENT stage (index 0)
         assertEquals(0, chain.stageDueAt(startedAtMs = 0L, nowMs = -10 * 60_000L))
-        // Right before NORMAL (still SILENT)
+        // Right before TELEGRAM (still SILENT)
         assertEquals(0, chain.stageDueAt(startedAtMs = 0L, nowMs = -1L))
-    }
-
-    @Test fun stageDueAt_picks_normal_at_scheduled_time() {
-        val chain = DefaultChain.CHAIN
-        assertEquals(1, chain.stageDueAt(startedAtMs = 0L, nowMs = 0L))
     }
 
     @Test fun stageDueAt_picks_telegram_at_plus_5() {
         val chain = DefaultChain.CHAIN
-        assertEquals(2, chain.stageDueAt(startedAtMs = 0L, nowMs = 5 * 60_000L))
+        assertEquals(1, chain.stageDueAt(startedAtMs = 0L, nowMs = 5 * 60_000L))
+    }
+
+    @Test fun stageDueAt_picks_alarm_vibrate_at_plus_8() {
+        val chain = DefaultChain.CHAIN
+        assertEquals(2, chain.stageDueAt(startedAtMs = 0L, nowMs = 8 * 60_000L))
     }
 
     @Test fun stageDueAt_picks_alarm_at_plus_10() {

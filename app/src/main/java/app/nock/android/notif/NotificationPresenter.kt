@@ -33,25 +33,30 @@ class NotificationPresenter @Inject constructor(
         nm.notify(escalationId.toInt(), notif)
     }
 
-    fun showNormal(reminder: Reminder, group: Group, escalationId: Long) {
-        val notif = baseBuilder(reminder, group, escalationId, Channels.NORMAL)
-            .setContentText(group.name)
-            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-            .setDefaults(NotificationCompat.DEFAULT_SOUND or NotificationCompat.DEFAULT_VIBRATE)
-            .build()
-        nm.notify(escalationId.toInt(), notif)
-    }
-
     fun showAlarm(reminder: Reminder, group: Group, escalationId: Long) {
         // The alarm notification is posted by AlarmService.startForeground() so
         // it's bound to the running foreground service — that keeps it ongoing
         // and effectively undismissable while the alarm is ringing. The service
         // also re-launches the full-screen activity for the same alarm.
+        startAlarmService(reminder, group, escalationId, vibrationOnly = false)
+    }
+
+    fun showAlarmVibrate(reminder: Reminder, group: Group, escalationId: Long) {
+        startAlarmService(reminder, group, escalationId, vibrationOnly = true)
+    }
+
+    private fun startAlarmService(
+        reminder: Reminder,
+        group: Group,
+        escalationId: Long,
+        vibrationOnly: Boolean,
+    ) {
         val svc = Intent(ctx, AlarmService::class.java).apply {
             putExtra(IntentExtras.EXTRA_ESCALATION_ID, escalationId)
             putExtra(IntentExtras.EXTRA_REMINDER_ID, reminder.id)
             putExtra(IntentExtras.EXTRA_REMINDER_NAME, reminder.name)
             putExtra(IntentExtras.EXTRA_GROUP_NAME, group.name)
+            putExtra(IntentExtras.EXTRA_VIBRATION_ONLY, vibrationOnly)
         }
         androidx.core.content.ContextCompat.startForegroundService(ctx, svc)
     }

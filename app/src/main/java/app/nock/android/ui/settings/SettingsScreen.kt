@@ -234,7 +234,7 @@ private fun LanguageSection(vm: SettingsViewModel) {
 @StringRes
 private fun stageTypeLabel(type: StageType): Int = when (type) {
     StageType.SILENT -> R.string.stage_type_silent
-    StageType.NORMAL -> R.string.stage_type_normal
+    StageType.ALARM_VIBRATE -> R.string.stage_type_alarm_vibrate
     StageType.ALARM -> R.string.stage_type_alarm
     StageType.TELEGRAM -> R.string.stage_type_telegram
 }

@@ -20,7 +20,7 @@ class AlarmScheduler @Inject constructor(
     fun scheduleStage(escalationId: Long, atMs: Long, stageType: StageType) {
         val pi = pendingIntent(escalationId)
         when (stageType) {
-            StageType.ALARM -> {
+            StageType.ALARM, StageType.ALARM_VIBRATE -> {
                 val showIntent = openAppPI()
                 am.setAlarmClock(AlarmManager.AlarmClockInfo(atMs, showIntent), pi)
             }

@@ -21,8 +21,6 @@
     <!-- Notification channels -->
     <string name="channel_silent_name">Silent reminders</string>
     <string name="channel_silent_desc">Quiet heads-up notifications, no sound.</string>
-    <string name="channel_normal_name">Normal reminders</string>
-    <string name="channel_normal_desc">Standard reminder sound and vibration.</string>
     <string name="channel_alarm_name">Loud alarms</string>
     <string name="channel_alarm_desc">Critical alarms that pierce Do Not Disturb.</string>
     <string name="channel_service_name">Alarm service</string>
@@ -129,8 +127,8 @@
 
     <!-- Stage types (StageType enum) -->
     <string name="stage_type_silent">Silent</string>
-    <string name="stage_type_normal">Normal</string>
     <string name="stage_type_alarm">Alarm</string>
+    <string name="stage_type_alarm_vibrate">Alarm (vibration only)</string>
     <string name="stage_type_telegram">Telegram</string>
 
     <string name="default_reminder_name">Reminder</string>

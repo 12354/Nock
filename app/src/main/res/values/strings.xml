@@ -31,13 +31,24 @@
     <string name="today_empty_subtitle">Tap Add to create your first one.</string>
     <string name="today_no_next_fire">no next fire</string>
     <string name="today_firing_now">firing now</string>
+    <string name="today_section_active_now">Active now</string>
+    <string name="today_section_next_hour">Next hour</string>
+    <string name="today_section_later_today">Later today</string>
+    <string name="today_section_tomorrow">Tomorrow</string>
+    <string name="today_section_later">Later</string>
+    <string name="today_active_next_stage">Next stage %1$s at %2$s</string>
+    <string name="today_active_repeats_at">Repeats at %1$s</string>
+    <string name="time_in_minutes">in %1$d min</string>
+    <string name="time_in_hours">in %1$dh</string>
+    <string name="time_in_hours_minutes">in %1$dh %2$dm</string>
     <string name="time_today_at">Today %1$s</string>
     <string name="time_tomorrow_at">Tomorrow %1$s</string>
 
     <!-- Reminders screen -->
     <string name="resume">Resume</string>
     <string name="pause">Pause</string>
-    <string name="reminders_empty_group">No reminders in this group.</string>
+    <string name="reminders_empty_group">No reminders yet</string>
+    <string name="reminders_paused_chip">Paused</string>
     <string name="schedule_once">Once</string>
     <string name="schedule_daily_at">Daily at %1$s</string>
     <string name="schedule_days_at">%1$s at %2$s</string>
@@ -122,6 +133,9 @@
 
     <!-- Alarm screen / notifications -->
     <string name="alarm_title">Alarm</string>
+    <string name="alarm_loud_alarm">Loud alarm</string>
+    <string name="alarm_stage_final">Stage 4 of 4</string>
+    <string name="alarm_subtitle">Earlier nudges weren\'t acknowledged · repeats every 10 min</string>
     <string name="snooze_10_min">Snooze 10 min</string>
     <string name="notification_alarm_suffix">%1$s — alarm</string>
 

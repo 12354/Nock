@@ -6,8 +6,10 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -23,11 +25,13 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import app.nock.android.R
 import app.nock.android.data.entity.PendingVoiceReminderEntity
 import app.nock.android.domain.model.Group
 import app.nock.android.domain.model.Reminder
+import app.nock.android.ui.components.GroupAvatar
 import app.nock.android.ui.voice.VoiceAlarmFab
 import java.time.format.TextStyle
 import java.util.Locale
@@ -42,7 +46,19 @@ fun RemindersScreen(
     val sections by vm.sections.collectAsState()
     val pending by vm.pending.collectAsState()
     Scaffold(
-        topBar = { TopAppBar(title = { Text(stringResource(R.string.reminders)) }) },
+        topBar = {
+            // The design uses a large M3 app bar for Reminders. Keep the title aligned to start
+            // with a heavier weight so the grouped sections below sit under a clear visual anchor.
+            LargeTopAppBar(
+                title = {
+                    Text(
+                        stringResource(R.string.reminders),
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Normal
+                    )
+                }
+            )
+        },
         floatingActionButton = {
             Column(
                 horizontalAlignment = Alignment.End,
@@ -52,105 +68,158 @@ fun RemindersScreen(
                 ExtendedFloatingActionButton(
                     onClick = onAddReminder,
                     icon = { Icon(Icons.Filled.Add, contentDescription = null) },
-                    text = { Text(stringResource(R.string.add)) }
+                    text = { Text(stringResource(R.string.add)) },
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
                 )
             }
         }
     ) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding),
-            contentPadding = PaddingValues(start = 12.dp, top = 12.dp, end = 12.dp, bottom = 144.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            contentPadding = PaddingValues(top = 4.dp, bottom = 144.dp)
         ) {
             items(pending, key = { "pending-${it.id}" }) { entry ->
-                PendingVoiceCard(
-                    entry = entry,
-                    onRetry = { vm.retryPending(entry) },
-                    onDelete = { vm.deletePending(entry) }
-                )
+                Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
+                    PendingVoiceCard(
+                        entry = entry,
+                        onRetry = { vm.retryPending(entry) },
+                        onDelete = { vm.deletePending(entry) }
+                    )
+                }
             }
-            items(sections, key = { it.group.id }) { section ->
-                GroupCard(
-                    section = section,
-                    onPauseToggle = {
-                        if (section.group.isPaused(System.currentTimeMillis())) vm.unpauseGroup(section.group)
-                        else vm.pauseGroup(section.group, null)
-                    },
-                    onClickReminder = onEditReminder,
-                    onDelete = { vm.deleteReminder(it) }
-                )
+            sections.forEach { section ->
+                item(key = "group-${section.group.id}") {
+                    GroupSection(
+                        section = section,
+                        onPauseToggle = {
+                            if (section.group.isPaused(System.currentTimeMillis())) vm.unpauseGroup(section.group)
+                            else vm.pauseGroup(section.group, null)
+                        },
+                        onClickReminder = onEditReminder,
+                        onDelete = { vm.deleteReminder(it) }
+                    )
+                }
             }
         }
     }
 }
 
 @Composable
-private fun GroupCard(
+private fun GroupSection(
     section: GroupSection,
     onPauseToggle: () -> Unit,
     onClickReminder: (Long) -> Unit,
     onDelete: (Reminder) -> Unit,
 ) {
     val now = System.currentTimeMillis()
-    val paused = section.group.pausedUntilMs?.let { it > now } == true
-    Card {
-        Column(Modifier.padding(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(28.dp)
-                        .clip(CircleShape)
-                        .background(Color(section.group.color))
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    section.group.name,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.weight(1f)
-                )
-                AssistChip(
-                    onClick = onPauseToggle,
-                    label = { Text(stringResource(if (paused) R.string.resume else R.string.pause)) },
-                    leadingIcon = {
-                        Icon(
-                            if (paused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
-                            contentDescription = null
-                        )
-                    }
-                )
-            }
-            val ctx = LocalContext.current
-            if (section.reminders.isEmpty()) {
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    stringResource(R.string.reminders_empty_group),
-                    color = MaterialTheme.colorScheme.outline,
-                    style = MaterialTheme.typography.bodySmall
-                )
-            } else {
-                section.reminders.forEach { r ->
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 6.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clickable { onClickReminder(r.id) }
-                                .padding(vertical = 4.dp)
-                        ) {
-                            Text(r.name, style = MaterialTheme.typography.bodyLarge)
-                            Text(
-                                describe(ctx, r),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.outline
-                            )
-                        }
-                        IconButton(onClick = { onDelete(r) }) {
-                            Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.delete))
-                        }
+    val paused = section.group.isPaused(now)
+    Column(modifier = Modifier.padding(bottom = 8.dp)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 24.dp, end = 8.dp, top = 16.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            GroupAvatar(section.group, size = 32.dp)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        section.group.name,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Medium
+                    )
+                    if (paused) {
+                        Spacer(Modifier.width(8.dp))
+                        PausedChip()
                     }
                 }
+                Text(
+                    text = section.reminders.size.let { c ->
+                        if (c == 1) "1 reminder" else "$c reminders"
+                    },
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 12.sp
+                )
             }
+            IconButton(onClick = onPauseToggle) {
+                Icon(
+                    imageVector = if (paused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
+                    contentDescription = stringResource(if (paused) R.string.resume else R.string.pause),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        if (section.reminders.isEmpty()) {
+            Text(
+                stringResource(R.string.reminders_empty_group),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontStyle = FontStyle.Italic,
+                modifier = Modifier.padding(start = 68.dp, end = 24.dp, top = 4.dp, bottom = 12.dp)
+            )
+        } else {
+            val ctx = LocalContext.current
+            section.reminders.forEach { r ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onClickReminder(r.id) }
+                        .padding(start = 68.dp, end = 12.dp, top = 8.dp, bottom = 8.dp)
+                        .heightIn(min = 56.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            r.name,
+                            color = if (paused) MaterialTheme.colorScheme.onSurfaceVariant
+                            else MaterialTheme.colorScheme.onSurface,
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                        Text(
+                            describe(ctx, r),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                    IconButton(onClick = { onDelete(r) }) {
+                        Icon(
+                            Icons.Filled.Delete,
+                            contentDescription = stringResource(R.string.delete),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Icon(
+                        Icons.Filled.ChevronRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PausedChip() {
+    Surface(
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        shape = RoundedCornerShape(6.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Icon(Icons.Filled.Pause, contentDescription = null, modifier = Modifier.size(12.dp))
+            Text(
+                stringResource(R.string.reminders_paused_chip),
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Medium
+            )
         }
     }
 }
@@ -164,7 +233,7 @@ private fun PendingVoiceCard(
     val hasError = entry.lastError != null
     Card(
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
         )
     ) {
         Column(Modifier.padding(12.dp)) {
@@ -197,7 +266,7 @@ private fun PendingVoiceCard(
                 statusText,
                 style = MaterialTheme.typography.bodySmall,
                 color = if (hasError) MaterialTheme.colorScheme.error
-                else MaterialTheme.colorScheme.outline
+                else MaterialTheme.colorScheme.onSurfaceVariant
             )
             Row(
                 modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
@@ -249,3 +318,4 @@ private fun describe(ctx: android.content.Context, r: Reminder): String = when (
         else
             ctx.getString(R.string.schedule_on_unlock_armed)
 }
+

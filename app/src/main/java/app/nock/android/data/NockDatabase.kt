@@ -23,7 +23,7 @@ import app.nock.android.data.entity.SettingsEntity
         SettingsEntity::class,
         PendingVoiceReminderEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = true
 )
 abstract class NockDatabase : RoomDatabase() {
@@ -51,6 +51,14 @@ val MIGRATION_2_3 = object : Migration(2, 3) {
                 "`attemptCount` INTEGER NOT NULL, " +
                 "`lastError` TEXT" +
                 ")"
+        )
+    }
+}
+
+val MIGRATION_3_4 = object : Migration(3, 4) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "ALTER TABLE active_escalations ADD COLUMN sentTelegramMessageIdsCsv TEXT NOT NULL DEFAULT ''"
         )
     }
 }

@@ -24,6 +24,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import app.nock.android.R
 import app.nock.android.ui.edit.EditReminderRoute
+import app.nock.android.ui.group.GroupEditorScreen
 import app.nock.android.ui.reminders.RemindersScreen
 import app.nock.android.ui.settings.SettingsScreen
 import app.nock.android.ui.today.TodayScreen
@@ -80,16 +81,26 @@ fun NockApp() {
             composable(Tab.Reminders.route) {
                 RemindersScreen(
                     onAddReminder = { nav.navigate("edit?id=0") },
-                    onEditReminder = { id -> nav.navigate("edit?id=$id") }
+                    onEditReminder = { id -> nav.navigate("edit?id=$id") },
+                    onEditGroup = { id -> nav.navigate("group?id=$id") }
                 )
             }
             composable(Tab.Settings.route) {
-                SettingsScreen()
+                SettingsScreen(
+                    onEditGroup = { id -> nav.navigate("group?id=$id") }
+                )
             }
             composable("edit?id={id}") { entry ->
                 val id = entry.arguments?.getString("id")?.toLongOrNull() ?: 0L
                 EditReminderRoute(
                     reminderId = id,
+                    onDone = { nav.popBackStack() }
+                )
+            }
+            composable("group?id={id}") { entry ->
+                val id = entry.arguments?.getString("id")?.toLongOrNull() ?: 0L
+                GroupEditorScreen(
+                    groupId = id,
                     onDone = { nav.popBackStack() }
                 )
             }

@@ -41,6 +41,7 @@ import java.util.Locale
 fun RemindersScreen(
     onAddReminder: () -> Unit,
     onEditReminder: (Long) -> Unit,
+    onEditGroup: (Long) -> Unit = {},
     vm: RemindersViewModel = hiltViewModel()
 ) {
     val sections by vm.sections.collectAsState()
@@ -97,6 +98,7 @@ fun RemindersScreen(
                             else vm.pauseGroup(section.group, null)
                         },
                         onClickReminder = onEditReminder,
+                        onClickGroup = { onEditGroup(section.group.id) },
                         onDelete = { vm.deleteReminder(it) }
                     )
                 }
@@ -110,6 +112,7 @@ private fun GroupSection(
     section: GroupSection,
     onPauseToggle: () -> Unit,
     onClickReminder: (Long) -> Unit,
+    onClickGroup: () -> Unit,
     onDelete: (Reminder) -> Unit,
 ) {
     val now = System.currentTimeMillis()
@@ -118,6 +121,7 @@ private fun GroupSection(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .clickable(onClick = onClickGroup)
                 .padding(start = 24.dp, end = 8.dp, top = 16.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {

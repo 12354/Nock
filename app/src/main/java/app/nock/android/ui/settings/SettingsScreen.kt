@@ -19,6 +19,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Close
@@ -63,7 +64,10 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 @Composable
-fun SettingsScreen(vm: SettingsViewModel = hiltViewModel()) {
+fun SettingsScreen(
+    onEditGroup: (Long) -> Unit = {},
+    vm: SettingsViewModel = hiltViewModel(),
+) {
     val state by vm.state.collectAsState()
     Scaffold(topBar = { TopAppBar(title = { Text(stringResource(R.string.settings)) }) }) { padding ->
         Column(
@@ -78,7 +82,7 @@ fun SettingsScreen(vm: SettingsViewModel = hiltViewModel()) {
             state.chain?.let {
                 StageChainSection(chain = it, onChange = vm::setChain)
             }
-            GroupsSection(state.groups, vm)
+            GroupsSection(state.groups, onEditGroup, onAddGroup = { onEditGroup(0L) })
             TelegramSection(state.telegramToken, state.telegramChat, state.telegramStatus, vm)
             DeepSeekSection(state.deepSeekApiKey, state.deepSeekModel, state.deepSeekBaseUrl, vm)
             VoiceDiagnosticsSection(vm)
@@ -231,13 +235,7 @@ private fun LanguageSection(vm: SettingsViewModel) {
     }
 }
 
-@StringRes
-private fun stageTypeLabel(type: StageType): Int = when (type) {
-    StageType.SILENT -> R.string.stage_type_silent
-    StageType.ALARM_VIBRATE -> R.string.stage_type_alarm_vibrate
-    StageType.ALARM -> R.string.stage_type_alarm
-    StageType.TELEGRAM -> R.string.stage_type_telegram
-}
+private fun stageTypeLabel(type: StageType): Int = app.nock.android.ui.components.stageTypeLabel(type)
 
 @Composable
 private fun StageChainSection(chain: EscalationChain, onChange: (EscalationChain) -> Unit) {
@@ -355,66 +353,40 @@ private fun IntervalField(label: String, valueMin: Int, onChange: (Int) -> Unit)
 }
 
 @Composable
-private fun GroupsSection(groups: List<Group>, vm: SettingsViewModel) {
+private fun GroupsSection(groups: List<Group>, onEditGroup: (Long) -> Unit, onAddGroup: () -> Unit) {
     SectionCard(stringResource(R.string.settings_groups_title)) {
         groups.forEach { g ->
-            GroupRow(g, vm)
+            GroupRow(g, onClick = { onEditGroup(g.id) })
             HorizontalDivider()
+        }
+        TextButton(onClick = onAddGroup) {
+            Icon(Icons.Filled.Add, contentDescription = null)
+            Spacer(Modifier.width(4.dp))
+            Text(stringResource(R.string.add))
         }
     }
 }
 
 @Composable
-private fun GroupRow(g: Group, vm: SettingsViewModel) {
-    var editing by remember { mutableStateOf(false) }
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-        Box(
-            modifier = Modifier.size(20.dp).clip(CircleShape).background(Color(g.color))
-        )
-        Spacer(Modifier.width(8.dp))
+private fun GroupRow(g: Group, onClick: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 8.dp)
+    ) {
+        app.nock.android.ui.components.GroupAvatar(g, size = 28.dp)
+        Spacer(Modifier.width(12.dp))
         Text(g.name, modifier = Modifier.weight(1f))
         Text(
             stringResource(if (g.overrideChain != null) R.string.settings_group_custom_chain else R.string.settings_group_default_chain),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.outline
         )
-        IconButton(onClick = { editing = !editing }) { Icon(Icons.Filled.Edit, contentDescription = stringResource(R.string.edit)) }
-    }
-    if (editing) {
-        GroupOverrideEditor(g, vm) { editing = false }
-    }
-}
-
-@Composable
-private fun GroupOverrideEditor(g: Group, vm: SettingsViewModel, onClose: () -> Unit) {
-    var mirror by remember(g.id) { mutableStateOf(g.telegramSilentMirror) }
-    var override by remember(g.id) { mutableStateOf(g.overrideChain) }
-
-    Column(modifier = Modifier.padding(start = 28.dp, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Switch(checked = mirror, onCheckedChange = {
-                mirror = it
-                vm.updateGroup(g.copy(telegramSilentMirror = it))
-            })
-            Spacer(Modifier.width(8.dp))
-            Text(stringResource(R.string.settings_mirror_silent_telegram))
+        IconButton(onClick = onClick) {
+            Icon(Icons.Filled.Edit, contentDescription = stringResource(R.string.edit))
         }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Switch(checked = override != null, onCheckedChange = { on ->
-                override = if (on) app.nock.android.domain.model.DefaultChain.CHAIN else null
-                vm.updateGroup(g.copy(overrideChain = override))
-            })
-            Spacer(Modifier.width(8.dp))
-            Text(stringResource(R.string.settings_custom_chain_toggle))
-        }
-        override?.let { chain ->
-            Text(stringResource(R.string.settings_override_chain), style = MaterialTheme.typography.labelMedium)
-            StageChainSection(chain = chain, onChange = {
-                override = it
-                vm.updateGroup(g.copy(overrideChain = it))
-            })
-        }
-        TextButton(onClick = onClose) { Text(stringResource(R.string.settings_done_editing_group)) }
     }
 }
 

@@ -255,42 +255,51 @@ private fun QuickAddCard(state: EditState, onChange: (String) -> Unit) {
 }
 
 /** Build the "parsed" one-liner from current state if anything has been resolved. */
+@Composable
 private fun parsedSummary(state: EditState): String? {
     if (state.groups.isEmpty()) return null
     val groupName = state.groups.firstOrNull { it.id == state.groupId }?.name ?: return null
+    val timeJoin = stringResource(R.string.parsed_summary_time_join)
     val schedulePart: String = when (state.scheduleType) {
         ScheduleKind.DAILY -> {
-            val times = state.dailyTimesMinutes.sorted().joinToString(" and ") {
+            val times = state.dailyTimesMinutes.sorted().joinToString(timeJoin) {
                 "%02d:%02d".format(it / 60, it % 60)
             }
-            "daily at $times"
+            stringResource(R.string.parsed_summary_daily, times)
         }
         ScheduleKind.WEEKLY -> {
             val locale = Locale.getDefault()
             val days = state.weeklyDays.sorted().joinToString(", ") {
                 it.getDisplayName(JTextStyle.SHORT, locale)
             }
-            val times = state.weeklyTimesMinutes.sorted().joinToString(" and ") {
+            val times = state.weeklyTimesMinutes.sorted().joinToString(timeJoin) {
                 "%02d:%02d".format(it / 60, it % 60)
             }
-            "$days at $times"
+            stringResource(R.string.parsed_summary_weekly, days, times)
         }
-        ScheduleKind.MONTHLY -> "monthly on day ${state.monthlyDay} at %02d:%02d".format(
-            state.monthlyTimeMinutes / 60, state.monthlyTimeMinutes % 60
+        ScheduleKind.MONTHLY -> stringResource(
+            R.string.parsed_summary_monthly,
+            state.monthlyDay,
+            "%02d:%02d".format(state.monthlyTimeMinutes / 60, state.monthlyTimeMinutes % 60)
         )
-        ScheduleKind.INTERVAL -> "every ${state.intervalHours}h after done"
+        ScheduleKind.INTERVAL -> stringResource(
+            R.string.parsed_summary_interval,
+            state.intervalHours
+        )
         ScheduleKind.ONESHOT -> {
             val dt = LocalDateTime.ofInstant(
                 java.time.Instant.ofEpochMilli(state.oneShotMs),
                 ZoneId.systemDefault()
             )
-            "once on %04d-%02d-%02d at %02d:%02d".format(
-                dt.year, dt.monthValue, dt.dayOfMonth, dt.hour, dt.minute
+            stringResource(
+                R.string.parsed_summary_once,
+                "%04d-%02d-%02d".format(dt.year, dt.monthValue, dt.dayOfMonth),
+                "%02d:%02d".format(dt.hour, dt.minute)
             )
         }
-        ScheduleKind.ON_UNLOCK -> "on next unlock"
+        ScheduleKind.ON_UNLOCK -> stringResource(R.string.parsed_summary_on_unlock)
     }
-    return "$schedulePart, group $groupName"
+    return stringResource(R.string.parsed_summary_wrapped, schedulePart, groupName)
 }
 
 private val TIME_PATTERNS = listOf(

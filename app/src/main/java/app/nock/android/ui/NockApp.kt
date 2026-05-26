@@ -2,7 +2,7 @@ package app.nock.android.ui
 
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Today
 import androidx.compose.material3.Icon
@@ -30,7 +30,7 @@ import app.nock.android.ui.today.TodayScreen
 
 sealed class Tab(val route: String, @StringRes val labelRes: Int, val icon: ImageVector) {
     object Today : Tab("today", R.string.today, Icons.Filled.Today)
-    object Reminders : Tab("reminders", R.string.reminders, Icons.Filled.List)
+    object Reminders : Tab("reminders", R.string.reminders, Icons.Filled.Checklist)
     object Settings : Tab("settings", R.string.settings, Icons.Filled.Settings)
 }
 

@@ -7,24 +7,33 @@ import app.nock.android.data.SeedData
 import app.nock.android.data.SettingsRepository
 import app.nock.android.data.dao.ActiveEscalationDao
 import app.nock.android.data.dao.GroupDao
+import app.nock.android.data.json.ChainJson
 import app.nock.android.domain.escalation.EscalationEngine
+import app.nock.android.domain.model.EscalationChain
 import app.nock.android.domain.model.Group
 import app.nock.android.domain.model.Reminder
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+data class ActiveEscalationInfo(
+    val escalationId: Long,
+    val chain: EscalationChain,
+    val currentStageIndex: Int,
+    val nextFireAtMs: Long,
+)
+
 data class TodayItem(
     val reminder: Reminder,
     val group: Group,
-    val isActive: Boolean
-)
+    val active: ActiveEscalationInfo?,
+) {
+    val isActive: Boolean get() = active != null
+}
 
 @HiltViewModel
 class TodayViewModel @Inject constructor(
@@ -50,10 +59,19 @@ class TodayViewModel @Inject constructor(
         activeDao.observeAll()
     ) { reminders, groups, active ->
         val byId = groups.associateBy { it.id }
-        val activeIds = active.map { it.reminderId }.toSet()
+        val activeByReminder = active.associateBy { it.reminderId }
         reminders.mapNotNull { r ->
             val g = byId[r.groupId] ?: return@mapNotNull null
-            TodayItem(r, g, r.id in activeIds)
+            val a = activeByReminder[r.id]?.let { ent ->
+                val chain = runCatching { ChainJson.decode(ent.chainSnapshotJson) }.getOrNull()
+                if (chain != null) ActiveEscalationInfo(
+                    escalationId = ent.id,
+                    chain = chain,
+                    currentStageIndex = ent.nextStageIndex.coerceIn(0, chain.lastIndex),
+                    nextFireAtMs = ent.nextFireAtMs,
+                ) else null
+            }
+            TodayItem(r, g, a)
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
@@ -71,6 +89,13 @@ class TodayViewModel @Inject constructor(
                     engine.startEscalationAt(r.copy(lastCompletedAt = now, nextFireAt = next), next)
                 }
             }
+        }
+    }
+
+    fun snooze(reminderId: Long) {
+        viewModelScope.launch {
+            val active = activeDao.getByReminderId(reminderId) ?: return@launch
+            engine.snooze(active.id)
         }
     }
 }

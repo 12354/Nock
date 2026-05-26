@@ -31,13 +31,24 @@
     <string name="today_empty_subtitle">Tippe auf „Hinzufügen", um deine erste zu erstellen.</string>
     <string name="today_no_next_fire">kein nächster Termin</string>
     <string name="today_firing_now">läuft jetzt</string>
+    <string name="today_section_active_now">Aktiv</string>
+    <string name="today_section_next_hour">Nächste Stunde</string>
+    <string name="today_section_later_today">Später heute</string>
+    <string name="today_section_tomorrow">Morgen</string>
+    <string name="today_section_later">Später</string>
+    <string name="today_active_next_stage">Nächste Stufe %1$s um %2$s</string>
+    <string name="today_active_repeats_at">Wiederholt sich um %1$s</string>
+    <string name="time_in_minutes">in %1$d Min</string>
+    <string name="time_in_hours">in %1$d Std</string>
+    <string name="time_in_hours_minutes">in %1$d Std %2$d Min</string>
     <string name="time_today_at">Heute %1$s</string>
     <string name="time_tomorrow_at">Morgen %1$s</string>
 
     <!-- Reminders screen -->
     <string name="resume">Fortsetzen</string>
     <string name="pause">Pausieren</string>
-    <string name="reminders_empty_group">Keine Erinnerungen in dieser Gruppe.</string>
+    <string name="reminders_empty_group">Noch keine Erinnerungen</string>
+    <string name="reminders_paused_chip">Pausiert</string>
     <string name="schedule_once">Einmalig</string>
     <string name="schedule_daily_at">Täglich um %1$s</string>
     <string name="schedule_days_at">%1$s um %2$s</string>
@@ -122,6 +133,9 @@
 
     <!-- Alarm screen / notifications -->
     <string name="alarm_title">Alarm</string>
+    <string name="alarm_loud_alarm">Lauter Alarm</string>
+    <string name="alarm_stage_final">Stufe 4 von 4</string>
+    <string name="alarm_subtitle">Frühere Hinweise wurden ignoriert · wiederholt sich alle 10 Min</string>
     <string name="snooze_10_min">10 Min. schlummern</string>
     <string name="notification_alarm_suffix">%1$s — Alarm</string>
 

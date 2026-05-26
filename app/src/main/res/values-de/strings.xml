@@ -49,6 +49,21 @@
     <string name="pause">Pausieren</string>
     <string name="reminders_empty_group">Noch keine Erinnerungen</string>
     <string name="reminders_paused_chip">Pausiert</string>
+    <string name="reminders_paused_until_chip">Pausiert bis %1$s</string>
+
+    <!-- Pause-until Auswahl -->
+    <string name="pause_dialog_title">Pausieren bis…</string>
+    <string name="pause_dialog_currently_paused">Aktuell pausiert bis %1$s</string>
+    <string name="pause_preset_15_min">15 Min.</string>
+    <string name="pause_preset_1_hour">1 Stunde</string>
+    <string name="pause_preset_4_hours">4 Stunden</string>
+    <string name="pause_preset_tomorrow_morning">Morgen 7:00</string>
+    <string name="pause_pick_custom">Datum &amp; Uhrzeit wählen…</string>
+    <string name="pause_resume_now">Jetzt fortsetzen</string>
+    <string name="pause_until_tomorrow_at">morgen %1$s</string>
+    <string name="group_editor_pause_state_not_paused">Nicht pausiert</string>
+    <string name="group_editor_pause_state_until">Pausiert bis %1$s</string>
+
     <string name="schedule_once">Einmalig</string>
     <string name="schedule_daily_at">Täglich um %1$s</string>
     <string name="schedule_days_at">%1$s um %2$s</string>

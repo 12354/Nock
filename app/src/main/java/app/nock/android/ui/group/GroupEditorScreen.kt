@@ -26,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -37,6 +38,8 @@ import app.nock.android.domain.model.StageConfig
 import app.nock.android.domain.model.StageType
 import app.nock.android.ui.components.GroupColorChoices
 import app.nock.android.ui.components.GroupIconChoices
+import app.nock.android.ui.components.PauseUntilDialog
+import app.nock.android.ui.components.formatPauseUntil
 import app.nock.android.ui.components.groupIconFor
 import app.nock.android.ui.components.stageIcon
 import app.nock.android.ui.components.stageTypeLabel
@@ -113,6 +116,16 @@ fun GroupEditorScreen(
             IconPicker(state.icon, Color(state.color), vm::updateIcon)
 
             SectionHeader(stringResource(R.string.group_editor_section_pause))
+            val ctx = LocalContext.current
+            var showPauseDialog by remember { mutableStateOf(false) }
+            val pauseStateText = if (state.isPaused && state.pausedUntilMs != null) {
+                stringResource(
+                    R.string.group_editor_pause_state_until,
+                    formatPauseUntil(ctx, state.pausedUntilMs!!)
+                )
+            } else {
+                stringResource(R.string.group_editor_pause_state_not_paused)
+            }
             SettingRow(
                 leadingIcon = {
                     Icon(
@@ -122,11 +135,22 @@ fun GroupEditorScreen(
                     )
                 },
                 title = stringResource(R.string.group_editor_pause_title),
-                sub = stringResource(R.string.group_editor_pause_sub),
+                sub = pauseStateText,
+                onClick = { showPauseDialog = true },
                 trailing = {
-                    Switch(checked = state.isPaused, onCheckedChange = vm::togglePause)
+                    TextButton(onClick = { showPauseDialog = true }) {
+                        Text(stringResource(if (state.isPaused) R.string.edit else R.string.pause))
+                    }
                 }
             )
+            if (showPauseDialog) {
+                PauseUntilDialog(
+                    currentPauseUntilMs = state.pausedUntilMs,
+                    onDismiss = { showPauseDialog = false },
+                    onPick = { vm.setPauseUntil(it) },
+                    onResume = { vm.setPauseUntil(null) },
+                )
+            }
 
             SectionHeader(stringResource(R.string.group_editor_section_chain))
             SettingRow(
@@ -317,11 +341,13 @@ private fun SettingRow(
     leadingIcon: @Composable () -> Unit,
     title: String,
     sub: String? = null,
+    onClick: (() -> Unit)? = null,
     trailing: @Composable () -> Unit = {},
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
             .padding(horizontal = 24.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {

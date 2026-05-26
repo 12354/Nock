@@ -61,8 +61,6 @@
     <string name="pause_pick_custom">Datum &amp; Uhrzeit wählen…</string>
     <string name="pause_resume_now">Jetzt fortsetzen</string>
     <string name="pause_until_tomorrow_at">morgen %1$s</string>
-    <string name="group_editor_pause_state_not_paused">Nicht pausiert</string>
-    <string name="group_editor_pause_state_until">Pausiert bis %1$s</string>
 
     <string name="schedule_once">Einmalig</string>
     <string name="schedule_daily_at">Täglich um %1$s</string>
@@ -115,6 +113,29 @@
     <string name="settings_custom_chain_toggle">Eigene Eskalationskette</string>
     <string name="settings_override_chain">Überschreibende Kette</string>
     <string name="settings_done_editing_group">Gruppenbearbeitung beenden</string>
+
+    <!-- Group editor -->
+    <string name="group_editor_title_new">Neue Gruppe</string>
+    <string name="group_editor_title_edit">Gruppe bearbeiten</string>
+    <string name="group_editor_reminders_count">%1$d Erinnerung</string>
+    <string name="group_editor_reminders_count_plural">%1$d Erinnerungen</string>
+    <string name="group_editor_section_color">Farbe</string>
+    <string name="group_editor_section_icon">Symbol</string>
+    <string name="group_editor_section_pause">Pause</string>
+    <string name="group_editor_section_chain">Eskalationskette</string>
+    <string name="group_editor_pause_title">Diese Gruppe pausieren</string>
+    <string name="group_editor_pause_sub">Verhindert neue Auslösungen. Aktive Eskalationen laufen weiter.</string>
+    <string name="group_editor_pause_state_not_paused">Nicht pausiert</string>
+    <string name="group_editor_pause_state_until">Pausiert bis %1$s</string>
+    <string name="group_editor_custom_chain_title">Eigene Kette verwenden</string>
+    <string name="group_editor_custom_chain_sub">Überschreibt den Standard für diese Gruppe</string>
+    <string name="group_editor_edit_stages">Stufen bearbeiten</string>
+    <string name="group_editor_mirror_silent_telegram_sub">Sendet auf der stillen Stufe eine stumme Telegram-Nachricht</string>
+    <string name="group_editor_chain_summary_default">Standardkette wird verwendet</string>
+
+    <!-- Quick-add styling -->
+    <string name="edit_quick_add_hint">Schnell hinzufügen — in einfacher Sprache eintippen</string>
+    <string name="edit_quick_add_parsed">Erkannt: %1$s</string>
 
     <!-- Settings: telegram -->
     <string name="settings_telegram_title">Telegram-Bot</string>
@@ -196,6 +217,15 @@
     <string name="settings_deepseek_base_url">Basis-URL</string>
     <string name="settings_deepseek_help">Gesprochener Text wird auf dem Gerät transkribiert und an diesen DeepSeek-kompatiblen Endpoint gesendet, um eine Erinnerung daraus zu erzeugen.</string>
 
+    <!-- Settings: Voice diagnostics -->
+    <string name="settings_voice_log_title">Sprach-Diagnose</string>
+    <string name="settings_voice_log_help">Nur-Anhänge-Protokoll jedes Aufrufs an die Spracherkennung und jedes empfangenen Callbacks. Bitte beim Melden eines Spracheingabe-Fehlers mitsenden.</string>
+    <string name="settings_voice_log_refresh">Aktualisieren</string>
+    <string name="settings_voice_log_copy">Kopieren</string>
+    <string name="settings_voice_log_clear">Leeren</string>
+    <string name="settings_voice_log_empty">(noch keine Einträge — probiere die Sprachtaste)</string>
+    <string name="settings_voice_log_copied">Sprachprotokoll in die Zwischenablage kopiert</string>
+
     <!-- Default seed group names -->
     <string name="seed_group_pets">Haustiere</string>
     <string name="seed_group_meds">Medikamente</string>
@@ -203,4 +233,27 @@
     <string name="seed_group_household">Haushalt</string>
     <string name="seed_group_work">Arbeit</string>
     <string name="seed_group_errands">Erledigungen</string>
+
+    <!-- Settings: app update -->
+    <string name="settings_update_title">App-Update</string>
+    <string name="settings_update_checking">Suche nach Updates…</string>
+    <string name="settings_update_available">Update verfügbar</string>
+    <string name="settings_update_build_change">Build %1$d → %2$d</string>
+    <string name="settings_update_action_update">Aktualisieren</string>
+    <string name="settings_update_downloading">Wird heruntergeladen… %1$d%%</string>
+    <string name="settings_update_opening_installer">Installer wird geöffnet…</string>
+    <string name="settings_update_up_to_date">Du bist auf dem neuesten Stand</string>
+    <string name="settings_update_recheck">Erneut prüfen</string>
+    <string name="settings_update_retry">Erneut versuchen</string>
+    <string name="settings_update_download_failed">Download fehlgeschlagen</string>
+
+    <!-- Quick-add parsed summary (Edit reminder) -->
+    <string name="parsed_summary_daily">täglich um %1$s</string>
+    <string name="parsed_summary_weekly">%1$s um %2$s</string>
+    <string name="parsed_summary_monthly">monatlich am %1$d. um %2$s</string>
+    <string name="parsed_summary_interval">alle %1$s Std. nach Erledigt</string>
+    <string name="parsed_summary_once">einmalig am %1$s um %2$s</string>
+    <string name="parsed_summary_on_unlock">beim nächsten Entsperren</string>
+    <string name="parsed_summary_wrapped">%1$s, Gruppe %2$s</string>
+    <string name="parsed_summary_time_join"> und </string>
 </resources>

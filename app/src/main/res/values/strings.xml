@@ -232,4 +232,27 @@
     <string name="seed_group_household">Household</string>
     <string name="seed_group_work">Work</string>
     <string name="seed_group_errands">Errands</string>
+
+    <!-- Settings: app update -->
+    <string name="settings_update_title">App update</string>
+    <string name="settings_update_checking">Checking for updates…</string>
+    <string name="settings_update_available">Update available</string>
+    <string name="settings_update_build_change">build %1$d → %2$d</string>
+    <string name="settings_update_action_update">Update</string>
+    <string name="settings_update_downloading">Downloading… %1$d%%</string>
+    <string name="settings_update_opening_installer">Opening installer…</string>
+    <string name="settings_update_up_to_date">You\'re up to date</string>
+    <string name="settings_update_recheck">Re-check</string>
+    <string name="settings_update_retry">Retry</string>
+    <string name="settings_update_download_failed">Download failed</string>
+
+    <!-- Quick-add parsed summary (Edit reminder) -->
+    <string name="parsed_summary_daily">daily at %1$s</string>
+    <string name="parsed_summary_weekly">%1$s at %2$s</string>
+    <string name="parsed_summary_monthly">monthly on day %1$d at %2$s</string>
+    <string name="parsed_summary_interval">every %1$sh after done</string>
+    <string name="parsed_summary_once">once on %1$s at %2$s</string>
+    <string name="parsed_summary_on_unlock">on next unlock</string>
+    <string name="parsed_summary_wrapped">%1$s, group %2$s</string>
+    <string name="parsed_summary_time_join"> and </string>
 </resources>

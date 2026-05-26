@@ -126,7 +126,8 @@ private fun UpdateSection() {
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    SectionCard("App update") {
+    val downloadFailedMsg = stringResource(R.string.settings_update_download_failed)
+    SectionCard(stringResource(R.string.settings_update_title)) {
         when (val s = updateState) {
             UpdateState.Idle, UpdateState.Checking -> {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -135,7 +136,7 @@ private fun UpdateSection() {
                         strokeWidth = 2.dp
                     )
                     Spacer(Modifier.width(12.dp))
-                    Text("Checking for updates…", style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(R.string.settings_update_checking), style = MaterialTheme.typography.bodyMedium)
                 }
             }
             is UpdateState.Available -> {
@@ -147,9 +148,13 @@ private fun UpdateSection() {
                     )
                     Spacer(Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("Update available", fontWeight = FontWeight.SemiBold)
+                        Text(stringResource(R.string.settings_update_available), fontWeight = FontWeight.SemiBold)
                         Text(
-                            "build ${s.info.currentVersionCode} → ${s.info.remoteVersionCode}",
+                            stringResource(
+                                R.string.settings_update_build_change,
+                                s.info.currentVersionCode,
+                                s.info.remoteVersionCode
+                            ),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.outline
                         )
@@ -164,15 +169,15 @@ private fun UpdateSection() {
                                 updateState = UpdateState.Installing
                                 updateManager.installApk(apk)
                             } else {
-                                updateState = UpdateState.Error("Download failed")
+                                updateState = UpdateState.Error(downloadFailedMsg)
                             }
                         }
-                    }) { Text("Update") }
+                    }) { Text(stringResource(R.string.settings_update_action_update)) }
                 }
             }
             is UpdateState.Downloading -> {
                 Text(
-                    "Downloading… ${(s.progress * 100).toInt()}%",
+                    stringResource(R.string.settings_update_downloading, (s.progress * 100).toInt()),
                     style = MaterialTheme.typography.bodyMedium
                 )
                 Spacer(Modifier.height(8.dp))
@@ -182,16 +187,16 @@ private fun UpdateSection() {
                 )
             }
             UpdateState.Installing -> {
-                Text("Opening installer…", style = MaterialTheme.typography.bodyMedium)
+                Text(stringResource(R.string.settings_update_opening_installer), style = MaterialTheme.typography.bodyMedium)
             }
             UpdateState.UpToDate -> {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        "You're up to date",
+                        stringResource(R.string.settings_update_up_to_date),
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.weight(1f)
                     )
-                    TextButton(onClick = { scope.launch { doCheck() } }) { Text("Re-check") }
+                    TextButton(onClick = { scope.launch { doCheck() } }) { Text(stringResource(R.string.settings_update_recheck)) }
                 }
             }
             is UpdateState.Error -> {
@@ -201,7 +206,7 @@ private fun UpdateSection() {
                     color = MaterialTheme.colorScheme.error
                 )
                 Spacer(Modifier.height(8.dp))
-                OutlinedButton(onClick = { scope.launch { doCheck() } }) { Text("Retry") }
+                OutlinedButton(onClick = { scope.launch { doCheck() } }) { Text(stringResource(R.string.settings_update_retry)) }
             }
         }
     }

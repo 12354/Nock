@@ -30,6 +30,7 @@ import app.nock.android.domain.model.EscalationChain
 import app.nock.android.domain.model.Group
 import app.nock.android.ui.components.GroupAvatar
 import app.nock.android.ui.components.stageIcon
+import app.nock.android.ui.voice.VoiceAlarmFab
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -63,13 +64,19 @@ fun TodayScreen(
             )
         },
         floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = onAddReminder,
-                icon = { Icon(Icons.Filled.Add, contentDescription = null) },
-                text = { Text(stringResource(R.string.add)) },
-                containerColor = MaterialTheme.colorScheme.primaryContainer,
-                contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-            )
+            Column(
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                VoiceAlarmFab()
+                ExtendedFloatingActionButton(
+                    onClick = onAddReminder,
+                    icon = { Icon(Icons.Filled.Add, contentDescription = null) },
+                    text = { Text(stringResource(R.string.add)) },
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+            }
         }
     ) { padding ->
         if (items.isEmpty()) {

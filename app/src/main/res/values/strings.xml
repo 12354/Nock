@@ -49,6 +49,18 @@
     <string name="pause">Pause</string>
     <string name="reminders_empty_group">No reminders yet</string>
     <string name="reminders_paused_chip">Paused</string>
+    <string name="reminders_paused_until_chip">Paused until %1$s</string>
+
+    <!-- Pause-until picker -->
+    <string name="pause_dialog_title">Pause until…</string>
+    <string name="pause_dialog_currently_paused">Currently paused until %1$s</string>
+    <string name="pause_preset_15_min">15 min</string>
+    <string name="pause_preset_1_hour">1 hour</string>
+    <string name="pause_preset_4_hours">4 hours</string>
+    <string name="pause_preset_tomorrow_morning">Tomorrow 7:00</string>
+    <string name="pause_pick_custom">Pick date &amp; time…</string>
+    <string name="pause_resume_now">Resume now</string>
+    <string name="pause_until_tomorrow_at">tomorrow %1$s</string>
     <string name="schedule_once">Once</string>
     <string name="schedule_daily_at">Daily at %1$s</string>
     <string name="schedule_days_at">%1$s at %2$s</string>
@@ -112,6 +124,8 @@
     <string name="group_editor_section_chain">Escalation chain</string>
     <string name="group_editor_pause_title">Pause this group</string>
     <string name="group_editor_pause_sub">Prevents new fires. Active escalations still play.</string>
+    <string name="group_editor_pause_state_not_paused">Not paused</string>
+    <string name="group_editor_pause_state_until">Paused until %1$s</string>
     <string name="group_editor_custom_chain_title">Use custom chain</string>
     <string name="group_editor_custom_chain_sub">Override the default for this group</string>
     <string name="group_editor_edit_stages">Edit stages</string>

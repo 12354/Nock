@@ -87,10 +87,8 @@ class GroupEditorViewModel @Inject constructor(
     fun updateIcon(i: String) = _state.update { it.copy(icon = i) }
     fun updateMirror(on: Boolean) = _state.update { it.copy(telegramSilentMirror = on) }
 
-    fun togglePause(on: Boolean) {
-        _state.update {
-            it.copy(pausedUntilMs = if (on) Long.MAX_VALUE else null)
-        }
+    fun setPauseUntil(untilMs: Long?) {
+        _state.update { it.copy(pausedUntilMs = untilMs) }
     }
 
     fun toggleCustomChain(on: Boolean) {

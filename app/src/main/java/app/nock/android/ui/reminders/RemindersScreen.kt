@@ -32,6 +32,8 @@ import app.nock.android.data.entity.PendingVoiceReminderEntity
 import app.nock.android.domain.model.Group
 import app.nock.android.domain.model.Reminder
 import app.nock.android.ui.components.GroupAvatar
+import app.nock.android.ui.components.PauseUntilDialog
+import app.nock.android.ui.components.formatPauseUntil
 import app.nock.android.ui.voice.VoiceAlarmFab
 import java.time.format.TextStyle
 import java.util.Locale
@@ -91,17 +93,23 @@ fun RemindersScreen(
             }
             sections.forEachIndexed { index, section ->
                 item(key = "group-${section.group.id}") {
+                    var pauseDialogFor by remember { mutableStateOf<Group?>(null) }
                     GroupSection(
                         section = section,
                         isFirst = index == 0 && pending.isEmpty(),
-                        onPauseToggle = {
-                            if (section.group.isPaused(System.currentTimeMillis())) vm.unpauseGroup(section.group)
-                            else vm.pauseGroup(section.group, null)
-                        },
+                        onPauseToggle = { pauseDialogFor = section.group },
                         onClickReminder = onEditReminder,
                         onClickGroup = { onEditGroup(section.group.id) },
                         onDelete = { vm.deleteReminder(it) }
                     )
+                    pauseDialogFor?.let { g ->
+                        PauseUntilDialog(
+                            currentPauseUntilMs = g.pausedUntilMs,
+                            onDismiss = { pauseDialogFor = null },
+                            onPick = { until -> vm.pauseGroupUntil(g, until) },
+                            onResume = { vm.unpauseGroup(g) },
+                        )
+                    }
                 }
             }
         }
@@ -139,7 +147,7 @@ private fun GroupSection(
                     )
                     if (paused) {
                         Spacer(Modifier.width(8.dp))
-                        PausedChip()
+                        PausedChip(section.group.pausedUntilMs)
                     }
                 }
                 Text(
@@ -209,7 +217,13 @@ private fun GroupSection(
 }
 
 @Composable
-private fun PausedChip() {
+private fun PausedChip(pausedUntilMs: Long?) {
+    val ctx = LocalContext.current
+    val label = if (pausedUntilMs != null && pausedUntilMs != Long.MAX_VALUE) {
+        stringResource(R.string.reminders_paused_until_chip, formatPauseUntil(ctx, pausedUntilMs))
+    } else {
+        stringResource(R.string.reminders_paused_chip)
+    }
     Surface(
         color = MaterialTheme.colorScheme.secondaryContainer,
         contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
@@ -222,7 +236,7 @@ private fun PausedChip() {
         ) {
             Icon(Icons.Filled.Pause, contentDescription = null, modifier = Modifier.size(12.dp))
             Text(
-                stringResource(R.string.reminders_paused_chip),
+                label,
                 style = MaterialTheme.typography.labelSmall,
                 fontWeight = FontWeight.Medium
             )

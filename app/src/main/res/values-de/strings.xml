@@ -98,6 +98,8 @@
     <string name="edit_at_time">um %1$s</string>
     <string name="edit_interval_label">Intervall nach letztem „Erledigt"</string>
     <string name="edit_hours_label">Stunden</string>
+    <string name="edit_escalation_section">Eskalation</string>
+    <string name="edit_using_group_chain">Kette der Gruppe %1$s wird verwendet</string>
 
     <!-- Settings: escalation chain -->
     <string name="settings_escalation_chain_title">Eskalationskette (globaler Standard)</string>

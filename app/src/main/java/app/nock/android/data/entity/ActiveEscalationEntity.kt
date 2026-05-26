@@ -24,5 +24,6 @@ data class ActiveEscalationEntity(
     val nextStageIndex: Int,
     val nextFireAtMs: Long,
     val chainSnapshotJson: String,
-    val repeatIntervalMs: Long
+    val repeatIntervalMs: Long,
+    val sentTelegramMessageIdsCsv: String = ""
 )

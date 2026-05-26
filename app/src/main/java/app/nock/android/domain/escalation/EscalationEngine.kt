@@ -116,30 +116,47 @@ class EscalationEngine @Inject constructor(
         val idx = max(storedIdx, dueIdx).coerceAtMost(chain.lastIndex)
         val stage = chain.stage(idx)
 
+        var sentMessageId: Long? = null
         when (stage.type) {
             StageType.SILENT -> {
                 notifier.showSilent(reminder, group, escalationId)
-                if (group.telegramSilentMirror) telegram.send(reminder, silent = true)
+                if (group.telegramSilentMirror) {
+                    sentMessageId = telegram.send(reminder, silent = true).messageId
+                }
             }
             StageType.TELEGRAM -> {
-                telegram.send(reminder, silent = false)
+                sentMessageId = telegram.send(reminder, silent = false).messageId
                 notifier.showSilent(reminder, group, escalationId, suffix = " (Telegram sent)")
             }
             StageType.ALARM_VIBRATE -> notifier.showAlarmVibrate(reminder, group, escalationId)
             StageType.ALARM -> notifier.showAlarm(reminder, group, escalationId)
         }
 
+        val updatedSentCsv = if (sentMessageId != null) {
+            appendMessageId(esc.sentTelegramMessageIdsCsv, sentMessageId)
+        } else {
+            esc.sentTelegramMessageIdsCsv
+        }
+
         val isLast = idx == chain.lastIndex
         if (isLast) {
             val nextAt = now + chain.repeatIntervalMs
-            val updated = esc.copy(nextStageIndex = idx, nextFireAtMs = nextAt)
+            val updated = esc.copy(
+                nextStageIndex = idx,
+                nextFireAtMs = nextAt,
+                sentTelegramMessageIdsCsv = updatedSentCsv
+            )
             activeDao.update(updated)
             scheduler.scheduleStage(updated.id, nextAt, stage.type)
         } else {
             val nextIdx = idx + 1
             val nextStage = chain.stage(nextIdx)
             val nextAt = max(esc.startedAtMs + nextStage.offsetMs, now + 1_000L)
-            val updated = esc.copy(nextStageIndex = nextIdx, nextFireAtMs = nextAt)
+            val updated = esc.copy(
+                nextStageIndex = nextIdx,
+                nextFireAtMs = nextAt,
+                sentTelegramMessageIdsCsv = updatedSentCsv
+            )
             activeDao.update(updated)
             scheduler.scheduleStage(updated.id, nextAt, nextStage.type)
         }
@@ -150,6 +167,7 @@ class EscalationEngine @Inject constructor(
         scheduler.cancel(esc.id)
         notifier.cancel(esc.id)
         notifier.stopAlarm()
+        deleteSentTelegramMessages(esc.sentTelegramMessageIdsCsv)
         val reminder = repo.getReminder(esc.reminderId)
         activeDao.delete(esc)
         if (reminder != null) {
@@ -175,15 +193,22 @@ class EscalationEngine @Inject constructor(
             ?: settings.getStageChain()
         notifier.cancelStageVisuals(esc.id)
         notifier.stopAlarm()
+        deleteSentTelegramMessages(esc.sentTelegramMessageIdsCsv)
 
         val currentlyFiring = (esc.nextStageIndex).coerceAtMost(chain.lastIndex)
         val isLast = currentlyFiring == chain.lastIndex
         val now = System.currentTimeMillis()
         if (isLast) {
             val nextAt = now + chain.repeatIntervalMs
-            val updated = esc.copy(nextFireAtMs = nextAt, nextStageIndex = currentlyFiring)
+            val updated = esc.copy(
+                nextFireAtMs = nextAt,
+                nextStageIndex = currentlyFiring,
+                sentTelegramMessageIdsCsv = ""
+            )
             activeDao.update(updated)
             scheduler.scheduleStage(updated.id, nextAt, chain.stage(currentlyFiring).type)
+        } else {
+            activeDao.update(esc.copy(sentTelegramMessageIdsCsv = ""))
         }
     }
 
@@ -191,7 +216,18 @@ class EscalationEngine @Inject constructor(
         val esc = activeDao.getByReminderId(reminderId) ?: return
         scheduler.cancel(esc.id)
         notifier.cancel(esc.id)
+        deleteSentTelegramMessages(esc.sentTelegramMessageIdsCsv)
         activeDao.delete(esc)
+    }
+
+    private fun appendMessageId(csv: String, messageId: Long): String =
+        if (csv.isEmpty()) messageId.toString() else "$csv,$messageId"
+
+    private suspend fun deleteSentTelegramMessages(csv: String) {
+        if (csv.isEmpty()) return
+        csv.split(',').forEach { token ->
+            token.toLongOrNull()?.let { telegram.deleteMessage(it) }
+        }
     }
 
     // Triggered by UnlockReceiver. Fires any armed OnUnlock reminders by

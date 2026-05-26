@@ -78,7 +78,7 @@ fun RemindersScreen(
     ) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding),
-            contentPadding = PaddingValues(top = 4.dp, bottom = 144.dp)
+            contentPadding = PaddingValues(bottom = 144.dp)
         ) {
             items(pending, key = { "pending-${it.id}" }) { entry ->
                 Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
@@ -89,10 +89,11 @@ fun RemindersScreen(
                     )
                 }
             }
-            sections.forEach { section ->
+            sections.forEachIndexed { index, section ->
                 item(key = "group-${section.group.id}") {
                     GroupSection(
                         section = section,
+                        isFirst = index == 0 && pending.isEmpty(),
                         onPauseToggle = {
                             if (section.group.isPaused(System.currentTimeMillis())) vm.unpauseGroup(section.group)
                             else vm.pauseGroup(section.group, null)
@@ -110,6 +111,7 @@ fun RemindersScreen(
 @Composable
 private fun GroupSection(
     section: GroupSection,
+    isFirst: Boolean,
     onPauseToggle: () -> Unit,
     onClickReminder: (Long) -> Unit,
     onClickGroup: () -> Unit,
@@ -122,7 +124,7 @@ private fun GroupSection(
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable(onClick = onClickGroup)
-                .padding(start = 24.dp, end = 8.dp, top = 16.dp, bottom = 8.dp),
+                .padding(start = 24.dp, end = 8.dp, top = if (isFirst) 0.dp else 16.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             GroupAvatar(section.group, size = 32.dp)

@@ -11,7 +11,14 @@ import java.time.temporal.TemporalAdjusters
 sealed class Schedule {
     abstract fun nextFireFrom(now: Long, lastCompletedAt: Long?, zone: ZoneId = ZoneId.systemDefault()): Long?
 
+    // True for schedules that have no future occurrence after a single
+    // completion. Callers (the escalation engine, the today screen) use
+    // this to drop "spent" reminders instead of leaving them in the list.
+    // Adding a new Schedule subtype forces an explicit choice here.
+    abstract val isOneTime: Boolean
+
     data class OneShot(val atEpochMs: Long) : Schedule() {
+        override val isOneTime: Boolean = true
         override fun nextFireFrom(now: Long, lastCompletedAt: Long?, zone: ZoneId): Long? {
             if (lastCompletedAt != null && lastCompletedAt >= atEpochMs) return null
             return atEpochMs
@@ -19,18 +26,21 @@ sealed class Schedule {
     }
 
     data class Daily(val timesOfDayMinutes: List<Int>) : Schedule() {
+        override val isOneTime: Boolean = false
         override fun nextFireFrom(now: Long, lastCompletedAt: Long?, zone: ZoneId): Long? {
             return nextDailyOrWeekly(now, zone, daysOfWeek = null, timesOfDayMinutes = timesOfDayMinutes)
         }
     }
 
     data class Weekly(val daysOfWeek: Set<DayOfWeek>, val timesOfDayMinutes: List<Int>) : Schedule() {
+        override val isOneTime: Boolean = false
         override fun nextFireFrom(now: Long, lastCompletedAt: Long?, zone: ZoneId): Long? {
             return nextDailyOrWeekly(now, zone, daysOfWeek = daysOfWeek, timesOfDayMinutes = timesOfDayMinutes)
         }
     }
 
     data class Monthly(val dayOfMonth: Int, val timeOfDayMinutes: Int) : Schedule() {
+        override val isOneTime: Boolean = false
         override fun nextFireFrom(now: Long, lastCompletedAt: Long?, zone: ZoneId): Long? {
             val nowDt = LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(now), zone)
             val time = LocalTime.of(timeOfDayMinutes / 60, timeOfDayMinutes % 60)
@@ -46,6 +56,7 @@ sealed class Schedule {
     }
 
     data class IntervalFromLast(val intervalMs: Long) : Schedule() {
+        override val isOneTime: Boolean = false
         override fun nextFireFrom(now: Long, lastCompletedAt: Long?, zone: ZoneId): Long? {
             val base = lastCompletedAt ?: now
             val next = base + intervalMs
@@ -58,6 +69,7 @@ sealed class Schedule {
     // sorts naturally and rescheduleAll can tell pending from completed —
     // actual delivery happens via UnlockReceiver, not AlarmManager.
     data class OnUnlock(val armedAtMs: Long) : Schedule() {
+        override val isOneTime: Boolean = true
         override fun nextFireFrom(now: Long, lastCompletedAt: Long?, zone: ZoneId): Long? {
             if (lastCompletedAt != null && lastCompletedAt >= armedAtMs) return null
             return armedAtMs

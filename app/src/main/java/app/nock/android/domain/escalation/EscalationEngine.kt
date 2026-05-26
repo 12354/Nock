@@ -153,10 +153,10 @@ class EscalationEngine @Inject constructor(
         val reminder = repo.getReminder(esc.reminderId)
         activeDao.delete(esc)
         if (reminder != null) {
-            // OnUnlock reminders are inherently one-shot — once delivered and
-            // dismissed they have no future occurrence, so drop the row entirely
-            // instead of leaving a "spent" reminder sitting in the list.
-            if (reminder.schedule is Schedule.OnUnlock) {
+            // One-time schedules have no future occurrence once dismissed, so
+            // drop the row entirely instead of leaving a "spent" reminder in
+            // the list. See Schedule.isOneTime.
+            if (reminder.schedule.isOneTime) {
                 repo.deleteReminder(reminder)
                 return
             }

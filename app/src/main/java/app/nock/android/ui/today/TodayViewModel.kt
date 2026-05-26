@@ -81,10 +81,14 @@ class TodayViewModel @Inject constructor(
             if (active != null) engine.done(active.id)
             else {
                 val r = repo.getReminder(reminderId) ?: return@launch
+                engine.cancelActive(reminderId)
+                if (r.schedule.isOneTime) {
+                    repo.deleteReminder(r)
+                    return@launch
+                }
                 val now = System.currentTimeMillis()
                 val next = r.schedule.nextFireFrom(now, now)
                 repo.updateFireState(reminderId, next, now)
-                engine.cancelActive(reminderId)
                 if (next != null) {
                     engine.startEscalationAt(r.copy(lastCompletedAt = now, nextFireAt = next), next)
                 }

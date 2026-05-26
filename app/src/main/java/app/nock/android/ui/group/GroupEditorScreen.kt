@@ -302,35 +302,40 @@ private fun ColorPicker(selected: Int, onSelect: (Int) -> Unit) {
 private fun IconPicker(selected: String, accent: Color, onSelect: (String) -> Unit) {
     val surface = MaterialTheme.colorScheme.surfaceContainer
     val onSurfaceVar = MaterialTheme.colorScheme.onSurfaceVariant
-    androidx.compose.foundation.layout.FlowRow(
+    val columns = 5
+    val spacing = 8.dp
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-        maxItemsInEachRow = 5,
+            .padding(horizontal = 20.dp, vertical = 4.dp)
     ) {
-        GroupIconChoices.forEach { (name, vector) ->
-            val isSelected = name == selected
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .aspectRatio(1f)
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(if (isSelected) accent.copy(alpha = 0.22f) else surface)
-                    .then(
-                        if (isSelected) Modifier.border(2.dp, accent, RoundedCornerShape(16.dp))
-                        else Modifier
-                    )
-                    .clickable { onSelect(name) },
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = vector,
-                    contentDescription = name,
-                    tint = if (isSelected) accent else onSurfaceVar,
-                    modifier = Modifier.size(22.dp)
-                )
+        val cellSize = (maxWidth - spacing * (columns - 1)) / columns
+        Column(verticalArrangement = Arrangement.spacedBy(spacing)) {
+            GroupIconChoices.chunked(columns).forEach { rowItems ->
+                Row(horizontalArrangement = Arrangement.spacedBy(spacing)) {
+                    rowItems.forEach { (name, vector) ->
+                        val isSelected = name == selected
+                        Box(
+                            modifier = Modifier
+                                .size(cellSize)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(if (isSelected) accent.copy(alpha = 0.22f) else surface)
+                                .then(
+                                    if (isSelected) Modifier.border(2.dp, accent, RoundedCornerShape(16.dp))
+                                    else Modifier
+                                )
+                                .clickable { onSelect(name) },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = vector,
+                                contentDescription = name,
+                                tint = if (isSelected) accent else onSurfaceVar,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                    }
+                }
             }
         }
     }

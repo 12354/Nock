@@ -1,0 +1,20 @@
+<!--
+  Voice widget — idle ("equalizer · 2 bars" off pose).
+  Two apricot dots, sized per the design's 2-bar equalizer spec:
+    - dot diameter: 12% of tile
+    - dot centers: ±7.25% from tile center
+  Tile viewport is 240x240 (the design's logical tile size); the surrounding
+  squircle background is provided by the widget container.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="240"
+    android:viewportHeight="240">
+    <path
+        android:fillColor="#FFFFB070"
+        android:pathData="M88.2,120 a14.4,14.4 0 1,0 28.8,0 a14.4,14.4 0 1,0 -28.8,0 z" />
+    <path
+        android:fillColor="#FFFFB070"
+        android:pathData="M123,120 a14.4,14.4 0 1,0 28.8,0 a14.4,14.4 0 1,0 -28.8,0 z" />
+</vector>

@@ -2,12 +2,12 @@
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:padding="8dp">
+    android:background="@drawable/widget_voice_background">
 
     <ImageView
-        android:layout_width="40dp"
-        android:layout_height="40dp"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
         android:layout_gravity="center"
         android:contentDescription="@string/widget_voice_alarm_label"
-        android:src="@drawable/ic_widget_mic" />
+        android:src="@drawable/ic_widget_eq_dots" />
 </FrameLayout>

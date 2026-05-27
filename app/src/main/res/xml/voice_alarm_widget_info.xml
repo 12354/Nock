@@ -9,4 +9,4 @@
     android:widgetCategory="home_screen"
     android:updatePeriodMillis="0"
     android:description="@string/widget_voice_alarm_description"
-    android:previewImage="@drawable/ic_widget_mic" />
+    android:previewImage="@drawable/ic_widget_eq_dots" />

@@ -1,0 +1,21 @@
+<!--
+  Voice widget — recording ("equalizer · 2 bars" on pose).
+  Two apricot bars per the design's 2-bar equalizer spec:
+    - bar width: 10% of tile
+    - bar centers: ±8.5% from tile center
+    - corner radius: 6% of tile (capped at half-width => pill ends)
+  Heights pick a representative non-rest frame (left tall, right short) so
+  the static drawable still reads as "equalizer" rather than two equal pills.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="240"
+    android:viewportHeight="240">
+    <path
+        android:fillColor="#FFFFB070"
+        android:pathData="M99.6,54 a12,12 0 0,1 12,12 v108 a12,12 0 0,1 -12,12 a12,12 0 0,1 -12,-12 v-108 a12,12 0 0,1 12,-12 z" />
+    <path
+        android:fillColor="#FFFFB070"
+        android:pathData="M140.4,78 a12,12 0 0,1 12,12 v60 a12,12 0 0,1 -12,12 a12,12 0 0,1 -12,-12 v-60 a12,12 0 0,1 12,-12 z" />
+</vector>

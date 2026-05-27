@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="seed">#7C5CFF</color>
+
+    <!-- Nock palette (from the Voice Widget design handoff). -->
+    <color name="nock_ink_dark">#FF1B1622</color>
+    <color name="nock_apricot">#FFFFB070</color>
 </resources>

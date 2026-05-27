@@ -2,9 +2,9 @@ package app.nock.android.widget
 
 import android.content.Context
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.datastore.preferences.core.Preferences
-import androidx.glance.ColorFilter
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
 import androidx.glance.GlanceTheme
@@ -21,11 +21,12 @@ import androidx.glance.currentState
 import androidx.glance.layout.Alignment
 import androidx.glance.layout.Box
 import androidx.glance.layout.fillMaxSize
-import androidx.glance.layout.padding
-import androidx.glance.layout.size
 import androidx.glance.state.GlanceStateDefinition
 import androidx.glance.state.PreferencesGlanceStateDefinition
 import app.nock.android.R
+
+// Nock palette — ink-dark squircle, apricot foreground.
+private val InkDark = Color(0xFF1B1622)
 
 class VoiceAlarmWidget : GlanceAppWidget() {
 
@@ -42,16 +43,11 @@ class VoiceAlarmWidget : GlanceAppWidget() {
 
     @Composable
     private fun WidgetContent(context: Context, state: VoiceWidgetState) {
-        val background = when (state) {
-            VoiceWidgetState.Idle -> GlanceTheme.colors.primaryContainer
-            VoiceWidgetState.Recording -> GlanceTheme.colors.errorContainer
-            VoiceWidgetState.Starting, VoiceWidgetState.Stopping -> GlanceTheme.colors.secondaryContainer
-        }
-        val iconTint = when (state) {
-            VoiceWidgetState.Idle -> GlanceTheme.colors.onPrimaryContainer
-            VoiceWidgetState.Recording -> GlanceTheme.colors.onErrorContainer
-            VoiceWidgetState.Starting, VoiceWidgetState.Stopping -> GlanceTheme.colors.onSecondaryContainer
-        }
+        // Equalizer · 2 bars: dots when idle, bars while active (the design's
+        // off/on poses). The transition morph from the prototype isn't viable
+        // in a RemoteViews widget — we land on the two key frames instead.
+        val iconRes = if (state.isActive) R.drawable.ic_widget_eq_bars
+        else R.drawable.ic_widget_eq_dots
         val contentDescription = context.getString(
             if (state.isActive) R.string.widget_voice_recording_label
             else R.string.widget_voice_alarm_label
@@ -60,17 +56,15 @@ class VoiceAlarmWidget : GlanceAppWidget() {
         Box(
             modifier = GlanceModifier
                 .fillMaxSize()
-                .padding(4.dp)
-                .background(background)
-                .cornerRadius(20.dp)
+                .background(InkDark)
+                .cornerRadius(24.dp)
                 .clickable(actionSendBroadcast<VoiceWidgetToggleReceiver>()),
             contentAlignment = Alignment.Center
         ) {
             Image(
-                provider = ImageProvider(R.drawable.ic_widget_mic),
+                provider = ImageProvider(iconRes),
                 contentDescription = contentDescription,
-                colorFilter = ColorFilter.tint(iconTint),
-                modifier = GlanceModifier.size(24.dp)
+                modifier = GlanceModifier.fillMaxSize()
             )
         }
     }

@@ -210,7 +210,10 @@
 
     <!-- Voice alarm widget -->
     <string name="widget_voice_alarm_label">Sprach-Alarm</string>
-    <string name="widget_voice_alarm_description">Gedrückt halten, um einen Sprach-Alarm aufzunehmen</string>
+    <string name="widget_voice_alarm_description">Tippen, um einen Sprach-Alarm aufzunehmen</string>
+    <string name="widget_voice_recording_label">Nimmt auf — tippen zum Stoppen</string>
+    <string name="widget_voice_notification_title">Höre zu…</string>
+    <string name="widget_voice_notification_stop_action">Stopp</string>
 
     <!-- Settings: DeepSeek -->
     <string name="settings_deepseek_title">Sprache → KI-Alarm (DeepSeek)</string>

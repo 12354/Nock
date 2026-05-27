@@ -8,6 +8,7 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <uses-permission android:name="android.permission.INTERNET" />
@@ -87,6 +88,15 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/voice_alarm_widget_info" />
         </receiver>
+
+        <receiver
+            android:name=".widget.VoiceWidgetToggleReceiver"
+            android:exported="false" />
+
+        <service
+            android:name=".widget.VoiceCaptureService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
 
         <service
             android:name=".alarm.AlarmService"

@@ -71,6 +71,7 @@ class SpeechToTextManager @Inject constructor(
 
     fun start(
         languageTag: String? = null,
+        onReady: () -> Unit = {},
         onPartial: (String) -> Unit = {},
         onSegmentComplete: (String) -> Unit = {},
         onResult: (SpeechResult) -> Unit
@@ -143,6 +144,7 @@ class SpeechToTextManager @Inject constructor(
         rec.setRecognitionListener(object : RecognitionListener {
             override fun onReadyForSpeech(params: Bundle?) {
                 logger.log(TAG, "← onReadyForSpeech")
+                onReady()
             }
             override fun onBeginningOfSpeech() {
                 logger.log(TAG, "← onBeginningOfSpeech")

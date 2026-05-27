@@ -94,12 +94,14 @@ class VoiceCaptureService : Service() {
         logger.log(TAG, "startSession() — accumulated so far=\"$accumulated\"")
         sessionPartial = ""
         session = stt.start(
-            onPartial = { partial ->
-                sessionPartial = partial
-                logger.log(TAG, "onPartial \"$partial\"")
+            onReady = {
                 if (isRecording) {
                     scope.launch { VoiceWidgetState.write(applicationContext, VoiceWidgetState.Recording) }
                 }
+            },
+            onPartial = { partial ->
+                sessionPartial = partial
+                logger.log(TAG, "onPartial \"$partial\"")
             },
             onSegmentComplete = { segment ->
                 val before = accumulated

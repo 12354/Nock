@@ -29,6 +29,7 @@ import app.nock.android.R
 import app.nock.android.domain.model.EscalationChain
 import app.nock.android.domain.model.Group
 import app.nock.android.ui.components.GroupAvatar
+import app.nock.android.ui.components.NockLogo
 import app.nock.android.ui.components.stageIcon
 import app.nock.android.ui.voice.VoiceAlarmFab
 import java.time.Instant
@@ -55,12 +56,7 @@ fun TodayScreen(
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
-                title = {
-                    Text(
-                        stringResource(R.string.today),
-                        style = MaterialTheme.typography.titleLarge
-                    )
-                }
+                title = { NockLogo() }
             )
         },
         floatingActionButton = {

@@ -12,6 +12,9 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.core.content.getSystemService
 import app.nock.android.alarm.AlarmActivity
 import app.nock.android.alarm.AlarmService
@@ -26,6 +29,8 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.RequestPermission()
     ) { /* no-op; user toggled */ }
 
+    private var requestedTab by mutableStateOf<String?>(null)
+
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleHelper.wrap(newBase))
     }
@@ -34,11 +39,22 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         requestPermissionsIfNeeded()
+        val initialTab = intent?.getStringExtra(EXTRA_OPEN_TAB) ?: Tab.Today.route
         setContent {
             NockTheme {
-                NockApp()
+                NockApp(
+                    initialTab = initialTab,
+                    requestedTab = requestedTab,
+                    onTabConsumed = { requestedTab = null }
+                )
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        intent.getStringExtra(EXTRA_OPEN_TAB)?.let { requestedTab = it }
     }
 
     override fun onResume() {

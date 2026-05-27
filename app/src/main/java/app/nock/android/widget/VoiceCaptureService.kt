@@ -11,7 +11,9 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import app.nock.android.R
 import app.nock.android.notif.Channels
+import app.nock.android.ui.EXTRA_OPEN_TAB
 import app.nock.android.ui.MainActivity
+import app.nock.android.ui.Tab
 import app.nock.android.voice.SpeechResult
 import app.nock.android.voice.SpeechToTextManager
 import app.nock.android.voice.VoiceAlarmCreator
@@ -210,6 +212,7 @@ class VoiceCaptureService : Service() {
     private fun openTaskOverview() {
         val intent = Intent(this, MainActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            putExtra(EXTRA_OPEN_TAB, Tab.Reminders.route)
         }
         try {
             startActivity(intent)

@@ -209,7 +209,10 @@
 
     <!-- Voice alarm widget -->
     <string name="widget_voice_alarm_label">Voice alarm</string>
-    <string name="widget_voice_alarm_description">Hold to record a voice alarm</string>
+    <string name="widget_voice_alarm_description">Tap to record a voice alarm</string>
+    <string name="widget_voice_recording_label">Recording — tap to stop</string>
+    <string name="widget_voice_notification_title">Listening…</string>
+    <string name="widget_voice_notification_stop_action">Stop</string>
 
     <!-- Settings: DeepSeek -->
     <string name="settings_deepseek_title">Voice → AI alarm (DeepSeek)</string>

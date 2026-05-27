@@ -11,6 +11,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -35,11 +36,26 @@ sealed class Tab(val route: String, @StringRes val labelRes: Int, val icon: Imag
     object Settings : Tab("settings", R.string.settings, Icons.Filled.Settings)
 }
 
+const val EXTRA_OPEN_TAB = "app.nock.android.ui.extra.OPEN_TAB"
+
 private val TABS = listOf(Tab.Today, Tab.Reminders, Tab.Settings)
 
 @Composable
-fun NockApp() {
+fun NockApp(
+    initialTab: String = Tab.Today.route,
+    requestedTab: String? = null,
+    onTabConsumed: () -> Unit = {},
+) {
     val nav = rememberNavController()
+    LaunchedEffect(requestedTab) {
+        val target = requestedTab ?: return@LaunchedEffect
+        nav.navigate(target) {
+            popUpTo(nav.graph.findStartDestination().id) { saveState = true }
+            launchSingleTop = true
+            restoreState = true
+        }
+        onTabConsumed()
+    }
     val backStack by nav.currentBackStackEntryAsState()
     val currentRoute = backStack?.destination?.route
 
@@ -69,7 +85,7 @@ fun NockApp() {
     ) { padding ->
         NavHost(
             navController = nav,
-            startDestination = Tab.Today.route,
+            startDestination = initialTab,
             modifier = Modifier.padding(padding)
         ) {
             composable(Tab.Today.route) {

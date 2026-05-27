@@ -50,16 +50,8 @@ fun RemindersScreen(
     val pending by vm.pending.collectAsState()
     Scaffold(
         topBar = {
-            // The design uses a large M3 app bar for Reminders. Keep the title aligned to start
-            // with a heavier weight so the grouped sections below sit under a clear visual anchor.
-            LargeTopAppBar(
-                title = {
-                    Text(
-                        stringResource(R.string.reminders),
-                        style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.Normal
-                    )
-                }
+            TopAppBar(
+                title = { Text(stringResource(R.string.reminders)) }
             )
         },
         floatingActionButton = {

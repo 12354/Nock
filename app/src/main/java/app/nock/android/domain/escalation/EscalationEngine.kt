@@ -1,6 +1,7 @@
 package app.nock.android.domain.escalation
 
 import app.nock.android.alarm.AlarmScheduler
+import app.nock.android.alarm.AlarmService
 import app.nock.android.data.NockRepository
 import app.nock.android.data.SettingsRepository
 import app.nock.android.data.dao.ActiveEscalationDao
@@ -216,6 +217,15 @@ class EscalationEngine @Inject constructor(
         val esc = activeDao.getByReminderId(reminderId) ?: return
         scheduler.cancel(esc.id)
         notifier.cancel(esc.id)
+        // If this reminder is the one currently ringing, tear down the alarm
+        // service too. Moving (edit/save) or removing a reminder mid-alarm
+        // otherwise leaves the sound, vibration and full-screen alarm running
+        // with no backing escalation — and the foreground-service notification
+        // can't be dismissed by notifier.cancel() alone. Guarded so cancelling
+        // a different reminder doesn't silence whatever is actually ringing.
+        if (AlarmService.ringingEscalationId == esc.id) {
+            notifier.stopAlarm()
+        }
         deleteSentTelegramMessages(esc.sentTelegramMessageIdsCsv)
         activeDao.delete(esc)
     }

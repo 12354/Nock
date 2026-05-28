@@ -38,6 +38,8 @@
     <string name="today_section_later">Später</string>
     <string name="today_active_next_stage">Nächste Stufe %1$s um %2$s</string>
     <string name="today_active_repeats_at">Wiederholt sich um %1$s</string>
+    <string name="today_done_undo_message">Als erledigt markiert</string>
+    <string name="today_done_undo_action">Rückgängig</string>
     <string name="time_in_minutes">in %1$d Min</string>
     <string name="time_in_hours">in %1$d Std</string>
     <string name="time_in_hours_minutes">in %1$d Std %2$d Min</string>

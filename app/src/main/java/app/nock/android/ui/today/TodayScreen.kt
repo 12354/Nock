@@ -210,7 +210,12 @@ private fun UndoSnackbar(data: SnackbarData, durationMs: Long) {
         modifier = Modifier.padding(12.dp),
         action = data.visuals.actionLabel?.let { label ->
             {
-                TextButton(onClick = { data.performAction() }) {
+                TextButton(
+                    onClick = { data.performAction() },
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = SnackbarDefaults.actionColor
+                    )
+                ) {
                     Text(label)
                 }
             }

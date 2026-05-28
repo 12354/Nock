@@ -13,11 +13,19 @@ import app.nock.android.domain.model.EscalationChain
 import app.nock.android.domain.model.Group
 import app.nock.android.domain.model.Reminder
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 data class ActiveEscalationInfo(
@@ -75,23 +83,51 @@ class TodayViewModel @Inject constructor(
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    private val pendingJobs = mutableMapOf<Long, Job>()
+    private val _pendingDoneIds = MutableStateFlow<Set<Long>>(emptySet())
+    val pendingDoneIds: StateFlow<Set<Long>> = _pendingDoneIds.asStateFlow()
+
+    // Mark as pending and commit after UNDO_WINDOW_MS unless undoDone cancels it.
+    // The Today UI hides pending items in the meantime so no replacement card
+    // can pop into the active slot and steal a stray tap.
     fun markDone(reminderId: Long) {
-        viewModelScope.launch {
-            val active = activeDao.getByReminderId(reminderId)
-            if (active != null) engine.done(active.id)
-            else {
-                val r = repo.getReminder(reminderId) ?: return@launch
-                engine.cancelActive(reminderId)
-                if (r.schedule.isOneTime) {
-                    repo.deleteReminder(r)
-                    return@launch
-                }
-                val now = System.currentTimeMillis()
-                val next = r.schedule.nextFireFrom(now, now)
-                repo.updateFireState(reminderId, next, now)
-                if (next != null) {
-                    engine.startEscalationAt(r.copy(lastCompletedAt = now, nextFireAt = next), next)
-                }
+        if (_pendingDoneIds.value.contains(reminderId)) return
+        _pendingDoneIds.update { it + reminderId }
+        pendingJobs[reminderId] = viewModelScope.launch {
+            try {
+                delay(UNDO_WINDOW_MS)
+            } catch (e: CancellationException) {
+                _pendingDoneIds.update { it - reminderId }
+                pendingJobs.remove(reminderId)
+                throw e
+            }
+            withContext(NonCancellable) {
+                commitDone(reminderId)
+                _pendingDoneIds.update { it - reminderId }
+                pendingJobs.remove(reminderId)
+            }
+        }
+    }
+
+    fun undoDone(reminderId: Long) {
+        pendingJobs[reminderId]?.cancel()
+    }
+
+    private suspend fun commitDone(reminderId: Long) {
+        val active = activeDao.getByReminderId(reminderId)
+        if (active != null) engine.done(active.id)
+        else {
+            val r = repo.getReminder(reminderId) ?: return
+            engine.cancelActive(reminderId)
+            if (r.schedule.isOneTime) {
+                repo.deleteReminder(r)
+                return
+            }
+            val now = System.currentTimeMillis()
+            val next = r.schedule.nextFireFrom(now, now)
+            repo.updateFireState(reminderId, next, now)
+            if (next != null) {
+                engine.startEscalationAt(r.copy(lastCompletedAt = now, nextFireAt = next), next)
             }
         }
     }
@@ -101,5 +137,9 @@ class TodayViewModel @Inject constructor(
             val active = activeDao.getByReminderId(reminderId) ?: return@launch
             engine.snooze(active.id)
         }
+    }
+
+    companion object {
+        const val UNDO_WINDOW_MS: Long = 5_000L
     }
 }

@@ -1,5 +1,13 @@
 package app.nock.android.ui.today
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -32,6 +40,8 @@ import app.nock.android.ui.components.GroupAvatar
 import app.nock.android.ui.components.NockLogo
 import app.nock.android.ui.components.stageIcon
 import app.nock.android.ui.voice.VoiceAlarmFab
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -49,15 +59,30 @@ fun TodayScreen(
     vm: TodayViewModel = hiltViewModel()
 ) {
     val items by vm.items.collectAsState()
+    val pendingDoneIds by vm.pendingDoneIds.collectAsState()
     val ctx = LocalContext.current
-    val sections = remember(items) { groupByBucket(items) }
+    val visibleItems = remember(items, pendingDoneIds) {
+        items.filterNot { it.reminder.id in pendingDoneIds }
+    }
+    val sections = remember(visibleItems) { groupByBucket(visibleItems) }
     val activeItem = remember(items) { items.firstOrNull { it.isActive } }
+    val isActiveItemPending = activeItem != null && activeItem.reminder.id in pendingDoneIds
+
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    val undoMessage = stringResource(R.string.today_done_undo_message)
+    val undoAction = stringResource(R.string.today_done_undo_action)
 
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
                 title = { NockLogo() }
             )
+        },
+        snackbarHost = {
+            SnackbarHost(snackbarHostState) { data ->
+                UndoSnackbar(data = data, durationMs = TodayViewModel.UNDO_WINDOW_MS)
+            }
         },
         floatingActionButton = {
             Column(
@@ -101,15 +126,48 @@ fun TodayScreen(
         ) {
             if (activeItem != null) {
                 item("active-header") {
-                    SectionHeader(stringResource(R.string.today_section_active_now))
+                    AnimatedVisibility(
+                        visible = !isActiveItemPending,
+                        enter = fadeIn() + expandVertically(),
+                        exit = fadeOut() + shrinkVertically()
+                    ) {
+                        SectionHeader(stringResource(R.string.today_section_active_now))
+                    }
                 }
                 item("active-card-${activeItem.reminder.id}") {
-                    ActiveEscalationCard(
-                        item = activeItem,
-                        onDone = { vm.markDone(activeItem.reminder.id) },
-                        onSnooze = { vm.snooze(activeItem.reminder.id) },
-                        onClick = { onEditReminder(activeItem.reminder.id) }
-                    )
+                    AnimatedVisibility(
+                        visible = !isActiveItemPending,
+                        enter = fadeIn() + expandVertically(),
+                        exit = fadeOut() + shrinkVertically()
+                    ) {
+                        ActiveEscalationCard(
+                            item = activeItem,
+                            onDone = {
+                                val reminderId = activeItem.reminder.id
+                                vm.markDone(reminderId)
+                                scope.launch {
+                                    launch {
+                                        // Dismiss the snackbar as soon as the
+                                        // VM-side commit window closes, so the
+                                        // countdown bar lines up with reality
+                                        // instead of running past it.
+                                        vm.pendingDoneIds.first { reminderId !in it }
+                                        snackbarHostState.currentSnackbarData?.dismiss()
+                                    }
+                                    val result = snackbarHostState.showSnackbar(
+                                        message = undoMessage,
+                                        actionLabel = undoAction,
+                                        duration = SnackbarDuration.Indefinite
+                                    )
+                                    if (result == SnackbarResult.ActionPerformed) {
+                                        vm.undoDone(reminderId)
+                                    }
+                                }
+                            },
+                            onSnooze = { vm.snooze(activeItem.reminder.id) },
+                            onClick = { onEditReminder(activeItem.reminder.id) }
+                        )
+                    }
                 }
             }
             sections.forEach { section ->
@@ -140,6 +198,33 @@ private fun SectionHeader(text: String) {
         fontWeight = FontWeight.Medium,
         modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 20.dp, bottom = 8.dp)
     )
+}
+
+@Composable
+private fun UndoSnackbar(data: SnackbarData, durationMs: Long) {
+    val progress = remember(data) { Animatable(1f) }
+    LaunchedEffect(data) {
+        progress.animateTo(0f, tween(durationMs.toInt(), easing = LinearEasing))
+    }
+    Snackbar(
+        modifier = Modifier.padding(12.dp),
+        action = data.visuals.actionLabel?.let { label ->
+            {
+                TextButton(onClick = { data.performAction() }) {
+                    Text(label)
+                }
+            }
+        }
+    ) {
+        Column {
+            Text(data.visuals.message)
+            Spacer(Modifier.height(8.dp))
+            LinearProgressIndicator(
+                progress = { progress.value },
+                modifier = Modifier.fillMaxWidth().height(2.dp)
+            )
+        }
+    }
 }
 
 @Composable

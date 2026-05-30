@@ -42,7 +42,8 @@ import kotlin.random.Random
  * come due, optionally reacting with Done/Snooze); jumps the device date+time
  * forward or BACKWARD (an NTP/timezone/manual change, which triggers the app's
  * ACTION_TIME_CHANGED re-arm); delivers a stale/early alarm; adds a reminder;
- * snoozes or dismisses an active one; or rewrites a reminder's schedule.
+ * snoozes or dismisses an active one; edits an alarm's own fire time/date (the
+ * user moving when it should ring); or swaps a reminder's whole schedule.
  *
  * Oracles:
  *  - INV (consistency): after EVERY mutation, the set of active escalation rows
@@ -184,13 +185,14 @@ class EscalationEngineFuzzTest {
             for (s in 0 until iterations) {
                 step = s
                 when (rnd.nextInt(100)) {
-                    in 0..34 -> tick()                 // wait forward, then fire/react
-                    in 35..44 -> changeDeviceClock()   // jump device date+time (often backward)
-                    in 45..52 -> spuriousDelivery()    // stale / too-early alarm delivery
-                    in 53..64 -> addReminder()
-                    in 65..76 -> snoozeRandomActive()
-                    in 77..88 -> doneRandomActive()
-                    else -> modifyRandomSchedule()
+                    in 0..32 -> tick()                 // wait forward, then fire/react
+                    in 33..42 -> changeDeviceClock()   // jump device date+time (often backward)
+                    in 43..50 -> spuriousDelivery()    // stale / too-early alarm delivery
+                    in 51..61 -> addReminder()
+                    in 62..72 -> snoozeRandomActive()
+                    in 73..83 -> doneRandomActive()
+                    in 84..91 -> retimeRandomAlarm()   // user edits the alarm's own time/date
+                    else -> modifyRandomSchedule()     // user swaps the whole schedule
                 }
                 assertConsistent("after step $s (action complete)")
             }
@@ -265,6 +267,19 @@ class EscalationEngineFuzzTest {
         private suspend fun doneRandomActive() {
             val id = dao.rows.keys.toList().randomOrNull(rnd) ?: return
             engine.done(id)
+        }
+
+        /**
+         * The user edits when an existing alarm should fire — changing its
+         * time-of-day, weekdays, day-of-month, interval, or one-shot instant —
+         * while keeping the schedule kind. Saving re-arms it (cancel + re-arm)
+         * exactly as a schedule swap does.
+         */
+        private suspend fun retimeRandomAlarm() {
+            val id = reminders.keys.toList().randomOrNull(rnd) ?: return
+            val current = reminders.getValue(id)
+            reminders[id] = current.copy(schedule = retime(current.schedule))
+            engine.scheduleNextFireForReminder(id)
         }
 
         private suspend fun modifyRandomSchedule() {
@@ -402,6 +417,16 @@ class EscalationEngineFuzzTest {
             2 -> Schedule.Monthly(rnd.nextInt(1, 29), rnd.nextInt(0, 1440))
             3 -> Schedule.IntervalFromLast(rnd.nextLong(1, 600) * MIN)
             else -> Schedule.OneShot(clock.now + rnd.nextLong(-120, 6_000) * MIN)
+        }
+
+        /** Change only the time/date fields of a schedule, keeping its kind. */
+        private fun retime(s: Schedule): Schedule = when (s) {
+            is Schedule.Daily -> Schedule.Daily(randomTimes())
+            is Schedule.Weekly -> Schedule.Weekly(randomDays(), randomTimes())
+            is Schedule.Monthly -> Schedule.Monthly(rnd.nextInt(1, 29), rnd.nextInt(0, 1440))
+            is Schedule.IntervalFromLast -> Schedule.IntervalFromLast(rnd.nextLong(1, 600) * MIN)
+            is Schedule.OneShot -> Schedule.OneShot(clock.now + rnd.nextLong(-120, 6_000) * MIN)
+            is Schedule.OnUnlock -> s // not produced in this fuzzer
         }
 
         private fun randomTimes(): List<Int> =

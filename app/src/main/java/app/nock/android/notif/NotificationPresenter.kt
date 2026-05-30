@@ -58,7 +58,24 @@ class NotificationPresenter @Inject constructor(
             putExtra(IntentExtras.EXTRA_GROUP_NAME, group.name)
             putExtra(IntentExtras.EXTRA_VIBRATION_ONLY, vibrationOnly)
         }
-        androidx.core.content.ContextCompat.startForegroundService(ctx, svc)
+        try {
+            androidx.core.content.ContextCompat.startForegroundService(ctx, svc)
+        } catch (_: Throwable) {
+            // The background FGS-start grant from the exact alarm can be denied
+            // on API 31+ (ForegroundServiceStartNotAllowedException) when the
+            // delivery is delayed past its grace window. This runs inside the
+            // EscalationReceiver's app-scope coroutine, which has no exception
+            // handler — an uncaught throw here would crash the app at the exact
+            // moment the alarm should ring. Fall back to posting the alarm
+            // notification directly so its full-screen intent, heads-up and
+            // Done/Snooze actions still surface. Sound and vibration need the
+            // service, so they're lost in this fallback, but the reminder is
+            // still shown and acknowledgeable rather than silently dropped.
+            nm.notify(
+                escalationId.toInt(),
+                buildAlarmNotification(escalationId, reminder.id, reminder.name, group.name)
+            )
+        }
     }
 
     fun buildAlarmNotification(

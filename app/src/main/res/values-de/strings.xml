@@ -165,6 +165,16 @@
     <string name="status_drive_sign_in_failed">Anmeldung fehlgeschlagen — %1$s</string>
     <string name="status_drive_sign_in_cancelled">Anmeldung abgebrochen.</string>
 
+    <!-- Settings: categories (landing list) -->
+    <string name="settings_cat_general">Allgemein</string>
+    <string name="settings_cat_general_sub">Sprache, App-Updates</string>
+    <string name="settings_cat_notifications">Benachrichtigungen</string>
+    <string name="settings_cat_notifications_sub">Eskalationskette, Gruppen</string>
+    <string name="settings_cat_integrations">Integrationen</string>
+    <string name="settings_cat_integrations_sub">Telegram, KI, Google Drive</string>
+    <string name="settings_cat_diagnostics">Diagnose</string>
+    <string name="settings_cat_diagnostics_sub">Alarmverlauf</string>
+
     <!-- Settings: language -->
     <string name="settings_language_title">Sprache</string>
     <string name="language_system_default">Systemstandard</string>

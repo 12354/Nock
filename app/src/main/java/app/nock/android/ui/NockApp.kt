@@ -27,6 +27,11 @@ import app.nock.android.R
 import app.nock.android.ui.edit.EditReminderRoute
 import app.nock.android.ui.group.GroupEditorScreen
 import app.nock.android.ui.reminders.RemindersScreen
+import app.nock.android.ui.settings.DiagnosticsSettingsScreen
+import app.nock.android.ui.settings.GeneralSettingsScreen
+import app.nock.android.ui.settings.IntegrationsSettingsScreen
+import app.nock.android.ui.settings.NotificationsSettingsScreen
+import app.nock.android.ui.settings.SettingsCategory
 import app.nock.android.ui.settings.SettingsScreen
 import app.nock.android.ui.today.TodayScreen
 
@@ -103,8 +108,24 @@ fun NockApp(
             }
             composable(Tab.Settings.route) {
                 SettingsScreen(
+                    onOpenCategory = { cat -> nav.navigate("settings/$cat") },
                     onEditGroup = { id -> nav.navigate("group?id=$id") }
                 )
+            }
+            composable("settings/${SettingsCategory.GENERAL}") {
+                GeneralSettingsScreen(onBack = { nav.popBackStack() })
+            }
+            composable("settings/${SettingsCategory.NOTIFICATIONS}") {
+                NotificationsSettingsScreen(
+                    onBack = { nav.popBackStack() },
+                    onEditGroup = { id -> nav.navigate("group?id=$id") }
+                )
+            }
+            composable("settings/${SettingsCategory.INTEGRATIONS}") {
+                IntegrationsSettingsScreen(onBack = { nav.popBackStack() })
+            }
+            composable("settings/${SettingsCategory.DIAGNOSTICS}") {
+                DiagnosticsSettingsScreen(onBack = { nav.popBackStack() })
             }
             composable("edit?id={id}") { entry ->
                 val id = entry.arguments?.getString("id")?.toLongOrNull() ?: 0L

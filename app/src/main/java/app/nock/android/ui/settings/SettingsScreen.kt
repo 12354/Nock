@@ -8,6 +8,7 @@ package app.nock.android.ui.settings
 import android.app.Activity
 import android.content.Intent
 import android.util.Log
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -19,12 +20,19 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.outlined.BugReport
+import androidx.compose.material.icons.outlined.Hub
+import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.SystemUpdate
+import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.annotation.StringRes
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -63,32 +71,171 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
+/** Settings category routes, used both for navigation and for the landing list. */
+object SettingsCategory {
+    const val GENERAL = "general"
+    const val NOTIFICATIONS = "notifications"
+    const val INTEGRATIONS = "integrations"
+    const val DIAGNOSTICS = "diagnostics"
+}
+
+/**
+ * Settings landing screen: a short list of categories that each drill into their
+ * own screen — the standard Android settings pattern, rather than one long scroll.
+ */
 @Composable
 fun SettingsScreen(
+    onOpenCategory: (String) -> Unit = {},
     onEditGroup: (Long) -> Unit = {},
     vm: SettingsViewModel = hiltViewModel(),
 ) {
-    val state by vm.state.collectAsState()
     Scaffold(topBar = { TopAppBar(title = { Text(stringResource(R.string.settings)) }) }) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
                 .padding(16.dp)
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(24.dp)
+                .verticalScroll(rememberScrollState())
         ) {
-            LanguageSection(vm)
-            state.chain?.let {
-                StageChainSection(chain = it, onChange = vm::setChain)
+            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+                CategoryRow(
+                    icon = Icons.Outlined.Tune,
+                    title = stringResource(R.string.settings_cat_general),
+                    subtitle = stringResource(R.string.settings_cat_general_sub),
+                    onClick = { onOpenCategory(SettingsCategory.GENERAL) }
+                )
+                HorizontalDivider()
+                CategoryRow(
+                    icon = Icons.Outlined.Notifications,
+                    title = stringResource(R.string.settings_cat_notifications),
+                    subtitle = stringResource(R.string.settings_cat_notifications_sub),
+                    onClick = { onOpenCategory(SettingsCategory.NOTIFICATIONS) }
+                )
+                HorizontalDivider()
+                CategoryRow(
+                    icon = Icons.Outlined.Hub,
+                    title = stringResource(R.string.settings_cat_integrations),
+                    subtitle = stringResource(R.string.settings_cat_integrations_sub),
+                    onClick = { onOpenCategory(SettingsCategory.INTEGRATIONS) }
+                )
+                HorizontalDivider()
+                CategoryRow(
+                    icon = Icons.Outlined.BugReport,
+                    title = stringResource(R.string.settings_cat_diagnostics),
+                    subtitle = stringResource(R.string.settings_cat_diagnostics_sub),
+                    onClick = { onOpenCategory(SettingsCategory.DIAGNOSTICS) }
+                )
             }
-            GroupsSection(state.groups, onEditGroup, onAddGroup = { onEditGroup(0L) })
-            TelegramSection(state.telegramToken, state.telegramChat, state.telegramStatus, vm)
-            DeepSeekSection(state.deepSeekApiKey, state.deepSeekModel, state.deepSeekBaseUrl, state.deepSeekContext, vm)
-            AlarmHistorySection(vm)
-            DriveSection(state.driveEmail, state.driveLastSyncMs, state.driveStatus, vm)
-            UpdateSection()
         }
+    }
+}
+
+@Composable
+private fun CategoryRow(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit,
+) {
+    ListItem(
+        headlineContent = { Text(title) },
+        supportingContent = { Text(subtitle) },
+        leadingContent = {
+            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+        },
+        trailingContent = {
+            Icon(
+                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.outline
+            )
+        },
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+        modifier = Modifier.clickable(onClick = onClick)
+    )
+}
+
+/** Shared scaffold for a settings category sub-screen: title + back arrow + scrolling content. */
+@Composable
+private fun CategoryScaffold(
+    title: String,
+    onBack: () -> Unit,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    BackHandler(onBack = onBack)
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(title) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = stringResource(R.string.back)
+                        )
+                    }
+                }
+            )
+        }
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(16.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(24.dp),
+            content = content
+        )
+    }
+}
+
+@Composable
+fun GeneralSettingsScreen(
+    onBack: () -> Unit,
+    vm: SettingsViewModel = hiltViewModel(),
+) {
+    CategoryScaffold(stringResource(R.string.settings_cat_general), onBack) {
+        LanguageSection(vm)
+        UpdateSection()
+    }
+}
+
+@Composable
+fun NotificationsSettingsScreen(
+    onBack: () -> Unit,
+    onEditGroup: (Long) -> Unit,
+    vm: SettingsViewModel = hiltViewModel(),
+) {
+    val state by vm.state.collectAsState()
+    CategoryScaffold(stringResource(R.string.settings_cat_notifications), onBack) {
+        state.chain?.let {
+            StageChainSection(chain = it, onChange = vm::setChain)
+        }
+        GroupsSection(state.groups, onEditGroup, onAddGroup = { onEditGroup(0L) })
+    }
+}
+
+@Composable
+fun IntegrationsSettingsScreen(
+    onBack: () -> Unit,
+    vm: SettingsViewModel = hiltViewModel(),
+) {
+    val state by vm.state.collectAsState()
+    CategoryScaffold(stringResource(R.string.settings_cat_integrations), onBack) {
+        TelegramSection(state.telegramToken, state.telegramChat, state.telegramStatus, vm)
+        DeepSeekSection(state.deepSeekApiKey, state.deepSeekModel, state.deepSeekBaseUrl, state.deepSeekContext, vm)
+        DriveSection(state.driveEmail, state.driveLastSyncMs, state.driveStatus, vm)
+    }
+}
+
+@Composable
+fun DiagnosticsSettingsScreen(
+    onBack: () -> Unit,
+    vm: SettingsViewModel = hiltViewModel(),
+) {
+    CategoryScaffold(stringResource(R.string.settings_cat_diagnostics), onBack) {
+        AlarmHistorySection(vm)
     }
 }
 

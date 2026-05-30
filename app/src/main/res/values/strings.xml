@@ -164,6 +164,16 @@
     <string name="status_drive_sign_in_failed">Sign-in failed — %1$s</string>
     <string name="status_drive_sign_in_cancelled">Sign-in cancelled.</string>
 
+    <!-- Settings: categories (landing list) -->
+    <string name="settings_cat_general">General</string>
+    <string name="settings_cat_general_sub">Language, app updates</string>
+    <string name="settings_cat_notifications">Notifications</string>
+    <string name="settings_cat_notifications_sub">Escalation chain, groups</string>
+    <string name="settings_cat_integrations">Integrations</string>
+    <string name="settings_cat_integrations_sub">Telegram, AI, Google Drive</string>
+    <string name="settings_cat_diagnostics">Diagnostics</string>
+    <string name="settings_cat_diagnostics_sub">Alarm history</string>
+
     <!-- Settings: language -->
     <string name="settings_language_title">Language</string>
     <string name="language_system_default">System default</string>

@@ -13,6 +13,7 @@ import app.nock.android.domain.model.Schedule
 import app.nock.android.domain.model.StageConfig
 import app.nock.android.domain.model.StageType
 import app.nock.android.domain.time.TimeSource
+import app.nock.android.history.AlarmHistoryLogger
 import app.nock.android.notif.NotificationPresenter
 import app.nock.android.telegram.TelegramSender
 import javax.inject.Inject
@@ -28,6 +29,7 @@ class EscalationEngine @Inject constructor(
     private val notifier: NotificationPresenter,
     private val telegram: TelegramSender,
     private val time: TimeSource,
+    private val history: AlarmHistoryLogger,
 ) {
     suspend fun scheduleNextFireForReminder(reminderId: Long): Long? {
         val reminder = repo.getReminder(reminderId) ?: return null
@@ -106,6 +108,7 @@ class EscalationEngine @Inject constructor(
         )
         val id = activeDao.upsert(ent)
         scheduler.scheduleStage(id, first, chain.stages.first().type)
+        history.replayedOverdue(reminder.name, reminder.nextFireAt, now)
     }
 
     suspend fun onAlarmFired(escalationId: Long) {
@@ -159,6 +162,7 @@ class EscalationEngine @Inject constructor(
             StageType.ALARM_VIBRATE -> notifier.showAlarmVibrate(reminder, group, escalationId)
             StageType.ALARM -> notifier.showAlarm(reminder, group, escalationId)
         }
+        history.fired(reminder.name, stage.type, esc.startedAtMs, now)
 
         val updatedSentCsv = if (sentMessageId != null) {
             appendMessageId(esc.sentTelegramMessageIdsCsv, sentMessageId)
@@ -213,6 +217,7 @@ class EscalationEngine @Inject constructor(
         val reminder = repo.getReminder(esc.reminderId)
         activeDao.delete(esc)
         if (reminder != null) {
+            history.done(reminder.name)
             // One-time schedules have no future occurrence once dismissed, so
             // drop the row entirely instead of leaving a "spent" reminder in
             // the list. See Schedule.isOneTime.
@@ -248,8 +253,9 @@ class EscalationEngine @Inject constructor(
         val currentlyFiring = (esc.nextStageIndex).coerceAtMost(chain.lastIndex)
         val isLast = currentlyFiring == chain.lastIndex
         val now = time.nowMs()
+        val nextAt: Long
         if (isLast) {
-            val nextAt = now + chain.repeatIntervalMs
+            nextAt = now + chain.repeatIntervalMs
             val updated = esc.copy(
                 nextFireAtMs = nextAt,
                 nextStageIndex = currentlyFiring,
@@ -258,8 +264,11 @@ class EscalationEngine @Inject constructor(
             activeDao.update(updated)
             scheduler.scheduleStage(updated.id, nextAt, chain.stage(currentlyFiring).type)
         } else {
+            // Cursor is untouched — the next stage stays armed at its existing time.
+            nextAt = esc.nextFireAtMs
             activeDao.update(esc.copy(sentTelegramMessageIdsCsv = ""))
         }
+        repo.getReminder(esc.reminderId)?.let { history.snoozed(it.name, nextAt) }
         deleteSentTelegramMessages(sentTelegramCsv)
     }
 

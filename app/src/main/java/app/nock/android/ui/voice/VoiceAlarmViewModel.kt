@@ -7,7 +7,6 @@ import app.nock.android.voice.SpeechResult
 import app.nock.android.voice.SpeechToTextManager
 import app.nock.android.voice.VoiceAlarmCreator
 import app.nock.android.voice.VoiceAlarmOutcome
-import app.nock.android.voice.VoiceLogger
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -41,15 +40,11 @@ sealed class VoiceAlarmUiState {
  * we commit and spin up a new recognizer. The displayed string is always
  * [accumulated] + the current session's last partial, so a mid-pause segment
  * break can't visibly reset the text.
- *
- * Every press, callback, commit, and restart is logged through [VoiceLogger] so
- * the user can copy a full transcript of what happened out of Settings.
  */
 @HiltViewModel
 class VoiceAlarmViewModel @Inject constructor(
     private val stt: SpeechToTextManager,
     private val creator: VoiceAlarmCreator,
-    private val logger: VoiceLogger,
     processor: PendingVoiceProcessor,
 ) : ViewModel() {
 
@@ -75,11 +70,7 @@ class VoiceAlarmViewModel @Inject constructor(
     fun isAvailable(): Boolean = stt.isAvailable()
 
     fun startListening() {
-        logger.log(TAG, "startListening() called (isHolding=$isHolding)")
-        if (isHolding) {
-            logger.log(TAG, "startListening ignored — already holding")
-            return
-        }
+        if (isHolding) return
         isHolding = true
         accumulated = ""
         sessionPartial = ""
@@ -88,38 +79,23 @@ class VoiceAlarmViewModel @Inject constructor(
     }
 
     private fun startSession() {
-        if (session != null) {
-            logger.log(TAG, "startSession ignored — session already active")
-            return
-        }
-        logger.log(TAG, "startSession() — accumulated so far=\"$accumulated\"")
+        if (session != null) return
         sessionPartial = ""
         session = stt.start(
             onPartial = { partial ->
                 sessionPartial = partial
-                val display = displayedText()
-                logger.log(TAG, "onPartial \"$partial\" → display=\"$display\"")
                 publishListening()
             },
             onSegmentComplete = { segment ->
                 // Recognizer internally finalized a segment without firing
                 // onResults — commit now so the next chunk's partials can't
                 // erase it.
-                val before = accumulated
                 commitSegment(segment)
                 sessionPartial = ""
-                logger.log(TAG, "onSegmentComplete \"$segment\": \"$before\" → \"$accumulated\"")
                 publishListening()
             },
             onResult = { result ->
                 session = null
-                val summary = when (result) {
-                    is SpeechResult.Final -> "Final(\"${result.text}\")"
-                    is SpeechResult.Cancelled -> "Cancelled"
-                    is SpeechResult.Error -> "Error(\"${result.message}\")"
-                }
-                logger.log(TAG, "onResult $summary (isHolding=$isHolding, " +
-                    "accumulated=\"$accumulated\", sessionPartial=\"$sessionPartial\")")
                 when (result) {
                     is SpeechResult.Final -> commitSegment(result.text)
                     is SpeechResult.Cancelled -> {
@@ -127,29 +103,22 @@ class VoiceAlarmViewModel @Inject constructor(
                     }
                     is SpeechResult.Error -> {
                         if (!isHolding && accumulated.isBlank()) {
-                            logger.log(TAG, "  error + not holding + nothing accumulated → surfacing as UI error")
                             _state.value = VoiceAlarmUiState.Error(result.message)
                             return@start
                         }
-                        logger.log(TAG, "  error but we have text or are still holding → keep going")
                     }
                 }
                 sessionPartial = ""
 
                 if (isHolding) {
                     publishListening()
-                    logger.log(TAG, "  scheduling restart in ${RESTART_DELAY_MS}ms")
                     viewModelScope.launch {
                         delay(RESTART_DELAY_MS)
                         if (isHolding && session == null) {
-                            logger.log(TAG, "  restart delay elapsed → startSession()")
                             startSession()
-                        } else {
-                            logger.log(TAG, "  restart skipped (isHolding=$isHolding, session=${session != null})")
                         }
                     }
                 } else {
-                    logger.log(TAG, "  not holding → finalizeTranscript()")
                     finalizeTranscript()
                 }
             }
@@ -157,25 +126,17 @@ class VoiceAlarmViewModel @Inject constructor(
     }
 
     fun stopListening() {
-        logger.log(TAG, "stopListening() called (isHolding=$isHolding, session=${session != null})")
-        if (!isHolding) {
-            logger.log(TAG, "stopListening ignored — not holding")
-            return
-        }
+        if (!isHolding) return
         isHolding = false
         val s = session
         if (s != null) {
-            logger.log(TAG, "stopListening → session.stop()")
             s.stop() // result delivery comes back via onResult → finalizeTranscript
         } else {
-            logger.log(TAG, "stopListening → no session, finalizing directly")
             finalizeTranscript()
         }
     }
 
     fun cancel() {
-        logger.log(TAG, "cancel() called (isHolding=$isHolding, session=${session != null}, " +
-            "accumulated=\"$accumulated\")")
         isHolding = false
         accumulated = ""
         sessionPartial = ""
@@ -188,13 +149,8 @@ class VoiceAlarmViewModel @Inject constructor(
 
     private fun commitSegment(text: String) {
         val t = text.trim()
-        if (t.isEmpty()) {
-            logger.log(TAG, "commitSegment(\"\") — nothing to commit")
-            return
-        }
-        val before = accumulated
+        if (t.isEmpty()) return
         accumulated = if (accumulated.isEmpty()) t else "$accumulated $t"
-        logger.log(TAG, "commitSegment \"$t\": \"$before\" → \"$accumulated\"")
     }
 
     private fun displayedText(): String {
@@ -214,18 +170,15 @@ class VoiceAlarmViewModel @Inject constructor(
 
     private fun finalizeTranscript() {
         val text = displayedText().trim()
-        logger.log(TAG, "finalizeTranscript() → \"$text\"")
         accumulated = ""
         sessionPartial = ""
         if (text.isEmpty()) {
-            logger.log(TAG, "  empty transcript → Idle")
             _state.value = VoiceAlarmUiState.Idle
             return
         }
         _state.value = VoiceAlarmUiState.Thinking(text)
         viewModelScope.launch {
             val outcome = creator.createFromTranscript(text)
-            logger.log(TAG, "createFromTranscript outcome=${outcome::class.simpleName}")
             _state.value = when (outcome) {
                 is VoiceAlarmOutcome.Captured -> VoiceAlarmUiState.Success(outcome.message)
                 is VoiceAlarmOutcome.Failed -> VoiceAlarmUiState.Error(outcome.message)
@@ -234,7 +187,6 @@ class VoiceAlarmViewModel @Inject constructor(
     }
 
     private companion object {
-        const val TAG = "VM"
         const val RESTART_DELAY_MS = 75L
     }
 }

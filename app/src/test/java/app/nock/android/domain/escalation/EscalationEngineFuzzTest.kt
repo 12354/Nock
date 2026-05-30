@@ -112,7 +112,8 @@ class EscalationEngineFuzzTest {
         private val scheduler: AlarmScheduler = mockk(relaxed = true)
         private val notifier: NotificationPresenter = mockk(relaxed = true)
         private val telegram: TelegramSender = mockk(relaxed = true)
-        private val engine = EscalationEngine(repo, dao, settings, scheduler, notifier, telegram, clock)
+        private val history: app.nock.android.history.AlarmHistoryLogger = mockk(relaxed = true)
+        private val engine = EscalationEngine(repo, dao, settings, scheduler, notifier, telegram, clock, history)
 
         init {
             // A plain group, one that mirrors silent stages to Telegram, and one

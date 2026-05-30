@@ -85,7 +85,7 @@ fun SettingsScreen(
             GroupsSection(state.groups, onEditGroup, onAddGroup = { onEditGroup(0L) })
             TelegramSection(state.telegramToken, state.telegramChat, state.telegramStatus, vm)
             DeepSeekSection(state.deepSeekApiKey, state.deepSeekModel, state.deepSeekBaseUrl, state.deepSeekContext, vm)
-            VoiceDiagnosticsSection(vm)
+            AlarmHistorySection(vm)
             DriveSection(state.driveEmail, state.driveLastSyncMs, state.driveStatus, vm)
             UpdateSection()
         }
@@ -560,37 +560,37 @@ private fun SectionCard(title: String, content: @Composable ColumnScope.() -> Un
 }
 
 @Composable
-private fun VoiceDiagnosticsSection(vm: SettingsViewModel) {
+private fun AlarmHistorySection(vm: SettingsViewModel) {
     val clipboard = LocalClipboardManager.current
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
-    var logText by remember { mutableStateOf(vm.voiceLogDump()) }
-    val copiedMsg = stringResource(R.string.settings_voice_log_copied)
+    var logText by remember { mutableStateOf(vm.alarmHistoryDump()) }
+    val copiedMsg = stringResource(R.string.settings_alarm_history_copied)
 
-    SectionCard(stringResource(R.string.settings_voice_log_title)) {
+    SectionCard(stringResource(R.string.settings_alarm_history_title)) {
         Text(
-            stringResource(R.string.settings_voice_log_help),
+            stringResource(R.string.settings_alarm_history_help),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.outline
         )
         Spacer(Modifier.height(12.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = { logText = vm.voiceLogDump() }) {
-                Text(stringResource(R.string.settings_voice_log_refresh))
+            OutlinedButton(onClick = { logText = vm.alarmHistoryDump() }) {
+                Text(stringResource(R.string.settings_alarm_history_refresh))
             }
             Button(onClick = {
-                val snapshot = vm.voiceLogDump()
+                val snapshot = vm.alarmHistoryDump()
                 logText = snapshot
                 clipboard.setText(AnnotatedString(snapshot))
                 scope.launch { snackbarHostState.showSnackbar(copiedMsg) }
             }) {
-                Text(stringResource(R.string.settings_voice_log_copy))
+                Text(stringResource(R.string.settings_alarm_history_copy))
             }
             OutlinedButton(onClick = {
-                vm.clearVoiceLog()
+                vm.clearAlarmHistory()
                 logText = ""
             }) {
-                Text(stringResource(R.string.settings_voice_log_clear))
+                Text(stringResource(R.string.settings_alarm_history_clear))
             }
         }
         Spacer(Modifier.height(12.dp))
@@ -606,7 +606,7 @@ private fun VoiceDiagnosticsSection(vm: SettingsViewModel) {
                     .padding(8.dp)
             ) {
                 Text(
-                    text = logText.ifBlank { stringResource(R.string.settings_voice_log_empty) },
+                    text = logText.ifBlank { stringResource(R.string.settings_alarm_history_empty) },
                     style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

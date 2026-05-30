@@ -16,7 +16,6 @@ import app.nock.android.notif.Channels
 import app.nock.android.voice.SpeechResult
 import app.nock.android.voice.SpeechToTextManager
 import app.nock.android.voice.VoiceAlarmCreator
-import app.nock.android.voice.VoiceLogger
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -51,7 +50,6 @@ class VoiceCaptureService : Service() {
 
     @Inject lateinit var stt: SpeechToTextManager
     @Inject lateinit var creator: VoiceAlarmCreator
-    @Inject lateinit var logger: VoiceLogger
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var session: SpeechToTextManager.Session? = null
@@ -83,7 +81,6 @@ class VoiceCaptureService : Service() {
     }
 
     private fun startRecording() {
-        logger.log(TAG, "startRecording() called (isRecording=$isRecording)")
         if (isRecording) return
         isRecording = true
         accumulated = ""
@@ -93,11 +90,7 @@ class VoiceCaptureService : Service() {
     }
 
     private fun startSession() {
-        if (session != null) {
-            logger.log(TAG, "startSession ignored — session already active")
-            return
-        }
-        logger.log(TAG, "startSession() — accumulated so far=\"$accumulated\"")
+        if (session != null) return
         sessionPartial = ""
         session = stt.start(
             onReady = {
@@ -107,23 +100,13 @@ class VoiceCaptureService : Service() {
             },
             onPartial = { partial ->
                 sessionPartial = partial
-                logger.log(TAG, "onPartial \"$partial\"")
             },
             onSegmentComplete = { segment ->
-                val before = accumulated
                 commitSegment(segment)
                 sessionPartial = ""
-                logger.log(TAG, "onSegmentComplete \"$segment\": \"$before\" → \"$accumulated\"")
             },
             onResult = { result ->
                 session = null
-                val summary = when (result) {
-                    is SpeechResult.Final -> "Final(\"${result.text}\")"
-                    is SpeechResult.Cancelled -> "Cancelled"
-                    is SpeechResult.Error -> "Error(\"${result.message}\")"
-                }
-                logger.log(TAG, "onResult $summary (isRecording=$isRecording, " +
-                    "accumulated=\"$accumulated\", sessionPartial=\"$sessionPartial\")")
                 when (result) {
                     is SpeechResult.Final -> commitSegment(result.text)
                     is SpeechResult.Cancelled -> { /* keep accumulator */ }
@@ -131,28 +114,21 @@ class VoiceCaptureService : Service() {
                         // Unrecoverable when we're not recording and have nothing
                         // to keep — finalize empty, which just resets to Idle.
                         if (!isRecording && accumulated.isBlank()) {
-                            logger.log(TAG, "  error + not recording + nothing accumulated → finalize empty")
                             finalize()
                             return@start
                         }
-                        logger.log(TAG, "  error but we have text or are still recording → keep going")
                     }
                 }
                 sessionPartial = ""
 
                 if (isRecording) {
-                    logger.log(TAG, "  scheduling restart in ${RESTART_DELAY_MS}ms")
                     scope.launch {
                         delay(RESTART_DELAY_MS)
                         if (isRecording && session == null) {
-                            logger.log(TAG, "  restart delay elapsed → startSession()")
                             startSession()
-                        } else {
-                            logger.log(TAG, "  restart skipped (isRecording=$isRecording, session=${session != null})")
                         }
                     }
                 } else {
-                    logger.log(TAG, "  not recording → finalize()")
                     finalize()
                 }
             }
@@ -160,7 +136,6 @@ class VoiceCaptureService : Service() {
     }
 
     private fun stopAndFinish() {
-        logger.log(TAG, "stopAndFinish() called (isRecording=$isRecording, session=${session != null})")
         if (!isRecording) {
             // Already idle; nothing in flight — just tidy up.
             finalize()
@@ -170,10 +145,8 @@ class VoiceCaptureService : Service() {
         scope.launch { VoiceWidgetState.write(applicationContext, VoiceWidgetState.Stopping) }
         val s = session
         if (s != null) {
-            logger.log(TAG, "stopAndFinish → session.stop()")
             s.stop() // result comes back via onResult → finalize()
         } else {
-            logger.log(TAG, "stopAndFinish → no session, finalizing directly")
             finalize()
         }
     }
@@ -181,9 +154,7 @@ class VoiceCaptureService : Service() {
     private fun commitSegment(text: String) {
         val t = text.trim()
         if (t.isEmpty()) return
-        val before = accumulated
         accumulated = if (accumulated.isEmpty()) t else "$accumulated $t"
-        logger.log(TAG, "commitSegment \"$t\": \"$before\" → \"$accumulated\"")
     }
 
     private fun displayedText(): String {
@@ -197,7 +168,6 @@ class VoiceCaptureService : Service() {
 
     private fun finalize() {
         val text = displayedText().trim()
-        logger.log(TAG, "finalize() → \"$text\"")
         accumulated = ""
         sessionPartial = ""
         scope.launch {
@@ -211,10 +181,8 @@ class VoiceCaptureService : Service() {
                 val message = try {
                     creator.createAndAwait(text)
                 } catch (t: Throwable) {
-                    logger.log(TAG, "createAndAwait threw: ${t.message}")
                     getString(R.string.voice_error_save_failed)
                 }
-                logger.log(TAG, "finalize → toast \"$message\"")
                 showToast(message)
             }
             VoiceWidgetState.write(applicationContext, VoiceWidgetState.Idle)
@@ -264,7 +232,6 @@ class VoiceCaptureService : Service() {
     }
 
     override fun onDestroy() {
-        logger.log(TAG, "onDestroy() (isRecording=$isRecording, session=${session != null})")
         try { session?.cancel() } catch (_: Throwable) {}
         session = null
         // Best-effort reset; if write() can't finish before scope.cancel(), the
@@ -279,7 +246,6 @@ class VoiceCaptureService : Service() {
         const val ACTION_STOP = "app.nock.android.widget.action.STOP"
         private const val NOTIFICATION_ID = 0xC1C2
         private const val REQ_STOP = 1
-        private const val TAG = "WIDGET_SVC"
         private const val RESTART_DELAY_MS = 75L
     }
 }

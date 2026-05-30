@@ -246,14 +246,14 @@
     <string name="settings_deepseek_context_help">Optionale Notizen, die die KI bei jeder Sprach-Erinnerung berücksichtigt, um Namen und Details zu verstehen, die du nennst. Wird mit jeder Anfrage gesendet.</string>
     <string name="settings_deepseek_context_placeholder">z. B. Mein Hund heißt Xyz. Ich arbeite Nachtschicht. Meine Frau heißt Anna.</string>
 
-    <!-- Settings: Voice diagnostics -->
-    <string name="settings_voice_log_title">Sprach-Diagnose</string>
-    <string name="settings_voice_log_help">Nur-Anhänge-Protokoll jedes Aufrufs an die Spracherkennung und jedes empfangenen Callbacks. Bitte beim Melden eines Spracheingabe-Fehlers mitsenden.</string>
-    <string name="settings_voice_log_refresh">Aktualisieren</string>
-    <string name="settings_voice_log_copy">Kopieren</string>
-    <string name="settings_voice_log_clear">Leeren</string>
-    <string name="settings_voice_log_empty">(noch keine Einträge — probiere die Sprachtaste)</string>
-    <string name="settings_voice_log_copied">Sprachprotokoll in die Zwischenablage kopiert</string>
+    <!-- Settings: Alarm history -->
+    <string name="settings_alarm_history_title">Wecker-Verlauf</string>
+    <string name="settings_alarm_history_help">Alles, was deine Wecker getan haben — erstellt, geändert, ausgelöst, erledigt, verschoben und verspätete Nachholungen nach einem Neustart. Kopiere dies und füge es ein, wenn du einen Wecker zur falschen Zeit oder einen verpassten Wecker meldest.</string>
+    <string name="settings_alarm_history_refresh">Aktualisieren</string>
+    <string name="settings_alarm_history_copy">Kopieren</string>
+    <string name="settings_alarm_history_clear">Leeren</string>
+    <string name="settings_alarm_history_empty">(noch kein Wecker-Verlauf)</string>
+    <string name="settings_alarm_history_copied">Wecker-Verlauf in die Zwischenablage kopiert</string>
 
     <!-- Default seed group names -->
     <string name="seed_group_pets">Haustiere</string>

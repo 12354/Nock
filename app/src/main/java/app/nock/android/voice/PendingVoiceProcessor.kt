@@ -9,6 +9,7 @@ import app.nock.android.di.ApplicationScope
 import app.nock.android.domain.escalation.EscalationEngine
 import app.nock.android.domain.model.Group
 import app.nock.android.domain.model.Schedule
+import app.nock.android.history.AlarmHistoryLogger
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
@@ -45,7 +46,7 @@ class PendingVoiceProcessor @Inject constructor(
     private val parser: DeepSeekReminderParser,
     private val repo: NockRepository,
     private val engine: EscalationEngine,
-    private val logger: VoiceLogger,
+    private val history: AlarmHistoryLogger,
     @ApplicationScope private val appScope: CoroutineScope,
 ) {
     private val inFlightMutex = Mutex()
@@ -75,7 +76,6 @@ class PendingVoiceProcessor @Inject constructor(
                 lastError = null,
             )
         )
-        logger.log(TAG, "enqueue pending=$id transcript=\"$transcript\"")
         if (autoKick) kick(id)
         return id
     }
@@ -89,14 +89,12 @@ class PendingVoiceProcessor @Inject constructor(
         appScope.launch {
             val all = pendingDao.getAll()
             if (all.isEmpty()) return@launch
-            logger.log(TAG, "kickAll size=${all.size}")
             for (entry in all) process(entry.id)
         }
     }
 
     suspend fun delete(id: Long) {
         pendingDao.deleteById(id)
-        logger.log(TAG, "delete pending=$id")
     }
 
     /**
@@ -108,7 +106,6 @@ class PendingVoiceProcessor @Inject constructor(
     suspend fun process(id: Long, emitAdded: Boolean = true): VoiceProcessOutcome {
         val acquired = inFlightMutex.withLock { inFlight.add(id) }
         if (!acquired) {
-            logger.log(TAG, "skip pending=$id — already in flight")
             return VoiceProcessOutcome.Failed(ctx.getString(R.string.voice_error_save_failed))
         }
         try {
@@ -129,12 +126,10 @@ class PendingVoiceProcessor @Inject constructor(
                         lastAttemptAt = System.currentTimeMillis()
                     )
                 )
-                logger.log(TAG, "process pending=$id attempt=$attempt/$MAX_ATTEMPTS")
                 when (val result = parser.parse(entry.transcript, groups)) {
                     is DeepSeekParseResult.Ok -> {
                         val message = persistAndComplete(id, result, groups)
                         if (emitAdded) _added.tryEmit(message)
-                        logger.log(TAG, "pending=$id resolved on attempt=$attempt")
                         return VoiceProcessOutcome.Added(message)
                     }
                     is DeepSeekParseResult.NotConfigured -> {
@@ -142,11 +137,6 @@ class PendingVoiceProcessor @Inject constructor(
                     }
                     is DeepSeekParseResult.Failed -> {
                         lastError = result.message
-                        logger.log(
-                            TAG,
-                            "pending=$id attempt=$attempt failed: ${result.message}" +
-                                " (transient=${result.transient})"
-                        )
                         if (!result.transient) {
                             return recordFailure(id, result.message, attempt)
                         }
@@ -195,6 +185,8 @@ class PendingVoiceProcessor @Inject constructor(
         if (saved != null && nextFire != null && spec.schedule !is Schedule.OnUnlock) {
             engine.startEscalationAt(saved, nextFire)
         }
+        val groupName = groups.firstOrNull { it.id == groupId }?.name
+        history.created(name, groupName, spec.schedule, nextFire)
         pendingDao.deleteById(pendingId)
         return VoiceReminderToast.format(ctx, name, nextFire, spec.schedule)
     }
@@ -218,7 +210,6 @@ class PendingVoiceProcessor @Inject constructor(
     }
 
     private companion object {
-        const val TAG = "Pending"
         const val MAX_ATTEMPTS = 3
         const val BACKOFF_MS_BASE = 1_000L
     }

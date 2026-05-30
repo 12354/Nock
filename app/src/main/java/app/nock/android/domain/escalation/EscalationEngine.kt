@@ -52,11 +52,20 @@ class EscalationEngine @Inject constructor(
         val firstIdx = if (reminder.schedule is Schedule.OnUnlock) {
             val firstFuture = chain.stages.indexOfFirst { it.offsetMs > 0 }
             if (firstFuture >= 0) firstFuture else chain.stageDueAt(scheduledAtMs, now)
+        } else if (scheduledAtMs > now) {
+            // The trigger is still in the future. Pre-trigger stages with a
+            // negative offset may nonetheless already be in the past when the
+            // reminder is due sooner than a stage's lead time (e.g. SILENT @
+            // -10min on a reminder only 2min away, or any stage when a reminder
+            // is moved far into the future and back). Start at the first stage
+            // that hasn't passed so none of them — and no Telegram — fire the
+            // instant the reminder is saved.
+            chain.firstPendingStage(scheduledAtMs, now)
         } else {
-            // If the user schedules an alarm whose early stages are already in
-            // the past (e.g. SILENT @ -10min when the alarm is only 2min away),
-            // jump straight to the latest stage that is already due. Otherwise
-            // those skipped stages would all fire immediately as a burst.
+            // The trigger time is already here or overdue (late OS delivery,
+            // boot replay, etc.): jump straight to the latest stage that is
+            // already due so we show the right one instead of a stale-but-queued
+            // earlier stage.
             chain.stageDueAt(scheduledAtMs, now)
         }
         val firstStage = chain.stage(firstIdx)
@@ -107,6 +116,22 @@ class EscalationEngine @Inject constructor(
             ?: settings.getStageChain()
 
         val now = System.currentTimeMillis()
+
+        // Last-second sanity check before we escalate. The escalation row records
+        // nextFireAtMs — the chain-derived instant the next stage is actually due
+        // — and an exact alarm should only ever deliver at or after it. If `now`
+        // is meaningfully earlier, the wall clock and the chain disagree: the
+        // clock moved backwards (NTP / timezone / manual change), a stale
+        // PendingIntent re-fired, or the reminder was pushed further out. Firing
+        // here would run the stage (and send a Telegram) ahead of schedule, so
+        // instead re-arm the alarm for the real time and bail — correcting the
+        // state rather than mis-firing it.
+        if (now < esc.nextFireAtMs - SANITY_TOLERANCE_MS) {
+            val pendingType = chain.stage(esc.nextStageIndex.coerceIn(0, chain.lastIndex)).type
+            scheduler.scheduleStage(esc.id, esc.nextFireAtMs, pendingType)
+            return
+        }
+
         // The stage to fire is the latest one due at `now`, never behind the
         // stored cursor. This catches up correctly when the OS delivers an
         // alarm late (Doze, system busy, boot replay, etc.) — instead of
@@ -276,5 +301,13 @@ class EscalationEngine @Inject constructor(
                 startEscalationAt(reminder.copy(nextFireAt = nextFromSchedule), nextFromSchedule)
             }
         }
+    }
+
+    companion object {
+        // Slack allowed between an alarm's delivery and the stage's due time
+        // before we treat the early fire as a clock/state inconsistency. Exact
+        // alarms are floored a second out when scheduled, so legitimate jitter
+        // stays well under this; anything earlier is a real disagreement.
+        private const val SANITY_TOLERANCE_MS = 1_000L
     }
 }

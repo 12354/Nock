@@ -35,6 +35,20 @@ data class EscalationChain(
         }
         return idx
     }
+
+    /**
+     * Index of the earliest stage whose absolute fire time (startedAt + offset)
+     * has not yet passed at [nowMs]. Used when arming a reminder whose trigger
+     * is still in the future: pre-trigger stages (negative offsets) may already
+     * be in the past if the reminder is due sooner than a stage's lead time, and
+     * those must be skipped so they don't all fire at once — and re-send a
+     * Telegram — the moment the reminder is saved/moved. Falls back to the last
+     * stage if every stage is already in the past.
+     */
+    fun firstPendingStage(startedAtMs: Long, nowMs: Long): Int {
+        val idx = stages.indexOfFirst { startedAtMs + it.offsetMs >= nowMs }
+        return if (idx >= 0) idx else lastIndex
+    }
 }
 
 object DefaultChain {

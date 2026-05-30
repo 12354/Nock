@@ -37,6 +37,17 @@ data class EscalationChain(
     }
 
     /**
+     * Whether an escalation started at [startedAtMs] has actually begun firing by
+     * [nowMs] — i.e. its earliest stage is due. Stages are ordered by ascending
+     * offset, so the first stage's offset is the chain's lead time (it may be
+     * negative for a pre-trigger stage). A reminder that is only *armed* for a
+     * future occurrence has not started firing yet; callers use this to keep such
+     * reminders in the upcoming list instead of treating them as "firing now".
+     */
+    fun hasStartedFiring(startedAtMs: Long, nowMs: Long): Boolean =
+        nowMs >= startedAtMs + stages.first().offsetMs
+
+    /**
      * Index of the earliest stage whose absolute fire time (startedAt + offset)
      * has not yet passed at [nowMs]. Used when arming a reminder whose trigger
      * is still in the future: pre-trigger stages (negative offsets) may already

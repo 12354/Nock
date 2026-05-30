@@ -6,7 +6,9 @@ import app.nock.android.domain.model.EscalationChain
 import app.nock.android.domain.model.StageConfig
 import app.nock.android.domain.model.StageType
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ChainTest {
@@ -118,5 +120,30 @@ class ChainTest {
         // Degenerate guard: every stage already in the past -> last stage.
         val chain = DefaultChain.CHAIN
         assertEquals(chain.lastIndex, chain.firstPendingStage(0L, 24 * 60 * 60_000L))
+    }
+
+    @Test fun hasStartedFiring_false_for_reminder_armed_for_the_future() {
+        // The repeating-task case: a daily reminder just advanced by Done is armed
+        // for tomorrow. Even its -10min SILENT pre-stage is far in the future, so the
+        // escalation has NOT started — it must stay in the upcoming list, not vanish.
+        val chain = DefaultChain.CHAIN
+        val now = 0L
+        val startedTomorrow = 24 * 60 * 60_000L
+        assertFalse(chain.hasStartedFiring(startedTomorrow, now))
+    }
+
+    @Test fun hasStartedFiring_true_once_first_pre_stage_is_due() {
+        // Reminder due in 5min: the -10min SILENT pre-stage is already due, so the
+        // escalation has begun and the reminder is genuinely firing.
+        val chain = DefaultChain.CHAIN
+        val now = 0L
+        val started = 5 * 60_000L
+        assertTrue(chain.hasStartedFiring(started, now))
+    }
+
+    @Test fun hasStartedFiring_true_at_and_after_trigger() {
+        val chain = DefaultChain.CHAIN
+        assertTrue(chain.hasStartedFiring(startedAtMs = 0L, nowMs = 0L))
+        assertTrue(chain.hasStartedFiring(startedAtMs = 0L, nowMs = 30 * 60_000L))
     }
 }

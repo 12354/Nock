@@ -68,11 +68,19 @@ class TodayViewModel @Inject constructor(
     ) { reminders, groups, active ->
         val byId = groups.associateBy { it.id }
         val activeByReminder = active.associateBy { it.reminderId }
+        val now = System.currentTimeMillis()
         reminders.mapNotNull { r ->
             val g = byId[r.groupId] ?: return@mapNotNull null
             val a = activeByReminder[r.id]?.let { ent ->
                 val chain = runCatching { ChainJson.decode(ent.chainSnapshotJson) }.getOrNull()
-                if (chain != null) ActiveEscalationInfo(
+                // Only surface the reminder as "firing now" once its escalation has
+                // actually begun. Done/Snooze on a repeating reminder advances it and
+                // re-arms an active_escalations row for the *next* occurrence; that row
+                // exists immediately even though the reminder won't fire until later.
+                // Without this guard such a reminder stays "active", so it's dropped
+                // from the upcoming list yet only rendered if it happens to be the single
+                // active card — meaning a just-completed daily task vanishes from Today.
+                if (chain != null && chain.hasStartedFiring(ent.startedAtMs, now)) ActiveEscalationInfo(
                     escalationId = ent.id,
                     chain = chain,
                     currentStageIndex = ent.nextStageIndex.coerceIn(0, chain.lastIndex),

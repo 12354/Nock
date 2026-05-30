@@ -242,6 +242,9 @@
     <string name="settings_deepseek_model">Modell</string>
     <string name="settings_deepseek_base_url">Basis-URL</string>
     <string name="settings_deepseek_help">Gesprochener Text wird auf dem Gerät transkribiert und an diesen DeepSeek-kompatiblen Endpoint gesendet, um eine Erinnerung daraus zu erzeugen.</string>
+    <string name="settings_deepseek_context">Persönlicher Kontext</string>
+    <string name="settings_deepseek_context_help">Optionale Notizen, die die KI bei jeder Sprach-Erinnerung berücksichtigt, um Namen und Details zu verstehen, die du nennst. Wird mit jeder Anfrage gesendet.</string>
+    <string name="settings_deepseek_context_placeholder">z. B. Mein Hund heißt Xyz. Ich arbeite Nachtschicht. Meine Frau heißt Anna.</string>
 
     <!-- Settings: Voice diagnostics -->
     <string name="settings_voice_log_title">Sprach-Diagnose</string>

@@ -241,6 +241,9 @@
     <string name="settings_deepseek_model">Model</string>
     <string name="settings_deepseek_base_url">Base URL</string>
     <string name="settings_deepseek_help">Spoken text is transcribed on-device, then sent to this DeepSeek-compatible endpoint to be turned into a reminder.</string>
+    <string name="settings_deepseek_context">Personal context</string>
+    <string name="settings_deepseek_context_help">Optional notes the AI keeps in mind for every voice reminder, so it can resolve names and details you mention. Sent with each request.</string>
+    <string name="settings_deepseek_context_placeholder">e.g. My dog is named Xyz. I work night shifts. My wife is Anna.</string>
 
     <!-- Settings: Voice diagnostics -->
     <string name="settings_voice_log_title">Voice diagnostics</string>

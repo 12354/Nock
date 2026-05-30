@@ -47,7 +47,8 @@ class DeepSeekReminderParser @Inject constructor(
 
         val now = LocalDateTime.now()
         val zone = ZoneId.systemDefault()
-        val system = buildSystemPrompt(now, zone, groups)
+        val userContext = settings.get(SettingsRepository.KEY_DEEPSEEK_CONTEXT)?.trim().orEmpty()
+        val system = buildSystemPrompt(now, zone, groups, userContext)
 
         return when (val r = deepSeek.complete(system, trimmed, jsonMode = true)) {
             is DeepSeekResult.Error -> DeepSeekParseResult.Failed(r.message, transient = r.transient)
@@ -129,13 +130,26 @@ class DeepSeekReminderParser @Inject constructor(
         return out
     }
 
-    private fun buildSystemPrompt(now: LocalDateTime, zone: ZoneId, groups: List<Group>): String {
+    private fun buildSystemPrompt(
+        now: LocalDateTime,
+        zone: ZoneId,
+        groups: List<Group>,
+        userContext: String,
+    ): String {
         val fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss")
         val dow = now.dayOfWeek.name
         val groupCatalog = groups.joinToString("\n") { g ->
             val desc = SEED_GROUP_DESCRIPTIONS[g.seedKey]
             if (desc != null) "              - \"${g.name}\" — $desc" else "              - \"${g.name}\" (custom group)"
         }
+        val personalContext = if (userContext.isNotBlank()) {
+            "\n\n" + """
+                Personal context provided by the user (use it to resolve names, relationships,
+                pets, places, and preferences when interpreting the phrase; never let it override
+                an explicit instruction in the phrase, and never invent reminders from it):
+                $userContext
+            """.trimIndent()
+        } else ""
         return """
             You convert a spoken or typed phrase into a JSON specification for a single reminder/alarm.
 
@@ -175,7 +189,7 @@ class DeepSeekReminderParser @Inject constructor(
             - Day of week today: $dow
             - Available groups:
 $groupCatalog
-        """.trimIndent()
+        """.trimIndent() + personalContext
     }
 
     companion object {

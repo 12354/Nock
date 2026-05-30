@@ -25,6 +25,7 @@ class SettingsRepository @Inject constructor(
         const val KEY_DEEPSEEK_API_KEY = "deepseek_api_key"
         const val KEY_DEEPSEEK_MODEL = "deepseek_model"
         const val KEY_DEEPSEEK_BASE_URL = "deepseek_base_url"
+        const val KEY_DEEPSEEK_CONTEXT = "deepseek_context"
 
         const val DEFAULT_DEEPSEEK_MODEL = "deepseek-v4-flash"
         const val DEFAULT_DEEPSEEK_BASE_URL = "https://api.deepseek.com"

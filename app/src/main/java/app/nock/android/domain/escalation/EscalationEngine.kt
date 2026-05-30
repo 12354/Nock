@@ -12,6 +12,7 @@ import app.nock.android.domain.model.Reminder
 import app.nock.android.domain.model.Schedule
 import app.nock.android.domain.model.StageConfig
 import app.nock.android.domain.model.StageType
+import app.nock.android.domain.time.TimeSource
 import app.nock.android.notif.NotificationPresenter
 import app.nock.android.telegram.TelegramSender
 import javax.inject.Inject
@@ -26,10 +27,11 @@ class EscalationEngine @Inject constructor(
     private val scheduler: AlarmScheduler,
     private val notifier: NotificationPresenter,
     private val telegram: TelegramSender,
+    private val time: TimeSource,
 ) {
     suspend fun scheduleNextFireForReminder(reminderId: Long): Long? {
         val reminder = repo.getReminder(reminderId) ?: return null
-        val next = reminder.schedule.nextFireFrom(System.currentTimeMillis(), reminder.lastCompletedAt)
+        val next = reminder.schedule.nextFireFrom(time.nowMs(), reminder.lastCompletedAt)
         repo.updateFireState(reminderId, next, reminder.lastCompletedAt)
         cancelActive(reminderId)
         if (next != null) {
@@ -41,7 +43,7 @@ class EscalationEngine @Inject constructor(
     suspend fun startEscalationAt(reminder: Reminder, scheduledAtMs: Long) {
         val group = repo.getGroup(reminder.groupId) ?: return
         val chain = repo.effectiveChain(group)
-        val now = System.currentTimeMillis()
+        val now = time.nowMs()
         if (group.isPaused(now)) return
 
         // OnUnlock reminders use the unlock event itself as the trigger, not
@@ -86,10 +88,10 @@ class EscalationEngine @Inject constructor(
 
     suspend fun startEscalationFromBoot(reminder: Reminder) {
         val group = repo.getGroup(reminder.groupId) ?: return
-        if (group.isPaused(System.currentTimeMillis())) return
+        if (group.isPaused(time.nowMs())) return
         val chain = repo.effectiveChain(group)
         val firstOffset = chain.stages.first().offsetMs
-        val now = System.currentTimeMillis()
+        val now = time.nowMs()
         val syntheticStart = now - firstOffset
         val first = max(syntheticStart + firstOffset, now + 1_000L)
 
@@ -115,7 +117,7 @@ class EscalationEngine @Inject constructor(
         val chain = runCatching { ChainJson.decode(esc.chainSnapshotJson) }.getOrNull()
             ?: settings.getStageChain()
 
-        val now = System.currentTimeMillis()
+        val now = time.nowMs()
 
         // Last-second sanity check before we escalate. The escalation row records
         // nextFireAtMs — the chain-derived instant the next stage is actually due
@@ -204,7 +206,7 @@ class EscalationEngine @Inject constructor(
                 repo.deleteReminder(reminder)
                 return
             }
-            val now = System.currentTimeMillis()
+            val now = time.nowMs()
             val next = reminder.schedule.nextFireFrom(now, now)
             repo.updateFireState(reminder.id, next, now)
             if (next != null) {
@@ -223,7 +225,7 @@ class EscalationEngine @Inject constructor(
 
         val currentlyFiring = (esc.nextStageIndex).coerceAtMost(chain.lastIndex)
         val isLast = currentlyFiring == chain.lastIndex
-        val now = System.currentTimeMillis()
+        val now = time.nowMs()
         if (isLast) {
             val nextAt = now + chain.repeatIntervalMs
             val updated = esc.copy(
@@ -270,7 +272,7 @@ class EscalationEngine @Inject constructor(
     // already actively escalating so a re-unlock during the escalation
     // window doesn't spawn a second chain for the same reminder.
     suspend fun fireUnlockReminders() {
-        val now = System.currentTimeMillis()
+        val now = time.nowMs()
         repo.getAllReminders().forEach { reminder ->
             if (reminder.schedule !is Schedule.OnUnlock) return@forEach
             if (reminder.nextFireAt == null) return@forEach
@@ -291,7 +293,7 @@ class EscalationEngine @Inject constructor(
             if (reminder.schedule is Schedule.OnUnlock) return@forEach
             val active = activeDao.getByReminderId(reminder.id)
             if (active != null) return@forEach
-            val now = System.currentTimeMillis()
+            val now = time.nowMs()
             val nextFromSchedule = reminder.schedule.nextFireFrom(now, reminder.lastCompletedAt) ?: return@forEach
             val overdue = reminder.nextFireAt != null && reminder.nextFireAt < now
             if (overdue) {

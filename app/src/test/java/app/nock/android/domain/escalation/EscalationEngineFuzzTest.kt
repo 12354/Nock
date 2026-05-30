@@ -39,8 +39,10 @@ import kotlin.random.Random
  *  - the escalation DAO is the real in-memory [FakeActiveEscalationDao].
  *
  * Each iteration the driver randomly: advances time (and fires whatever alarms
- * come due, optionally reacting with Done/Snooze), adds a reminder, snoozes or
- * dismisses an active one, or rewrites a reminder's schedule (time/date/recur).
+ * come due, optionally reacting with Done/Snooze); jumps the device date+time
+ * forward or BACKWARD (an NTP/timezone/manual change, which triggers the app's
+ * ACTION_TIME_CHANGED re-arm); delivers a stale/early alarm; adds a reminder;
+ * snoozes or dismisses an active one; or rewrites a reminder's schedule.
  *
  * Oracles:
  *  - INV (consistency): after EVERY mutation, the set of active escalation rows
@@ -48,9 +50,12 @@ import kotlin.random.Random
  *    stage type exactly match its row. This is the engine's core promise.
  *  - Per-fire: every alarm we deliver is logged and independently checked — the
  *    stage that was shown must equal the stage the chain says is due at that
- *    instant, and it must never fire before its scheduled time.
+ *    instant. A delivery that arrives before its due time (clock moved back, or
+ *    a stale PendingIntent) must NOT escalate — the engine's rewind guard re-arms
+ *    instead, and we assert nothing was shown.
  *  - Per-escalation timeline (checked afterwards): for any single escalation the
- *    fired stage index is monotonically non-decreasing and within the chain.
+ *    fired stage index is monotonically non-decreasing and within the chain
+ *    (holds even across clock jumps, since each re-arm is floored to now + 1s).
  *
  * OnUnlock and group pausing are intentionally excluded here (they're event- /
  * window-gated rather than part of the time-driven fire loop) and are covered
@@ -95,6 +100,11 @@ class EscalationEngineFuzzTest {
         private var nextReminderId = 100L
         private var telegramMessageId = 1L
         private var step = -1
+
+        // Mirrors EscalationEngine's private SANITY_TOLERANCE_MS: a delivery more
+        // than this far ahead of the stage's due time is treated as a clock
+        // rewind / stale fire and must re-arm instead of escalating.
+        private val sanityToleranceMs = 1_000L
 
         private val repo: NockRepository = mockk(relaxed = true)
         private val settings: SettingsRepository = mockk(relaxed = true)
@@ -174,10 +184,12 @@ class EscalationEngineFuzzTest {
             for (s in 0 until iterations) {
                 step = s
                 when (rnd.nextInt(100)) {
-                    in 0..44 -> tick()          // wait, then fire/react
-                    in 45..59 -> addReminder()
-                    in 60..74 -> snoozeRandomActive()
-                    in 75..89 -> doneRandomActive()
+                    in 0..34 -> tick()                 // wait forward, then fire/react
+                    in 35..44 -> changeDeviceClock()   // jump device date+time (often backward)
+                    in 45..52 -> spuriousDelivery()    // stale / too-early alarm delivery
+                    in 53..64 -> addReminder()
+                    in 65..76 -> snoozeRandomActive()
+                    in 77..88 -> doneRandomActive()
                     else -> modifyRandomSchedule()
                 }
                 assertConsistent("after step $s (action complete)")
@@ -197,6 +209,37 @@ class EscalationEngineFuzzTest {
         private suspend fun tick() {
             clock.advanceBy(randomDelta())
             drainDueAlarms(react = true)
+        }
+
+        /**
+         * Randomly move the device date+time — frequently backward — as an NTP
+         * correction, timezone shift, or manual change would. The app re-arms
+         * everything on ACTION_TIME_CHANGED, so we mirror that with rescheduleAll,
+         * then deliver whatever is now due.
+         */
+        private suspend fun changeDeviceClock() {
+            val delta = when (rnd.nextInt(6)) {
+                0 -> -rnd.nextLong(1, 3) * 24 * 60 * MIN  // days backward
+                1 -> -rnd.nextLong(1, 360) * MIN          // minutes/hours backward
+                2 -> -rnd.nextLong(1, 120) * 1_000L       // seconds backward
+                3 -> rnd.nextLong(1, 360) * MIN           // minutes/hours forward
+                4 -> rnd.nextLong(1, 3) * 24 * 60 * MIN   // days forward
+                else -> rnd.nextLong(1, 120) * 1_000L     // seconds forward
+            }
+            // Keep the clock comfortably positive even after big backward jumps.
+            clock.set((clock.now + delta).coerceAtLeast(NOW - 30L * 24 * 60 * MIN))
+            engine.rescheduleAll()
+            drainDueAlarms(react = true)
+        }
+
+        /**
+         * Deliver a pending alarm that may not be due yet — models a stale
+         * PendingIntent re-firing or an alarm arriving after the clock was wound
+         * back. The engine must detect the inconsistency and decline to escalate.
+         */
+        private suspend fun spuriousDelivery() {
+            val id = pending.keys.toList().randomOrNull(rnd) ?: return
+            deliver(id)
         }
 
         private suspend fun addReminder() {
@@ -241,7 +284,7 @@ class EscalationEngineFuzzTest {
                     .filter { it.value.atMs <= clock.now }
                     .minByOrNull { it.value.atMs } ?: break
                 val id = due.key
-                fireAlarm(id)
+                deliver(id)
                 assertConsistent("after firing $id")
 
                 if (react && dao.rows.containsKey(id) && rnd.nextBoolean()) {
@@ -253,7 +296,7 @@ class EscalationEngineFuzzTest {
             }
         }
 
-        private suspend fun fireAlarm(id: Long) {
+        private suspend fun deliver(id: Long) {
             val row = dao.getById(id) ?: return
             val reminder = reminders[row.reminderId]
             if (reminder == null) {
@@ -264,20 +307,26 @@ class EscalationEngineFuzzTest {
             }
             val chain = chainOf(row)
             val now = clock.now
+            // The engine escalates only if the delivery is at/after the due time
+            // (within a 1s slack); anything earlier hits the clock-rewind guard.
+            val willFire = now >= row.nextFireAtMs - sanityToleranceMs
+
+            val before = displayed.size
+            engine.onAlarmFired(id)
+
+            if (!willFire) {
+                assertEquals(
+                    "early/stale delivery of $id must not escalate (now=$now due=${row.nextFireAtMs}) ${ctx()}",
+                    before, displayed.size,
+                )
+                return
+            }
 
             // Independent re-derivation of which stage is due — the oracle.
             val storedIdx = row.nextStageIndex.coerceIn(0, chain.lastIndex)
             val dueIdx = chain.stageDueAt(row.startedAtMs, now)
             val idx = max(storedIdx, dueIdx).coerceAtMost(chain.lastIndex)
             val expected = chain.stage(idx).type
-
-            assertTrue(
-                "alarm $id fired before its due time (now=$now due=${row.nextFireAtMs}) ${ctx()}",
-                now >= row.nextFireAtMs,
-            )
-
-            val before = displayed.size
-            engine.onAlarmFired(id)
 
             assertEquals(
                 "exactly one stage should display per fire of $id ${ctx()}",

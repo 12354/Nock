@@ -7,6 +7,8 @@ import app.nock.android.R
 import app.nock.android.data.NockRepository
 import app.nock.android.data.SeedGroupLocaleSync
 import app.nock.android.data.SettingsRepository
+import app.nock.android.data.dao.ActiveEscalationDao
+import app.nock.android.data.json.ChainJson
 import app.nock.android.domain.escalation.EscalationEngine
 import app.nock.android.domain.model.EscalationChain
 import app.nock.android.domain.model.Group
@@ -51,6 +53,7 @@ class SettingsViewModel @Inject constructor(
     private val engine: EscalationEngine,
     private val seedGroupLocaleSync: SeedGroupLocaleSync,
     private val alarmHistory: AlarmHistoryLogger,
+    private val activeDao: ActiveEscalationDao,
 ) : ViewModel() {
 
     fun syncSeedGroupNames() {
@@ -59,6 +62,33 @@ class SettingsViewModel @Inject constructor(
 
     fun alarmHistoryDump(): String = alarmHistory.dump()
     fun clearAlarmHistory() = alarmHistory.clear()
+
+    /**
+     * The history log with a live snapshot of every current alarm and its
+     * state appended — used by the Copy button so a pasted report shows both
+     * what happened and what is scheduled right now.
+     */
+    suspend fun alarmHistoryWithCurrentState(): String {
+        val now = System.currentTimeMillis()
+        val groups = repo.getGroups().associateBy { it.id }
+        val states = repo.getAllReminders().map { r ->
+            val active = activeDao.getByReminderId(r.id)
+            val activeState = active?.let { row ->
+                val chain = runCatching { ChainJson.decode(row.chainSnapshotJson) }.getOrNull()
+                val stageType = chain?.let { it.stage(row.nextStageIndex.coerceIn(0, it.lastIndex)).type }
+                stageType?.let { AlarmHistoryLogger.ActiveState(it, row.nextFireAtMs) }
+            }
+            AlarmHistoryLogger.AlarmState(
+                name = r.name,
+                group = groups[r.groupId]?.name,
+                schedule = r.schedule,
+                nextFireAtMs = r.nextFireAt,
+                lastCompletedAt = r.lastCompletedAt,
+                active = activeState,
+            )
+        }
+        return alarmHistory.dump() + alarmHistory.snapshot(states, now)
+    }
 
     private val statusFlow = MutableStateFlow(Pair<String?, String?>(null, null))
 

@@ -14,8 +14,8 @@ import app.nock.android.domain.model.StageConfig
 import app.nock.android.domain.model.StageType
 import app.nock.android.sync.DriveSyncClient
 import app.nock.android.sync.SyncOutcome
+import app.nock.android.history.AlarmHistoryLogger
 import app.nock.android.telegram.TelegramSender
-import app.nock.android.voice.VoiceLogger
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -50,15 +50,15 @@ class SettingsViewModel @Inject constructor(
     private val drive: DriveSyncClient,
     private val engine: EscalationEngine,
     private val seedGroupLocaleSync: SeedGroupLocaleSync,
-    private val voiceLogger: VoiceLogger,
+    private val alarmHistory: AlarmHistoryLogger,
 ) : ViewModel() {
 
     fun syncSeedGroupNames() {
         viewModelScope.launch { seedGroupLocaleSync.sync() }
     }
 
-    fun voiceLogDump(): String = voiceLogger.dump()
-    fun clearVoiceLog() = voiceLogger.clear()
+    fun alarmHistoryDump(): String = alarmHistory.dump()
+    fun clearAlarmHistory() = alarmHistory.clear()
 
     private val statusFlow = MutableStateFlow(Pair<String?, String?>(null, null))
 

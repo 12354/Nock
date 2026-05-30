@@ -11,6 +11,7 @@ import app.nock.android.domain.model.Reminder
 import app.nock.android.domain.model.Schedule
 import app.nock.android.domain.model.StageConfig
 import app.nock.android.domain.model.StageType
+import app.nock.android.history.AlarmHistoryLogger
 import app.nock.android.notif.NotificationPresenter
 import app.nock.android.telegram.TelegramResult
 import app.nock.android.telegram.TelegramSender
@@ -116,9 +117,10 @@ class EngineHarness(now: Long = NOW) {
     val scheduler: AlarmScheduler = mockk(relaxed = true)
     val notifier: NotificationPresenter = mockk(relaxed = true)
     val telegram: TelegramSender = mockk(relaxed = true)
+    val history: AlarmHistoryLogger = mockk(relaxed = true)
 
     val engine = app.nock.android.domain.escalation.EscalationEngine(
-        repo, dao, settings, scheduler, notifier, telegram, clock
+        repo, dao, settings, scheduler, notifier, telegram, clock, history
     )
 
     init {

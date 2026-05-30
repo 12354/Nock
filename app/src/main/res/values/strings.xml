@@ -245,14 +245,14 @@
     <string name="settings_deepseek_context_help">Optional notes the AI keeps in mind for every voice reminder, so it can resolve names and details you mention. Sent with each request.</string>
     <string name="settings_deepseek_context_placeholder">e.g. My dog is named Xyz. I work night shifts. My wife is Anna.</string>
 
-    <!-- Settings: Voice diagnostics -->
-    <string name="settings_voice_log_title">Voice diagnostics</string>
-    <string name="settings_voice_log_help">Append-only log of every call to the speech recognizer and every callback received. Share this when reporting a voice-input bug.</string>
-    <string name="settings_voice_log_refresh">Refresh</string>
-    <string name="settings_voice_log_copy">Copy</string>
-    <string name="settings_voice_log_clear">Clear</string>
-    <string name="settings_voice_log_empty">(no log entries yet — try the voice button)</string>
-    <string name="settings_voice_log_copied">Voice log copied to clipboard</string>
+    <!-- Settings: Alarm history -->
+    <string name="settings_alarm_history_title">Alarm history</string>
+    <string name="settings_alarm_history_help">Everything your alarms did — created, edited, fired, done, snoozed, and late catch-ups after a restart. Copy this and paste it when reporting a wrong-time or missed alarm.</string>
+    <string name="settings_alarm_history_refresh">Refresh</string>
+    <string name="settings_alarm_history_copy">Copy</string>
+    <string name="settings_alarm_history_clear">Clear</string>
+    <string name="settings_alarm_history_empty">(no alarm history yet)</string>
+    <string name="settings_alarm_history_copied">Alarm history copied to clipboard</string>
 
     <!-- Default seed group names -->
     <string name="seed_group_pets">Pets</string>

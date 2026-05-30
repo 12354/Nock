@@ -9,6 +9,7 @@ import app.nock.android.data.NockRepository
 import app.nock.android.domain.escalation.EscalationEngine
 import app.nock.android.domain.model.Group
 import app.nock.android.domain.model.Schedule
+import app.nock.android.history.AlarmHistoryLogger
 import app.nock.android.voice.DeepSeekParseResult
 import app.nock.android.voice.DeepSeekReminderParser
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -49,6 +50,7 @@ class EditReminderViewModel @Inject constructor(
     private val repo: NockRepository,
     private val engine: EscalationEngine,
     private val deepSeekParser: DeepSeekReminderParser,
+    private val history: AlarmHistoryLogger,
     savedState: SavedStateHandle
 ) : ViewModel() {
 
@@ -181,15 +183,17 @@ class EditReminderViewModel @Inject constructor(
         val now = System.currentTimeMillis()
         val nextFire = schedule.nextFireFrom(now, null)
         val existing = if (s.reminderId != 0L) repo.getReminder(s.reminderId) else null
+        val name = s.name.ifBlank { ctx.getString(R.string.default_reminder_name) }
         val id = repo.saveReminder(
             id = s.reminderId,
             groupId = s.groupId,
-            name = s.name.ifBlank { ctx.getString(R.string.default_reminder_name) },
+            name = name,
             schedule = schedule,
             nextFireAt = nextFire,
             lastCompletedAt = existing?.lastCompletedAt,
             createdAt = existing?.createdAt ?: now
         )
+        recordHistory(existing, name, schedule, nextFire, s.groupId, s.groups)
         engine.cancelActive(id)
         val r = repo.getReminder(id) ?: return
         // OnUnlock reminders are armed in the DB; the actual fire happens
@@ -197,6 +201,33 @@ class EditReminderViewModel @Inject constructor(
         if (nextFire != null && schedule !is Schedule.OnUnlock) {
             engine.startEscalationAt(r, nextFire)
         }
+    }
+
+    private fun recordHistory(
+        existing: app.nock.android.domain.model.Reminder?,
+        name: String,
+        schedule: Schedule,
+        nextFire: Long?,
+        groupId: Long,
+        groups: List<Group>,
+    ) {
+        val groupName = groups.firstOrNull { it.id == groupId }?.name
+        if (existing == null) {
+            history.created(name, groupName, schedule, nextFire)
+            return
+        }
+        val changes = buildList {
+            if (existing.name != name) add("name \"${existing.name}\" → \"$name\"")
+            if (existing.groupId != groupId) {
+                val oldGroup = groups.firstOrNull { it.id == existing.groupId }?.name
+                    ?: existing.groupId.toString()
+                add("group ${oldGroup} → ${groupName ?: groupId}")
+            }
+            if (existing.schedule != schedule) {
+                add("schedule ${history.describeSchedule(existing.schedule)} → ${history.describeSchedule(schedule)}")
+            }
+        }
+        history.modified(name, changes)
     }
 
     private fun buildSchedule(s: EditState): Schedule = when (s.scheduleType) {

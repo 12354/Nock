@@ -22,6 +22,14 @@ import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/** Result of running a single pending transcript to completion. */
+sealed interface VoiceProcessOutcome {
+    /** Transcript became a real reminder; [message] is the ready-to-show confirmation. */
+    data class Added(val message: String) : VoiceProcessOutcome
+    /** Processing failed (or was abandoned); [message] explains why. */
+    data class Failed(val message: String) : VoiceProcessOutcome
+}
+
 /**
  * Durable queue for voice transcripts that haven't yet been turned into real reminders.
  *
@@ -51,7 +59,13 @@ class PendingVoiceProcessor @Inject constructor(
 
     fun observePending(): Flow<List<PendingVoiceReminderEntity>> = pendingDao.observeAll()
 
-    suspend fun enqueue(transcript: String): Long {
+    /**
+     * Persist [transcript] durably so it can't be lost. By default this also kicks
+     * off background processing; pass [autoKick] = false when the caller intends to
+     * drive [process] itself (e.g. the widget service, which awaits the outcome so
+     * it can keep its foreground process alive and toast the result).
+     */
+    suspend fun enqueue(transcript: String, autoKick: Boolean = true): Long {
         val id = pendingDao.insert(
             PendingVoiceReminderEntity(
                 transcript = transcript,
@@ -62,7 +76,7 @@ class PendingVoiceProcessor @Inject constructor(
             )
         )
         logger.log(TAG, "enqueue pending=$id transcript=\"$transcript\"")
-        kick(id)
+        if (autoKick) kick(id)
         return id
     }
 
@@ -85,23 +99,30 @@ class PendingVoiceProcessor @Inject constructor(
         logger.log(TAG, "delete pending=$id")
     }
 
-    private suspend fun process(id: Long) {
+    /**
+     * Run the pending entry [id] to completion and report the outcome. When
+     * [emitAdded] is true a successful result is also published on [added] for
+     * any in-app screen to toast; the widget path passes false and shows the
+     * returned message itself.
+     */
+    suspend fun process(id: Long, emitAdded: Boolean = true): VoiceProcessOutcome {
         val acquired = inFlightMutex.withLock { inFlight.add(id) }
         if (!acquired) {
             logger.log(TAG, "skip pending=$id — already in flight")
-            return
+            return VoiceProcessOutcome.Failed(ctx.getString(R.string.voice_error_save_failed))
         }
         try {
             val groups = repo.getGroups()
             if (groups.isEmpty()) {
-                recordFailure(id, ctx.getString(R.string.voice_error_no_groups))
-                return
+                return recordFailure(id, ctx.getString(R.string.voice_error_no_groups))
             }
             var attempt = 0
             var lastError: String? = null
             while (attempt < MAX_ATTEMPTS) {
                 attempt++
-                val entry = pendingDao.getById(id) ?: return // deleted while waiting
+                // Deleted while waiting — nothing left to report.
+                val entry = pendingDao.getById(id)
+                    ?: return VoiceProcessOutcome.Failed(ctx.getString(R.string.voice_error_save_failed))
                 pendingDao.update(
                     entry.copy(
                         attemptCount = attempt,
@@ -111,13 +132,13 @@ class PendingVoiceProcessor @Inject constructor(
                 logger.log(TAG, "process pending=$id attempt=$attempt/$MAX_ATTEMPTS")
                 when (val result = parser.parse(entry.transcript, groups)) {
                     is DeepSeekParseResult.Ok -> {
-                        persistAndComplete(id, result, groups)
+                        val message = persistAndComplete(id, result, groups)
+                        if (emitAdded) _added.tryEmit(message)
                         logger.log(TAG, "pending=$id resolved on attempt=$attempt")
-                        return
+                        return VoiceProcessOutcome.Added(message)
                     }
                     is DeepSeekParseResult.NotConfigured -> {
-                        recordFailure(id, ctx.getString(R.string.pending_voice_not_configured), attempt)
-                        return
+                        return recordFailure(id, ctx.getString(R.string.pending_voice_not_configured), attempt)
                     }
                     is DeepSeekParseResult.Failed -> {
                         lastError = result.message
@@ -127,8 +148,7 @@ class PendingVoiceProcessor @Inject constructor(
                                 " (transient=${result.transient})"
                         )
                         if (!result.transient) {
-                            recordFailure(id, result.message, attempt)
-                            return
+                            return recordFailure(id, result.message, attempt)
                         }
                         if (attempt < MAX_ATTEMPTS) {
                             val backoffMs = BACKOFF_MS_BASE shl (attempt - 1)
@@ -137,17 +157,22 @@ class PendingVoiceProcessor @Inject constructor(
                     }
                 }
             }
-            recordFailure(id, lastError ?: ctx.getString(R.string.voice_error_save_failed), MAX_ATTEMPTS)
+            return recordFailure(
+                id,
+                lastError ?: ctx.getString(R.string.voice_error_save_failed),
+                MAX_ATTEMPTS
+            )
         } finally {
             inFlightMutex.withLock { inFlight.remove(id) }
         }
     }
 
+    /** Saves the real reminder, drops the pending row, and returns the confirmation text. */
     private suspend fun persistAndComplete(
         pendingId: Long,
         spec: DeepSeekParseResult.Ok,
         groups: List<Group>,
-    ) {
+    ): String {
         val name = spec.name?.takeIf { it.isNotBlank() }
             ?: ctx.getString(R.string.default_reminder_name)
         val groupId = spec.groupHint?.let { hint ->
@@ -171,18 +196,25 @@ class PendingVoiceProcessor @Inject constructor(
             engine.startEscalationAt(saved, nextFire)
         }
         pendingDao.deleteById(pendingId)
-        _added.tryEmit(VoiceReminderToast.format(ctx, name, nextFire, spec.schedule))
+        return VoiceReminderToast.format(ctx, name, nextFire, spec.schedule)
     }
 
-    private suspend fun recordFailure(id: Long, error: String, attempts: Int? = null) {
-        val cur = pendingDao.getById(id) ?: return
-        pendingDao.update(
-            cur.copy(
-                lastError = error,
-                lastAttemptAt = System.currentTimeMillis(),
-                attemptCount = attempts ?: cur.attemptCount,
+    private suspend fun recordFailure(
+        id: Long,
+        error: String,
+        attempts: Int? = null,
+    ): VoiceProcessOutcome {
+        val cur = pendingDao.getById(id)
+        if (cur != null) {
+            pendingDao.update(
+                cur.copy(
+                    lastError = error,
+                    lastAttemptAt = System.currentTimeMillis(),
+                    attemptCount = attempts ?: cur.attemptCount,
+                )
             )
-        )
+        }
+        return VoiceProcessOutcome.Failed(error)
     }
 
     private companion object {

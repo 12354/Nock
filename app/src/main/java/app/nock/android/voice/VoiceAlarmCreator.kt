@@ -44,4 +44,26 @@ class VoiceAlarmCreator @Inject constructor(
             message = ctx.getString(R.string.voice_captured)
         )
     }
+
+    /**
+     * Captures [transcript] and runs it to completion, returning the user-facing
+     * message to surface (e.g. as a toast). Unlike [createFromTranscript], this
+     * suspends until DeepSeek parsing finishes so the caller — the widget's
+     * foreground service — keeps its process alive for the duration and can report
+     * the real outcome instead of opening the app.
+     */
+    suspend fun createAndAwait(transcript: String): String {
+        val text = transcript.trim()
+        if (text.isEmpty()) {
+            return ctx.getString(R.string.voice_error_empty_transcript)
+        }
+        if (repo.getGroups().isEmpty()) {
+            return ctx.getString(R.string.voice_error_no_groups)
+        }
+        val pendingId = processor.enqueue(text, autoKick = false)
+        return when (val outcome = processor.process(pendingId, emitAdded = false)) {
+            is VoiceProcessOutcome.Added -> outcome.message
+            is VoiceProcessOutcome.Failed -> outcome.message
+        }
+    }
 }

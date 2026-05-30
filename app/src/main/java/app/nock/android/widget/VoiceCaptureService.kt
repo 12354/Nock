@@ -1,19 +1,18 @@
 package app.nock.android.widget
 
 import android.app.Notification
+import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import app.nock.android.R
 import app.nock.android.notif.Channels
-import app.nock.android.ui.EXTRA_OPEN_TAB
-import app.nock.android.ui.MainActivity
-import app.nock.android.ui.Tab
 import app.nock.android.voice.SpeechResult
 import app.nock.android.voice.SpeechToTextManager
 import app.nock.android.voice.VoiceAlarmCreator
@@ -32,7 +31,7 @@ import javax.inject.Inject
  *
  * Lifecycle:
  *  * ACTION_TOGGLE while [isRecording] is false → start a recognition session.
- *  * ACTION_TOGGLE while [isRecording] is true  → stop, finalize, open MainActivity.
+ *  * ACTION_TOGGLE while [isRecording] is true  → stop and finalize.
  *  * ACTION_STOP   → same as the second toggle (used by the notification action).
  *
  * The recording loop mirrors [app.nock.android.ui.voice.VoiceAlarmViewModel]
@@ -41,6 +40,11 @@ import javax.inject.Inject
  * mid-utterance silence, we restart a fresh session after a short delay and
  * accumulate text across sessions. The only way to actually finish recording
  * is a tap on the widget (or the notification's Stop action).
+ *
+ * The widget never opens the app. After recording stops we keep the microphone
+ * foreground notification alive while DeepSeek parses the transcript — so
+ * Android keeps our process around and the work can't be killed mid-flight —
+ * then surface the outcome as a toast and stop.
  */
 @AndroidEntryPoint
 class VoiceCaptureService : Service() {
@@ -198,27 +202,31 @@ class VoiceCaptureService : Service() {
         sessionPartial = ""
         scope.launch {
             if (text.isNotEmpty()) {
-                val outcome = creator.createFromTranscript(text)
-                logger.log(TAG, "createFromTranscript outcome=${outcome::class.simpleName}")
+                // Stay foregrounded with a "saving" notification so the process
+                // survives while DeepSeek parses, and run the work in our own
+                // scope (awaited, not fire-and-forget) so it can't be killed the
+                // instant we'd otherwise stop. Then toast the real outcome — the
+                // widget deliberately never opens the app.
+                updateNotification(getString(R.string.widget_voice_notification_processing))
+                val message = try {
+                    creator.createAndAwait(text)
+                } catch (t: Throwable) {
+                    logger.log(TAG, "createAndAwait threw: ${t.message}")
+                    getString(R.string.voice_error_save_failed)
+                }
+                logger.log(TAG, "finalize → toast \"$message\"")
+                showToast(message)
             }
-            // Per the agreed UX: always open the task overview on the second tap,
-            // regardless of Captured / Failed / empty-transcript outcome.
-            openTaskOverview()
             VoiceWidgetState.write(applicationContext, VoiceWidgetState.Idle)
             stopForegroundAndSelf()
         }
     }
 
-    private fun openTaskOverview() {
-        val intent = Intent(this, MainActivity::class.java).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-            putExtra(EXTRA_OPEN_TAB, Tab.Reminders.route)
-        }
-        try {
-            startActivity(intent)
-        } catch (t: Throwable) {
-            logger.log(TAG, "startActivity(MainActivity) threw: ${t.message}")
-        }
+    private fun showToast(message: String) {
+        if (message.isBlank()) return
+        // Runs on the service's main thread (scope is Dispatchers.Main.immediate);
+        // a text toast is handed to the system, so it still shows after we stop.
+        Toast.makeText(applicationContext, message, Toast.LENGTH_LONG).show()
     }
 
     private fun stopForegroundAndSelf() {
@@ -226,22 +234,33 @@ class VoiceCaptureService : Service() {
         stopSelf()
     }
 
-    private fun buildNotification(): Notification {
-        val stopIntent = Intent(this, VoiceCaptureService::class.java).setAction(ACTION_STOP)
-        val stopPI = PendingIntent.getService(
-            this,
-            REQ_STOP,
-            stopIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-        return NotificationCompat.Builder(this, Channels.SERVICE)
+    /** Pushes an updated foreground notification (e.g. "saving…") without leaving foreground. */
+    private fun updateNotification(title: String) {
+        val mgr = getSystemService(NotificationManager::class.java) ?: return
+        mgr.notify(NOTIFICATION_ID, buildNotification(title = title, showStop = false))
+    }
+
+    private fun buildNotification(
+        title: String = getString(R.string.widget_voice_notification_title),
+        showStop: Boolean = true,
+    ): Notification {
+        val builder = NotificationCompat.Builder(this, Channels.SERVICE)
             .setSmallIcon(R.drawable.ic_widget_mic)
-            .setContentTitle(getString(R.string.widget_voice_notification_title))
+            .setContentTitle(title)
             .setOngoing(true)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
-            .addAction(0, getString(R.string.widget_voice_notification_stop_action), stopPI)
-            .build()
+        if (showStop) {
+            val stopIntent = Intent(this, VoiceCaptureService::class.java).setAction(ACTION_STOP)
+            val stopPI = PendingIntent.getService(
+                this,
+                REQ_STOP,
+                stopIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            builder.addAction(0, getString(R.string.widget_voice_notification_stop_action), stopPI)
+        }
+        return builder.build()
     }
 
     override fun onDestroy() {

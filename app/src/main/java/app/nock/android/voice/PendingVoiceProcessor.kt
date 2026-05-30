@@ -13,6 +13,9 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -39,6 +42,12 @@ class PendingVoiceProcessor @Inject constructor(
 ) {
     private val inFlightMutex = Mutex()
     private val inFlight = mutableSetOf<Long>()
+
+    // Ready-to-show confirmation strings emitted once a transcript becomes a
+    // real reminder. The UI collects these to show a toast; no replay so a
+    // reminder created while no screen is listening doesn't toast on return.
+    private val _added = MutableSharedFlow<String>(extraBufferCapacity = 4)
+    val added: SharedFlow<String> = _added.asSharedFlow()
 
     fun observePending(): Flow<List<PendingVoiceReminderEntity>> = pendingDao.observeAll()
 
@@ -162,6 +171,7 @@ class PendingVoiceProcessor @Inject constructor(
             engine.startEscalationAt(saved, nextFire)
         }
         pendingDao.deleteById(pendingId)
+        _added.tryEmit(VoiceReminderToast.format(ctx, name, nextFire, spec.schedule))
     }
 
     private suspend fun recordFailure(id: Long, error: String, attempts: Int? = null) {

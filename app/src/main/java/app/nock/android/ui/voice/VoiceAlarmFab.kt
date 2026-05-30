@@ -49,6 +49,12 @@ fun VoiceAlarmFab(
         }
     }
 
+    // Background processing finishes after the capture flow has gone idle, so
+    // the "added X at <time> <date>" confirmation arrives on its own channel.
+    LaunchedEffect(Unit) {
+        vm.toasts.collect { message -> snackbar.showSnackbar(message = message) }
+    }
+
     Column(
         modifier = modifier,
         horizontalAlignment = Alignment.End,

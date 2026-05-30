@@ -2,6 +2,7 @@ package app.nock.android.ui.voice
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.nock.android.voice.PendingVoiceProcessor
 import app.nock.android.voice.SpeechResult
 import app.nock.android.voice.SpeechToTextManager
 import app.nock.android.voice.VoiceAlarmCreator
@@ -10,6 +11,7 @@ import app.nock.android.voice.VoiceLogger
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
@@ -48,10 +50,18 @@ class VoiceAlarmViewModel @Inject constructor(
     private val stt: SpeechToTextManager,
     private val creator: VoiceAlarmCreator,
     private val logger: VoiceLogger,
+    processor: PendingVoiceProcessor,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow<VoiceAlarmUiState>(VoiceAlarmUiState.Idle)
     val state: StateFlow<VoiceAlarmUiState> = _state.asStateFlow()
+
+    /**
+     * Confirmation toasts emitted when a queued transcript finishes processing
+     * into a real reminder. Distinct from [state] because the work completes in
+     * the background, after the capture flow has already returned to idle.
+     */
+    val toasts: SharedFlow<String> = processor.added
 
     private var session: SpeechToTextManager.Session? = null
     private var isHolding = false

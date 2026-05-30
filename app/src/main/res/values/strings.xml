@@ -202,6 +202,24 @@
     <string name="voice_error_save_failed">Failed to save reminder</string>
     <string name="voice_captured">Saved — processing in background</string>
 
+    <!-- Toast shown once a voice transcript has been turned into a real reminder.
+         %1$s is the reminder text, %2$s is a natural-language "when" phrase. -->
+    <string name="voice_added_toast">Added \"%1$s\" · %2$s</string>
+    <string name="voice_when_today">today at %1$s</string>
+    <string name="voice_when_tomorrow">tomorrow at %1$s</string>
+    <plurals name="voice_when_in_days">
+        <item quantity="one">in %1$d day at %2$s</item>
+        <item quantity="other">in %1$d days at %2$s</item>
+    </plurals>
+    <string name="voice_when_date">%1$s at %2$s</string>
+    <string name="voice_when_daily">every day at %1$s</string>
+    <string name="voice_when_weekly">every %1$s at %2$s</string>
+    <string name="voice_when_monthly">every month on day %1$d at %2$s</string>
+    <string name="voice_when_interval_minutes">every %1$d min</string>
+    <string name="voice_when_interval_hours">every %1$dh</string>
+    <string name="voice_when_interval_hours_minutes">every %1$dh %2$dm</string>
+    <string name="voice_when_on_unlock">next time you unlock</string>
+
     <!-- Pending voice reminders (transient transcripts being processed by DeepSeek) -->
     <string name="pending_voice_title">Processing voice reminder</string>
     <string name="pending_voice_processing">Working on it…</string>

@@ -1,0 +1,378 @@
+package app.nock.android.domain.escalation
+
+import app.nock.android.alarm.AlarmScheduler
+import app.nock.android.data.NockRepository
+import app.nock.android.data.SettingsRepository
+import app.nock.android.data.entity.ActiveEscalationEntity
+import app.nock.android.data.json.ChainJson
+import app.nock.android.domain.escalation.EscalationEngine
+import app.nock.android.domain.model.EscalationChain
+import app.nock.android.domain.model.Group
+import app.nock.android.domain.model.Reminder
+import app.nock.android.domain.model.Schedule
+import app.nock.android.domain.model.StageConfig
+import app.nock.android.domain.model.StageType
+import app.nock.android.notif.NotificationPresenter
+import app.nock.android.telegram.TelegramResult
+import app.nock.android.telegram.TelegramSender
+import io.mockk.coEvery
+import io.mockk.every
+import io.mockk.mockk
+import kotlinx.coroutines.test.runTest
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
+import org.junit.Test
+import java.time.DayOfWeek
+import kotlin.math.max
+import kotlin.random.Random
+
+/**
+ * Randomized, model-based fuzzer for the whole alarm lifecycle.
+ *
+ * It runs a fully simulated device:
+ *  - the device clock is a [FakeTimeSource] that only ever moves forward;
+ *  - [AlarmScheduler] is faked into an in-memory "pending alarms" table — the
+ *    one place the OS would normally hold the next fire time;
+ *  - [NockRepository] / [SettingsRepository] are MockK answer-backed by live
+ *    in-memory maps so the engine reads/writes a real (if tiny) data store;
+ *  - the escalation DAO is the real in-memory [FakeActiveEscalationDao].
+ *
+ * Each iteration the driver randomly: advances time (and fires whatever alarms
+ * come due, optionally reacting with Done/Snooze), adds a reminder, snoozes or
+ * dismisses an active one, or rewrites a reminder's schedule (time/date/recur).
+ *
+ * Oracles:
+ *  - INV (consistency): after EVERY mutation, the set of active escalation rows
+ *    is in bijection with the pending alarms, and each pending alarm's time and
+ *    stage type exactly match its row. This is the engine's core promise.
+ *  - Per-fire: every alarm we deliver is logged and independently checked — the
+ *    stage that was shown must equal the stage the chain says is due at that
+ *    instant, and it must never fire before its scheduled time.
+ *  - Per-escalation timeline (checked afterwards): for any single escalation the
+ *    fired stage index is monotonically non-decreasing and within the chain.
+ *
+ * OnUnlock and group pausing are intentionally excluded here (they're event- /
+ * window-gated rather than part of the time-driven fire loop) and are covered
+ * exhaustively by the focused tests in this package.
+ */
+class EscalationEngineFuzzTest {
+
+    private data class Pending(val atMs: Long, val type: StageType)
+
+    private data class FiredEvent(
+        val step: Int,
+        val escalationId: Long,
+        val reminderId: Long,
+        val type: StageType,
+        val stageIndex: Int,
+        val dueAtMs: Long,
+        val firedAtMs: Long,
+    )
+
+    @Test fun fuzz_alarm_lifecycle_across_many_random_runs() = runTest {
+        var totalFired = 0
+        for (seed in listOf(1L, 2L, 3L, 7L, 42L, 1234L, 99_999L, 2_026_05_30L)) {
+            totalFired += World(seed).run(iterations = 500)
+        }
+        // Across all runs the simulated clock crosses many schedules, so a large
+        // number of alarms must actually have fired (typically several thousand);
+        // a low count means the harness silently did almost nothing.
+        assertTrue("fuzzer delivered suspiciously few alarms ($totalFired)", totalFired > 500)
+    }
+
+    /** One isolated simulated device + engine for a single random seed. */
+    private inner class World(private val seed: Long) {
+        private val rnd = Random(seed)
+        private val clock = FakeTimeSource(NOW)
+        private val dao = FakeActiveEscalationDao()
+
+        private val reminders = LinkedHashMap<Long, Reminder>()
+        private val groups = LinkedHashMap<Long, Group>()
+        private val pending = LinkedHashMap<Long, Pending>()
+        private val displayed = ArrayList<Pair<Long, StageType>>()
+        private val log = ArrayList<FiredEvent>()
+        private var nextReminderId = 100L
+        private var telegramMessageId = 1L
+        private var step = -1
+
+        private val repo: NockRepository = mockk(relaxed = true)
+        private val settings: SettingsRepository = mockk(relaxed = true)
+        private val scheduler: AlarmScheduler = mockk(relaxed = true)
+        private val notifier: NotificationPresenter = mockk(relaxed = true)
+        private val telegram: TelegramSender = mockk(relaxed = true)
+        private val engine = EscalationEngine(repo, dao, settings, scheduler, notifier, telegram, clock)
+
+        init {
+            // A plain group, one that mirrors silent stages to Telegram, and one
+            // with a custom (shorter) override chain — so rows carry different
+            // chains and the oracle has to honour each row's own snapshot.
+            groups[1] = group(id = 1, telegramSilentMirror = false)
+            groups[2] = group(id = 2, telegramSilentMirror = true)
+            groups[3] = group(
+                id = 3,
+                overrideChain = EscalationChain(
+                    stages = listOf(
+                        StageConfig(StageType.SILENT, -5 * MIN),
+                        StageConfig(StageType.ALARM, 0L),
+                    ),
+                    repeatIntervalMs = 15 * MIN,
+                ),
+            )
+
+            // --- Repository backed by live in-memory maps ---
+            coEvery { repo.getReminder(any()) } answers { reminders[firstArg<Long>()] }
+            coEvery { repo.getGroup(any()) } answers { groups[firstArg<Long>()] }
+            coEvery { repo.getAllReminders() } answers { reminders.values.toList() }
+            coEvery { repo.effectiveChain(any()) } answers {
+                firstArg<Group>().overrideChain ?: TEST_CHAIN
+            }
+            coEvery { repo.updateFireState(any(), any(), any()) } answers {
+                val id = firstArg<Long>()
+                val next = secondArg<Long?>()
+                val last = thirdArg<Long?>()
+                reminders[id]?.let { reminders[id] = it.copy(nextFireAt = next, lastCompletedAt = last) }
+            }
+            coEvery { repo.deleteReminder(any()) } answers { reminders.remove(firstArg<Reminder>().id) }
+
+            // --- Settings ---
+            coEvery { settings.getStageChain() } returns TEST_CHAIN
+
+            // --- AlarmScheduler faked into the pending table ---
+            every { scheduler.scheduleStage(any(), any(), any()) } answers {
+                pending[firstArg<Long>()] = Pending(secondArg<Long>(), thirdArg<StageType>())
+            }
+            every { scheduler.cancel(any()) } answers { pending.remove(firstArg<Long>()) }
+
+            // --- Notifier records the single stage it displays per fire ---
+            every { notifier.showSilent(any(), any(), any(), any()) } answers {
+                val id = arg<Long>(2)
+                val suffix = arg<String>(3)
+                // SILENT shows no suffix; the TELEGRAM stage reuses the silent
+                // notification with a " (Telegram sent)" suffix.
+                displayed += id to if (suffix.isEmpty()) StageType.SILENT else StageType.TELEGRAM
+            }
+            every { notifier.showAlarmVibrate(any(), any(), any()) } answers {
+                displayed += arg<Long>(2) to StageType.ALARM_VIBRATE
+            }
+            every { notifier.showAlarm(any(), any(), any()) } answers {
+                displayed += arg<Long>(2) to StageType.ALARM
+            }
+
+            // --- Telegram returns increasing message ids; deletes are no-ops ---
+            coEvery { telegram.send(any(), any()) } answers {
+                TelegramResult(ok = true, messageId = telegramMessageId++)
+            }
+            coEvery { telegram.deleteMessage(any()) } returns true
+        }
+
+        /** Runs the random loop and returns how many alarms were delivered. */
+        suspend fun run(iterations: Int): Int {
+            repeat(3) { addReminder() } // seed the world
+            assertConsistent("after seeding")
+
+            for (s in 0 until iterations) {
+                step = s
+                when (rnd.nextInt(100)) {
+                    in 0..44 -> tick()          // wait, then fire/react
+                    in 45..59 -> addReminder()
+                    in 60..74 -> snoozeRandomActive()
+                    in 75..89 -> doneRandomActive()
+                    else -> modifyRandomSchedule()
+                }
+                assertConsistent("after step $s (action complete)")
+            }
+
+            // Flush: jump a few days forward and deliver everything that comes due.
+            clock.advanceBy(3L * 24 * 60 * MIN)
+            drainDueAlarms(react = false)
+            assertConsistent("after final flush")
+
+            verifyTimeline()
+            return log.size
+        }
+
+        // ----- Actions ---------------------------------------------------------
+
+        private suspend fun tick() {
+            clock.advanceBy(randomDelta())
+            drainDueAlarms(react = true)
+        }
+
+        private suspend fun addReminder() {
+            if (reminders.size >= 8) return
+            val id = nextReminderId++
+            val gid = listOf(1L, 2L, 3L).random(rnd)
+            reminders[id] = reminder(
+                id = id,
+                groupId = gid,
+                schedule = randomSchedule(),
+                nextFireAt = null,
+                lastCompletedAt = null,
+                createdAt = clock.now,
+            )
+            engine.scheduleNextFireForReminder(id)
+        }
+
+        private suspend fun snoozeRandomActive() {
+            val id = dao.rows.keys.toList().randomOrNull(rnd) ?: return
+            engine.snooze(id)
+        }
+
+        private suspend fun doneRandomActive() {
+            val id = dao.rows.keys.toList().randomOrNull(rnd) ?: return
+            engine.done(id)
+        }
+
+        private suspend fun modifyRandomSchedule() {
+            val id = reminders.keys.toList().randomOrNull(rnd) ?: return
+            reminders[id] = reminders.getValue(id).copy(schedule = randomSchedule())
+            // scheduleNextFireForReminder cancels any prior active escalation and
+            // re-arms from the new schedule.
+            engine.scheduleNextFireForReminder(id)
+        }
+
+        // ----- Firing ----------------------------------------------------------
+
+        private suspend fun drainDueAlarms(react: Boolean) {
+            var guard = 0
+            while (true) {
+                val due = pending.entries
+                    .filter { it.value.atMs <= clock.now }
+                    .minByOrNull { it.value.atMs } ?: break
+                val id = due.key
+                fireAlarm(id)
+                assertConsistent("after firing $id")
+
+                if (react && dao.rows.containsKey(id) && rnd.nextBoolean()) {
+                    if (rnd.nextBoolean()) engine.snooze(id) else engine.done(id)
+                    assertConsistent("after reacting to $id")
+                }
+
+                if (++guard > 100_000) fail("drain did not terminate (seed $seed step $step) — alarm refiring without advancing")
+            }
+        }
+
+        private suspend fun fireAlarm(id: Long) {
+            val row = dao.getById(id) ?: return
+            val reminder = reminders[row.reminderId]
+            if (reminder == null) {
+                // Engine self-heals (deletes the orphan row); not expected in this
+                // world, but don't crash the fuzzer over it.
+                engine.onAlarmFired(id)
+                return
+            }
+            val chain = chainOf(row)
+            val now = clock.now
+
+            // Independent re-derivation of which stage is due — the oracle.
+            val storedIdx = row.nextStageIndex.coerceIn(0, chain.lastIndex)
+            val dueIdx = chain.stageDueAt(row.startedAtMs, now)
+            val idx = max(storedIdx, dueIdx).coerceAtMost(chain.lastIndex)
+            val expected = chain.stage(idx).type
+
+            assertTrue(
+                "alarm $id fired before its due time (now=$now due=${row.nextFireAtMs}) ${ctx()}",
+                now >= row.nextFireAtMs,
+            )
+
+            val before = displayed.size
+            engine.onAlarmFired(id)
+
+            assertEquals(
+                "exactly one stage should display per fire of $id ${ctx()}",
+                before + 1, displayed.size,
+            )
+            val (shownId, shownType) = displayed.last()
+            assertEquals("displayed wrong escalation ${ctx()}", id, shownId)
+            assertEquals(
+                "displayed stage != due stage for $id at now=$now ${ctx()}",
+                expected, shownType,
+            )
+
+            log += FiredEvent(step, id, reminder.id, shownType, idx, row.nextFireAtMs, now)
+        }
+
+        // ----- Oracles ---------------------------------------------------------
+
+        /**
+         * The invariant the engine must uphold at all times: active rows and
+         * pending alarms are in one-to-one correspondence, and each pending
+         * alarm's time and type mirror its row exactly.
+         */
+        private fun assertConsistent(where: String) {
+            assertEquals(
+                "rows vs pending alarms diverged ($where) ${ctx()}",
+                dao.rows.keys.toSet(), pending.keys.toSet(),
+            )
+            for ((id, row) in dao.rows) {
+                val p = pending.getValue(id)
+                val chain = chainOf(row)
+                val idx = row.nextStageIndex.coerceIn(0, chain.lastIndex)
+                assertEquals(
+                    "pending time != row.nextFireAtMs for $id ($where) ${ctx()}",
+                    row.nextFireAtMs, p.atMs,
+                )
+                assertEquals(
+                    "pending type != row stage type for $id ($where) ${ctx()}",
+                    chain.stage(idx).type, p.type,
+                )
+            }
+        }
+
+        /** After the run, every alarm's history must be well-formed. */
+        private fun verifyTimeline() {
+            log.groupBy { it.escalationId }.forEach { (id, events) ->
+                var prev = -1
+                events.sortedBy { it.firedAtMs }.forEach { e ->
+                    assertTrue(
+                        "stage index regressed for escalation $id (seed $seed): $prev -> ${e.stageIndex}",
+                        e.stageIndex >= prev,
+                    )
+                    assertTrue("negative stage index for $id (seed $seed)", e.stageIndex >= 0)
+                    prev = e.stageIndex
+                }
+            }
+        }
+
+        // ----- Helpers ---------------------------------------------------------
+
+        private fun chainOf(row: ActiveEscalationEntity): EscalationChain =
+            runCatching { ChainJson.decode(row.chainSnapshotJson) }.getOrElse { TEST_CHAIN }
+
+        private fun randomDelta(): Long = when (rnd.nextInt(10)) {
+            in 0..3 -> rnd.nextLong(1, 30) * MIN              // minutes
+            in 4..6 -> rnd.nextLong(30, 240) * MIN            // up to a few hours
+            in 7..8 -> rnd.nextLong(1, 4) * 24 * 60 * MIN     // a few days
+            else -> rnd.nextLong(1, 10) * 1_000L              // a few seconds
+        }
+
+        private fun randomSchedule(): Schedule = when (rnd.nextInt(5)) {
+            0 -> Schedule.Daily(randomTimes())
+            1 -> Schedule.Weekly(randomDays(), randomTimes())
+            2 -> Schedule.Monthly(rnd.nextInt(1, 29), rnd.nextInt(0, 1440))
+            3 -> Schedule.IntervalFromLast(rnd.nextLong(1, 600) * MIN)
+            else -> Schedule.OneShot(clock.now + rnd.nextLong(-120, 6_000) * MIN)
+        }
+
+        private fun randomTimes(): List<Int> =
+            generateSequence { rnd.nextInt(0, 1440) }
+                .distinct()
+                .take(rnd.nextInt(1, 3))
+                .sorted()
+                .toList()
+
+        private fun randomDays(): Set<DayOfWeek> {
+            val all = DayOfWeek.values().toList()
+            return all.shuffled(rnd).take(rnd.nextInt(1, 8)).toSet()
+        }
+
+        /** Short context string for assertion failures. */
+        private fun ctx(): String {
+            val tail = log.takeLast(6).joinToString("; ") {
+                "[s${it.step} esc${it.escalationId} ${it.type}@${it.firedAtMs}]"
+            }
+            return "(seed=$seed step=$step now=${clock.now} rows=${dao.rows.size} fired=${log.size} recent: $tail)"
+        }
+    }
+}

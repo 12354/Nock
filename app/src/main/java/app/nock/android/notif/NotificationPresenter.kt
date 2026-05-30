@@ -78,7 +78,7 @@ class NotificationPresenter @Inject constructor(
             fullScreen,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        return alarmActionsBuilder(escalationId, reminderName)
+        return alarmActionsBuilder(escalationId, reminderId, reminderName)
             .setContentText(ctx.getString(R.string.notification_alarm_suffix, groupName))
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
@@ -110,10 +110,12 @@ class NotificationPresenter @Inject constructor(
         group: Group,
         escalationId: Long,
         channelId: String
-    ): NotificationCompat.Builder = alarmActionsBuilder(escalationId, reminder.name, channelId)
+    ): NotificationCompat.Builder =
+        alarmActionsBuilder(escalationId, reminder.id, reminder.name, channelId)
 
     private fun alarmActionsBuilder(
         escalationId: Long,
+        reminderId: Long,
         reminderName: String,
         channelId: String = Channels.ALARM
     ): NotificationCompat.Builder {
@@ -137,11 +139,20 @@ class NotificationPresenter @Inject constructor(
             snoozeIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        val tap = Intent(ctx, app.nock.android.ui.MainActivity::class.java).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        // Tapping the notification body (rather than the Done/Snooze actions)
+        // opens the alarm takeover for *this* escalation, so the user always
+        // lands on the explicit Done/Snooze buttons instead of a generic app
+        // screen. The request code is per-escalation: a shared code would make
+        // every notification's content-tap collide into one PendingIntent and
+        // carry the wrong escalation id. Note this only opens a screen — it
+        // never completes or snoozes the reminder on its own.
+        val tap = Intent(ctx, AlarmActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            putExtra(IntentExtras.EXTRA_ESCALATION_ID, escalationId)
+            putExtra(IntentExtras.EXTRA_REMINDER_ID, reminderId)
         }
         val tapPI = PendingIntent.getActivity(
-            ctx, 0, tap,
+            ctx, escalationId.toInt(), tap,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         return NotificationCompat.Builder(ctx, channelId)

@@ -192,10 +192,24 @@ class EscalationEngine @Inject constructor(
 
     suspend fun done(escalationId: Long) {
         val esc = activeDao.getById(escalationId) ?: return
+        // Capture before the row is deleted — the slow Telegram cleanup below
+        // still needs these ids.
+        val sentTelegramCsv = esc.sentTelegramMessageIdsCsv
         scheduler.cancel(esc.id)
         notifier.cancel(esc.id)
         notifier.stopAlarm()
-        deleteSentTelegramMessages(esc.sentTelegramMessageIdsCsv)
+
+        // Commit all durable state — drop the active row and arm the next
+        // occurrence — BEFORE the best-effort Telegram cleanup. This action is
+        // delivered to a BroadcastReceiver whose process is only kept alive by
+        // the alarm foreground service we just stopped (plus a short goAsync
+        // window). deleteSentTelegramMessages is a network call that can block
+        // for tens of seconds on a bad connection (15s connect + 20s read,
+        // per message); if it ran first and the process was killed mid-call we
+        // would have already cancelled the alarm but never removed the row or
+        // re-armed the chain, leaving the reminder stuck at a past fire time
+        // that never rings again. Keep the network work last so it can't
+        // corrupt the escalation state.
         val reminder = repo.getReminder(esc.reminderId)
         activeDao.delete(esc)
         if (reminder != null) {
@@ -204,25 +218,33 @@ class EscalationEngine @Inject constructor(
             // the list. See Schedule.isOneTime.
             if (reminder.schedule.isOneTime) {
                 repo.deleteReminder(reminder)
-                return
-            }
-            val now = time.nowMs()
-            val next = reminder.schedule.nextFireFrom(now, now)
-            repo.updateFireState(reminder.id, next, now)
-            if (next != null) {
-                startEscalationAt(reminder.copy(lastCompletedAt = now, nextFireAt = next), next)
+            } else {
+                val now = time.nowMs()
+                val next = reminder.schedule.nextFireFrom(now, now)
+                repo.updateFireState(reminder.id, next, now)
+                if (next != null) {
+                    startEscalationAt(reminder.copy(lastCompletedAt = now, nextFireAt = next), next)
+                }
             }
         }
+        deleteSentTelegramMessages(sentTelegramCsv)
     }
 
     suspend fun snooze(escalationId: Long) {
         val esc = activeDao.getById(escalationId) ?: return
+        // Capture before the row's CSV is cleared — the Telegram cleanup below
+        // still needs these ids.
+        val sentTelegramCsv = esc.sentTelegramMessageIdsCsv
         val chain = runCatching { ChainJson.decode(esc.chainSnapshotJson) }.getOrNull()
             ?: settings.getStageChain()
         notifier.cancelStageVisuals(esc.id)
         notifier.stopAlarm()
-        deleteSentTelegramMessages(esc.sentTelegramMessageIdsCsv)
 
+        // Persist the snooze (re-armed repeat / advanced cursor) BEFORE the
+        // best-effort Telegram cleanup, for the same reason as done(): the
+        // network delete can block past the receiver's lifetime once the alarm
+        // foreground service is gone, and we must not lose the snoozed state if
+        // the process is killed mid-call.
         val currentlyFiring = (esc.nextStageIndex).coerceAtMost(chain.lastIndex)
         val isLast = currentlyFiring == chain.lastIndex
         val now = time.nowMs()
@@ -238,6 +260,7 @@ class EscalationEngine @Inject constructor(
         } else {
             activeDao.update(esc.copy(sentTelegramMessageIdsCsv = ""))
         }
+        deleteSentTelegramMessages(sentTelegramCsv)
     }
 
     suspend fun cancelActive(reminderId: Long) {

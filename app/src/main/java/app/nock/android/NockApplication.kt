@@ -10,6 +10,7 @@ import app.nock.android.data.SeedData
 import app.nock.android.data.SeedGroupLocaleSync
 import app.nock.android.data.dao.GroupDao
 import app.nock.android.di.ApplicationScope
+import app.nock.android.domain.escalation.EscalationEngine
 import app.nock.android.notif.NockNotificationChannels
 import app.nock.android.ui.LocaleHelper
 import app.nock.android.voice.PendingVoiceProcessor
@@ -26,6 +27,7 @@ class NockApplication : Application() {
     @Inject lateinit var groupDao: GroupDao
     @Inject lateinit var seedGroupLocaleSync: SeedGroupLocaleSync
     @Inject lateinit var pendingVoiceProcessor: PendingVoiceProcessor
+    @Inject lateinit var engine: EscalationEngine
     @Inject @ApplicationScope lateinit var appScope: CoroutineScope
 
     override fun onCreate() {
@@ -47,6 +49,14 @@ class NockApplication : Application() {
             } else {
                 seedGroupLocaleSync.sync()
             }
+            // Re-arm every active escalation against its stored next-fire time
+            // on process start, the same way boot/time-change does. This
+            // self-heals escalations whose pending alarm went missing — e.g. a
+            // Done/Snooze whose process was killed mid-handling after the old
+            // alarm was cancelled but before the next one was armed, which would
+            // otherwise leave a reminder stuck at a past fire time that never
+            // rings again. An overdue stored time fires (and catches up) at once.
+            engine.rescheduleAll()
         }
         pendingVoiceProcessor.kickAll()
     }

@@ -103,6 +103,50 @@ class AlarmHistoryLogger @Inject constructor(
         synchronized(lock) { file.writeText("") }
     }
 
+    /**
+     * A snapshot of every live alarm and its current state, formatted to be
+     * appended to the copied history — so a bug report carries not just what
+     * happened but what is scheduled right now. Ordered by next fire time
+     * (unscheduled last). [nowMs] is the wall clock the listing is taken at.
+     */
+    fun snapshot(states: List<AlarmState>, nowMs: Long): String = buildString {
+        append("\n=== current alarms (")
+        append(clockFmt.format(Date(nowMs)))
+        append(") ===\n")
+        if (states.isEmpty()) {
+            append("(none)\n")
+            return@buildString
+        }
+        states.sortedWith(compareBy(nullsLast()) { it.nextFireAtMs }).forEach { s ->
+            val parts = buildList {
+                s.group?.takeIf { it.isNotBlank() }?.let { add(it) }
+                add(describeSchedule(s.schedule))
+                add(if (s.nextFireAtMs != null) "next ${clockFmt.format(Date(s.nextFireAtMs))}" else "not scheduled")
+                s.lastCompletedAt?.let { add("last done ${clockFmt.format(Date(it))}") }
+                s.active?.let {
+                    add("ESCALATING → next ${stageLabel(it.nextStageType)} at ${clockFmt.format(Date(it.nextFireAtMs))}")
+                }
+            }
+            append('"').append(s.name).append('"').append(" · ").append(parts.joinToString(" · ")).append('\n')
+        }
+    }
+
+    /** One live alarm for [snapshot]. [active] is null unless it is mid-escalation. */
+    data class AlarmState(
+        val name: String,
+        val group: String?,
+        val schedule: Schedule,
+        val nextFireAtMs: Long?,
+        val lastCompletedAt: Long?,
+        val active: ActiveState?,
+    )
+
+    /** The escalation state of a currently-firing alarm: the next stage and when. */
+    data class ActiveState(
+        val nextStageType: StageType,
+        val nextFireAtMs: Long,
+    )
+
     private fun write(event: String, name: String, detail: String) {
         // event padded so the column lines up in the monospace viewer.
         val head = event.padEnd(8)

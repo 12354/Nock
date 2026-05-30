@@ -579,10 +579,12 @@ private fun AlarmHistorySection(vm: SettingsViewModel) {
                 Text(stringResource(R.string.settings_alarm_history_refresh))
             }
             Button(onClick = {
-                val snapshot = vm.alarmHistoryDump()
-                logText = snapshot
-                clipboard.setText(AnnotatedString(snapshot))
-                scope.launch { snackbarHostState.showSnackbar(copiedMsg) }
+                scope.launch {
+                    val snapshot = vm.alarmHistoryWithCurrentState()
+                    logText = snapshot
+                    clipboard.setText(AnnotatedString(snapshot))
+                    snackbarHostState.showSnackbar(copiedMsg)
+                }
             }) {
                 Text(stringResource(R.string.settings_alarm_history_copy))
             }

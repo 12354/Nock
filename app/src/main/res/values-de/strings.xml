@@ -203,6 +203,24 @@
     <string name="voice_error_save_failed">Erinnerung konnte nicht gespeichert werden</string>
     <string name="voice_captured">Gespeichert — wird im Hintergrund verarbeitet</string>
 
+    <!-- Toast shown once a voice transcript has been turned into a real reminder.
+         %1$s is the reminder text, %2$s is a natural-language "when" phrase. -->
+    <string name="voice_added_toast">„%1$s" hinzugefügt · %2$s</string>
+    <string name="voice_when_today">heute um %1$s</string>
+    <string name="voice_when_tomorrow">morgen um %1$s</string>
+    <plurals name="voice_when_in_days">
+        <item quantity="one">in %1$d Tag um %2$s</item>
+        <item quantity="other">in %1$d Tagen um %2$s</item>
+    </plurals>
+    <string name="voice_when_date">%1$s um %2$s</string>
+    <string name="voice_when_daily">täglich um %1$s</string>
+    <string name="voice_when_weekly">jeden %1$s um %2$s</string>
+    <string name="voice_when_monthly">jeden Monat am %1$d. um %2$s</string>
+    <string name="voice_when_interval_minutes">alle %1$d Min.</string>
+    <string name="voice_when_interval_hours">alle %1$d Std.</string>
+    <string name="voice_when_interval_hours_minutes">alle %1$d Std. %2$d Min.</string>
+    <string name="voice_when_on_unlock">beim nächsten Entsperren</string>
+
     <!-- Pending voice reminders (transient transcripts being processed by DeepSeek) -->
     <string name="pending_voice_title">Sprach-Erinnerung wird verarbeitet</string>
     <string name="pending_voice_processing">Wird bearbeitet…</string>
@@ -215,6 +233,7 @@
     <string name="widget_voice_alarm_description">Tippen, um einen Sprach-Alarm aufzunehmen</string>
     <string name="widget_voice_recording_label">Nimmt auf — tippen zum Stoppen</string>
     <string name="widget_voice_notification_title">Höre zu…</string>
+    <string name="widget_voice_notification_processing">Aufgabe wird gespeichert…</string>
     <string name="widget_voice_notification_stop_action">Stopp</string>
 
     <!-- Settings: DeepSeek -->

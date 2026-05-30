@@ -52,11 +52,20 @@ class EscalationEngine @Inject constructor(
         val firstIdx = if (reminder.schedule is Schedule.OnUnlock) {
             val firstFuture = chain.stages.indexOfFirst { it.offsetMs > 0 }
             if (firstFuture >= 0) firstFuture else chain.stageDueAt(scheduledAtMs, now)
+        } else if (scheduledAtMs > now) {
+            // The trigger is still in the future. Pre-trigger stages with a
+            // negative offset may nonetheless already be in the past when the
+            // reminder is due sooner than a stage's lead time (e.g. SILENT @
+            // -10min on a reminder only 2min away, or any stage when a reminder
+            // is moved far into the future and back). Start at the first stage
+            // that hasn't passed so none of them — and no Telegram — fire the
+            // instant the reminder is saved.
+            chain.firstPendingStage(scheduledAtMs, now)
         } else {
-            // If the user schedules an alarm whose early stages are already in
-            // the past (e.g. SILENT @ -10min when the alarm is only 2min away),
-            // jump straight to the latest stage that is already due. Otherwise
-            // those skipped stages would all fire immediately as a burst.
+            // The trigger time is already here or overdue (late OS delivery,
+            // boot replay, etc.): jump straight to the latest stage that is
+            // already due so we show the right one instead of a stale-but-queued
+            // earlier stage.
             chain.stageDueAt(scheduledAtMs, now)
         }
         val firstStage = chain.stage(firstIdx)

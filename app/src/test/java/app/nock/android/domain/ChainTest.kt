@@ -85,4 +85,38 @@ class ChainTest {
         // 24h late still maps to the last (ALARM) stage, not an OOB index.
         assertEquals(chain.lastIndex, chain.stageDueAt(0L, 24 * 60 * 60_000L))
     }
+
+    @Test fun firstPendingStage_far_future_starts_at_silent() {
+        val chain = DefaultChain.CHAIN
+        // Reminder a full day out: even the -10min SILENT pre-stage is still in
+        // the future, so we start at stage 0 as normal.
+        val now = 0L
+        val scheduled = 24 * 60 * 60_000L
+        assertEquals(0, chain.firstPendingStage(scheduled, now))
+    }
+
+    @Test fun firstPendingStage_skips_past_pre_stage_when_due_soon() {
+        // The bug: reminder due in 2min, SILENT pre-stage at -10min is already
+        // 8min in the past. It must NOT fire immediately (which would mirror a
+        // Telegram); we start at the first stage that hasn't passed (TELEGRAM).
+        val chain = DefaultChain.CHAIN
+        val now = 0L
+        val scheduled = 2 * 60_000L
+        assertEquals(1, chain.firstPendingStage(scheduled, now))
+    }
+
+    @Test fun firstPendingStage_at_trigger_keeps_pre_stage_when_lead_time_fits() {
+        // Reminder 15min out: the -10min SILENT pre-stage is still 5min away,
+        // so it is genuinely pending and we keep it.
+        val chain = DefaultChain.CHAIN
+        val now = 0L
+        val scheduled = 15 * 60_000L
+        assertEquals(0, chain.firstPendingStage(scheduled, now))
+    }
+
+    @Test fun firstPendingStage_falls_back_to_last_when_all_past() {
+        // Degenerate guard: every stage already in the past -> last stage.
+        val chain = DefaultChain.CHAIN
+        assertEquals(chain.lastIndex, chain.firstPendingStage(0L, 24 * 60 * 60_000L))
+    }
 }

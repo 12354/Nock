@@ -28,7 +28,10 @@ class VoiceWidgetToggleReceiver : BroadcastReceiver() {
             val launch = Intent(context, VoiceAlarmActivity::class.java).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
-            context.startActivity(launch)
+            // A widget tap grants a background-activity-launch window, so this
+            // normally succeeds; guard it anyway so an edge-case denial can't
+            // crash the receiver (consistent with the other launch sites).
+            runCatching { context.startActivity(launch) }
             return
         }
 

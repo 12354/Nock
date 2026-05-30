@@ -147,6 +147,8 @@ class UpdateManager(private val context: Context) {
             setDataAndType(uri, "application/vnd.android.package-archive")
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
         }
-        context.startActivity(intent)
+        // Launched from the application context, so guard against a launch
+        // denial rather than letting it crash the caller's coroutine.
+        runCatching { context.startActivity(intent) }
     }
 }

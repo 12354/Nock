@@ -57,8 +57,8 @@ class AlarmService : Service() {
         // Promote to foreground synchronously with the alarm notification itself
         // so it's bound to the running service — that's what makes it ongoing
         // and effectively undismissable while the alarm is ringing. The
-        // mediaPlayback FGS type is also what exempts us from BAL restrictions
-        // when launching the full-screen activity below.
+        // mediaPlayback FGS type is what lets us start this foreground service
+        // from the background when the alarm fires.
         val notification = notifier.buildAlarmNotification(
             escalationId = escalationId,
             reminderId = reminderId,
@@ -76,16 +76,29 @@ class AlarmService : Service() {
         ringingEscalationId = if (escalationId >= 0L) escalationId else null
         ringingReminderId = if (reminderId >= 0L) reminderId else null
 
+        // Launch the full-screen takeover eagerly — synchronously here, before
+        // the suspend guard below touches the database. The background-activity-
+        // launch grant we receive when the setAlarmClock alarm is delivered is
+        // short-lived; deferring startActivity() behind a Room round-trip can
+        // push it past that window on a busy device, leaving the loud stage
+        // ringing with only a heads-up notification and no takeover while the
+        // phone is unlocked and in use (when locked, the notification's
+        // full-screen intent still covers it). AlarmActivity re-checks the
+        // escalation in bindFromIntent and finishes itself if it was already
+        // Done/Snoozed, so launching ahead of the guard is safe for a stale
+        // start.
+        if (escalationId >= 0L) launchAlarmActivity(escalationId, reminderId)
+
         scope.launch {
             // Guard against a stale start: Done/Snooze may have already removed
             // the escalation by the time the system delivers our start command,
-            // and we don't want to ring or launch the full-screen activity then.
+            // and we don't want to ring then. The full-screen activity launched
+            // above self-cancels in that same situation.
             if (escalationId < 0L || activeDao.getById(escalationId) == null) {
                 stopAndDie()
                 return@launch
             }
             acquireWakeLock()
-            launchAlarmActivity(escalationId, reminderId)
             if (vibrationOnly) startVibration() else startSound()
         }
         // REDELIVER_INTENT so a killed alarm restarts with its original IDs.

@@ -30,6 +30,13 @@ class EscalationReceiver : BroadcastReceiver() {
         scope.launch {
             try {
                 engine.onAlarmFired(escalationId)
+            } catch (_: Throwable) {
+                // Backstop: the app-scope CoroutineScope uses a SupervisorJob
+                // with no CoroutineExceptionHandler, so an uncaught throw while
+                // handling an alarm would crash the app instead of just failing
+                // this one fire. Swallow it here — the known recoverable case
+                // (a denied foreground-service start) already degrades to a
+                // plain notification inside the engine.
             } finally {
                 try { wl?.takeIf { it.isHeld }?.release() } catch (_: Throwable) {}
                 pending.finish()

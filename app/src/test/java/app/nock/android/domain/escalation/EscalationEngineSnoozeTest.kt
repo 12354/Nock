@@ -2,6 +2,7 @@ package app.nock.android.domain.escalation
 
 import app.nock.android.data.entity.ActiveEscalationEntity
 import app.nock.android.domain.model.StageType
+import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.slot
 import io.mockk.verify
@@ -105,6 +106,25 @@ class EscalationEngineSnoozeTest {
         h.engine.snooze(row.id)
 
         coVerify(exactly = 0) { h.telegram.deleteMessage(any()) }
+    }
+
+    @Test fun snooze_persists_rearm_before_attempting_telegram_cleanup() = runTest {
+        val h = EngineHarness(now = NOW)
+        val row = activeEntity(
+            nextStageIndex = TEST_CHAIN.lastIndex,
+            nextFireAtMs = NOW,
+            sentTelegramMessageIdsCsv = "10,20",
+        )
+        h.dao.upsert(row)
+        // A failing/slow Telegram delete must not lose the snoozed state: the
+        // repeat is re-armed before the network cleanup runs.
+        coEvery { h.telegram.deleteMessage(any()) } throws RuntimeException("network down")
+
+        runCatching { h.engine.snooze(row.id) }
+
+        val updated = h.dao.getById(row.id)!!
+        assertEquals(NOW + TEST_CHAIN.repeatIntervalMs, updated.nextFireAtMs)
+        verify { h.scheduler.scheduleStage(eq(row.id), eq(NOW + TEST_CHAIN.repeatIntervalMs), any()) }
     }
 
     @Test fun snooze_unknown_escalation_is_a_noop() = runTest {

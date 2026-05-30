@@ -110,7 +110,8 @@ class NotificationPresenter @Inject constructor(
         group: Group,
         escalationId: Long,
         channelId: String
-    ): NotificationCompat.Builder = alarmActionsBuilder(escalationId, reminder.name, channelId)
+    ): NotificationCompat.Builder =
+        alarmActionsBuilder(escalationId, reminder.name, channelId)
 
     private fun alarmActionsBuilder(
         escalationId: Long,
@@ -137,19 +138,18 @@ class NotificationPresenter @Inject constructor(
             snoozeIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        val tap = Intent(ctx, app.nock.android.ui.MainActivity::class.java).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-        val tapPI = PendingIntent.getActivity(
-            ctx, 0, tap,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
+        // No content intent: tapping the notification body does nothing, so the
+        // body can't be mis-tapped into an action. The only way to interact is
+        // the explicit Done/Snooze buttons (and, for the loud stage, the
+        // full-screen takeover). setOngoing(true) makes it non-dismissable —
+        // the user can't swipe it away (per spec, swiping must not count as
+        // Done); it's cleared only when Done/Snooze cancels it.
         return NotificationCompat.Builder(ctx, channelId)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(reminderName)
             .setAutoCancel(false)
+            .setOngoing(true)
             .setOnlyAlertOnce(false)
-            .setContentIntent(tapPI)
             .addAction(0, ctx.getString(R.string.done), donePI)
             .addAction(0, ctx.getString(R.string.snooze), snoozePI)
     }

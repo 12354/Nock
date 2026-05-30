@@ -78,6 +78,33 @@ class EscalationEngineDoneTest {
         assertTrue(h.dao.rows.values.any { it.reminderId == r.id })
     }
 
+    @Test fun done_completes_and_rearms_before_attempting_telegram_cleanup() = runTest {
+        val h = EngineHarness(now = NOW)
+        val r = reminder(schedule = Schedule.Daily(listOf(10 * 60)))
+        h.stubReminderAndGroup(r, group())
+        val row = activeEntity(
+            nextStageIndex = 3,
+            nextFireAtMs = NOW,
+            sentTelegramMessageIdsCsv = "1,2",
+        )
+        h.dao.upsert(row)
+        // The Telegram delete is a network call; in production the receiver's
+        // process can be killed mid-call once the alarm foreground service is
+        // gone (here we model that as a thrown failure). The escalation must
+        // already be torn down and the next occurrence armed before we get here,
+        // otherwise a slow/failed delete strands the reminder at a past fire time.
+        coEvery { h.telegram.deleteMessage(any()) } throws RuntimeException("network down")
+
+        runCatching { h.engine.done(row.id) }
+
+        // The alarm was cancelled and the next occurrence re-armed (a fresh row
+        // for the reminder exists) — all before the failing Telegram cleanup,
+        // so a slow/failed delete can no longer strand the escalation.
+        verify { h.scheduler.cancel(row.id) }
+        coVerify { h.repo.updateFireState(eq(r.id), any(), eq(NOW)) }
+        assertTrue(h.dao.rows.values.any { it.reminderId == r.id })
+    }
+
     @Test fun done_unknown_escalation_is_a_noop() = runTest {
         val h = EngineHarness(now = NOW)
 

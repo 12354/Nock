@@ -14,8 +14,8 @@ import androidx.glance.state.PreferencesGlanceStateDefinition
  *
  *  * [Idle]      — nothing happening; tap starts recording.
  *  * [Starting]  — tap received, foreground service spinning up the recognizer.
- *  * [Recording] — recognizer is live; tap stops and opens MainActivity.
- *  * [Stopping]  — stop received; finalizing transcript before opening MainActivity.
+ *  * [Recording] — recognizer is live; tap stops and finalizes.
+ *  * [Stopping]  — stop received; finalizing transcript (parsing + toast) in the background.
  *
  * The service is the single source of truth — every transition flows through
  * [write], which persists into the Glance [PreferencesGlanceStateDefinition]

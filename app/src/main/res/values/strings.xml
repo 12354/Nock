@@ -232,6 +232,7 @@
     <string name="widget_voice_alarm_description">Tap to record a voice alarm</string>
     <string name="widget_voice_recording_label">Recording — tap to stop</string>
     <string name="widget_voice_notification_title">Listening…</string>
+    <string name="widget_voice_notification_processing">Saving your task…</string>
     <string name="widget_voice_notification_stop_action">Stop</string>
 
     <!-- Settings: DeepSeek -->

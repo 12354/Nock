@@ -1,6 +1,7 @@
 package app.nock.android.history
 
 import android.content.Context
+import app.nock.android.domain.model.EscalationChain
 import app.nock.android.domain.model.Schedule
 import app.nock.android.domain.model.StageType
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -128,6 +129,11 @@ class AlarmHistoryLogger @Inject constructor(
                 }
             }
             append('"').append(s.name).append('"').append(" · ").append(parts.joinToString(" · ")).append('\n')
+            // The escalation chain the reminder will walk when it fires — the
+            // stage sequence with offsets relative to the due time, plus the
+            // repeat interval. Indented under its alarm so a bug report shows
+            // exactly how every alarm is configured to escalate.
+            append("    chain: ").append(describeChain(s.chain)).append('\n')
         }
     }
 
@@ -139,6 +145,7 @@ class AlarmHistoryLogger @Inject constructor(
         val nextFireAtMs: Long?,
         val lastCompletedAt: Long?,
         val active: ActiveState?,
+        val chain: EscalationChain,
     )
 
     /** The escalation state of a currently-firing alarm: the next stage and when. */
@@ -175,6 +182,19 @@ class AlarmHistoryLogger @Inject constructor(
         is Schedule.IntervalFromLast -> "every ${humanDuration(s.intervalMs)} after completion"
         is Schedule.OnUnlock -> "on next unlock"
     }
+
+    /**
+     * Human-readable one-liner for an escalation chain: each stage as
+     * "label ±offset" relative to the due time, joined by arrows, then the
+     * repeat interval — e.g. "silent -10m → telegram +5m → alarm +10m · repeat 10m".
+     */
+    fun describeChain(c: EscalationChain): String {
+        val stages = c.stages.joinToString(" → ") { "${stageLabel(it.type)} ${offsetLabel(it.offsetMs)}" }
+        return "$stages · repeat ${humanDuration(c.repeatIntervalMs)}"
+    }
+
+    /** Signed offset relative to the due time: "-10m", "+0m", "+5m". */
+    private fun offsetLabel(ms: Long): String = (if (ms < 0) "-" else "+") + humanDuration(ms)
 
     private fun hhmm(minutes: Int): String =
         String.format(Locale.US, "%02d:%02d", minutes / 60, minutes % 60)

@@ -314,11 +314,14 @@ private fun ActiveEscalationCard(
                 }
             }
             Spacer(Modifier.height(16.dp))
-            StageProgress(chain = active.chain, currentIndex = active.currentStageIndex, accent = color)
+            StageProgress(chain = active.chain, currentIndex = active.nextStageIndex, accent = color)
             Spacer(Modifier.height(14.dp))
             val ctx = LocalContext.current
-            val nextStage = if (active.currentStageIndex < active.chain.lastIndex)
-                active.chain.stage(active.currentStageIndex + 1)
+            // nextStageIndex is the stage that fires next at nextFireAtMs, so it
+            // *is* the next escalation — don't advance past it. The last stage is
+            // the repeating alarm, shown as "repeats at …" instead.
+            val nextStage = if (active.nextStageIndex < active.chain.lastIndex)
+                active.chain.stage(active.nextStageIndex)
             else null
             val timeStr = formatClock(active.nextFireAtMs)
             val subtitle = if (nextStage != null) {

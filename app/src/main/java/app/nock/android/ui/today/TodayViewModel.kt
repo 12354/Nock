@@ -31,8 +31,16 @@ import javax.inject.Inject
 data class ActiveEscalationInfo(
     val escalationId: Long,
     val chain: EscalationChain,
-    val currentStageIndex: Int,
+    val nextStageIndex: Int,
     val nextFireAtMs: Long,
+    /**
+     * True once the chain has actually begun escalating, i.e. the reminder's
+     * trigger time has been reached. While the trigger is still in the future
+     * the row exists but only the pre-trigger stage is queued — the reminder is
+     * merely *armed*, nothing has fired, and it should render as an upcoming
+     * item rather than the live "firing now" card.
+     */
+    val hasStarted: Boolean,
 )
 
 data class TodayItem(
@@ -40,7 +48,8 @@ data class TodayItem(
     val group: Group,
     val active: ActiveEscalationInfo?,
 ) {
-    val isActive: Boolean get() = active != null
+    /** Currently escalating *and* the chain has actually started firing. */
+    val isActive: Boolean get() = active != null && active.hasStarted
 }
 
 @HiltViewModel
@@ -66,6 +75,7 @@ class TodayViewModel @Inject constructor(
         repo.observeGroups(),
         activeDao.observeAll()
     ) { reminders, groups, active ->
+        val now = System.currentTimeMillis()
         val byId = groups.associateBy { it.id }
         val activeByReminder = active.associateBy { it.reminderId }
         reminders.mapNotNull { r ->
@@ -75,8 +85,9 @@ class TodayViewModel @Inject constructor(
                 if (chain != null) ActiveEscalationInfo(
                     escalationId = ent.id,
                     chain = chain,
-                    currentStageIndex = ent.nextStageIndex.coerceIn(0, chain.lastIndex),
+                    nextStageIndex = ent.nextStageIndex.coerceIn(0, chain.lastIndex),
                     nextFireAtMs = ent.nextFireAtMs,
+                    hasStarted = now >= ent.startedAtMs,
                 ) else null
             }
             TodayItem(r, g, a)

@@ -38,6 +38,7 @@ data class SettingsState(
     val deepSeekApiKey: String = "",
     val deepSeekModel: String = SettingsRepository.DEFAULT_DEEPSEEK_MODEL,
     val deepSeekBaseUrl: String = SettingsRepository.DEFAULT_DEEPSEEK_BASE_URL,
+    val deepSeekContext: String = "",
 )
 
 @HiltViewModel
@@ -83,6 +84,7 @@ class SettingsViewModel @Inject constructor(
                 ?: SettingsRepository.DEFAULT_DEEPSEEK_MODEL,
             deepSeekBaseUrl = kv[SettingsRepository.KEY_DEEPSEEK_BASE_URL]?.takeIf { it.isNotBlank() }
                 ?: SettingsRepository.DEFAULT_DEEPSEEK_BASE_URL,
+            deepSeekContext = kv[SettingsRepository.KEY_DEEPSEEK_CONTEXT].orEmpty(),
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsState())
 
@@ -142,11 +144,12 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { repo.deleteGroup(g) }
     }
 
-    fun setDeepSeek(apiKey: String, model: String, baseUrl: String) {
+    fun setDeepSeek(apiKey: String, model: String, baseUrl: String, context: String) {
         viewModelScope.launch {
             settings.set(SettingsRepository.KEY_DEEPSEEK_API_KEY, apiKey)
             settings.set(SettingsRepository.KEY_DEEPSEEK_MODEL, model.ifBlank { SettingsRepository.DEFAULT_DEEPSEEK_MODEL })
             settings.set(SettingsRepository.KEY_DEEPSEEK_BASE_URL, baseUrl.ifBlank { SettingsRepository.DEFAULT_DEEPSEEK_BASE_URL })
+            settings.set(SettingsRepository.KEY_DEEPSEEK_CONTEXT, context.trim())
         }
     }
 }

@@ -72,19 +72,27 @@ class SettingsViewModel @Inject constructor(
         val now = System.currentTimeMillis()
         val groups = repo.getGroups().associateBy { it.id }
         val states = repo.getAllReminders().map { r ->
+            val group = groups[r.groupId]
             val active = activeDao.getByReminderId(r.id)
             val activeState = active?.let { row ->
                 val chain = runCatching { ChainJson.decode(row.chainSnapshotJson) }.getOrNull()
                 val stageType = chain?.let { it.stage(row.nextStageIndex.coerceIn(0, it.lastIndex)).type }
                 stageType?.let { AlarmHistoryLogger.ActiveState(it, row.nextFireAtMs) }
             }
+            // The chain currently in flight (snapshotted when it started) if the
+            // alarm is mid-escalation, else the chain it would walk next fire:
+            // the group's override or the global default.
+            val chain = active?.let { runCatching { ChainJson.decode(it.chainSnapshotJson) }.getOrNull() }
+                ?: group?.let { repo.effectiveChain(it) }
+                ?: settings.getStageChain()
             AlarmHistoryLogger.AlarmState(
                 name = r.name,
-                group = groups[r.groupId]?.name,
+                group = group?.name,
                 schedule = r.schedule,
                 nextFireAtMs = r.nextFireAt,
                 lastCompletedAt = r.lastCompletedAt,
                 active = activeState,
+                chain = chain,
             )
         }
         return alarmHistory.dump() + alarmHistory.snapshot(states, now)

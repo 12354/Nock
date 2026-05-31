@@ -112,6 +112,7 @@ fun activeEntity(
 class EngineHarness(now: Long = NOW) {
     val clock = FakeTimeSource(now)
     val dao = FakeActiveEscalationDao()
+    val pendingDeletionDao = FakePendingTelegramDeletionDao()
     val repo: NockRepository = mockk(relaxed = true)
     val settings: SettingsRepository = mockk(relaxed = true)
     val scheduler: AlarmScheduler = mockk(relaxed = true)
@@ -120,7 +121,7 @@ class EngineHarness(now: Long = NOW) {
     val history: AlarmHistoryLogger = mockk(relaxed = true)
 
     val engine = app.nock.android.domain.escalation.EscalationEngine(
-        repo, dao, settings, scheduler, notifier, telegram, clock, history
+        repo, dao, settings, scheduler, notifier, telegram, clock, history, pendingDeletionDao
     )
 
     init {

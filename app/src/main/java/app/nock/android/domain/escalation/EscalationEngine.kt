@@ -5,7 +5,9 @@ import app.nock.android.alarm.AlarmService
 import app.nock.android.data.NockRepository
 import app.nock.android.data.SettingsRepository
 import app.nock.android.data.dao.ActiveEscalationDao
+import app.nock.android.data.dao.PendingTelegramDeletionDao
 import app.nock.android.data.entity.ActiveEscalationEntity
+import app.nock.android.data.entity.PendingTelegramDeletionEntity
 import app.nock.android.data.json.ChainJson
 import app.nock.android.domain.model.EscalationChain
 import app.nock.android.domain.model.Reminder
@@ -30,6 +32,7 @@ class EscalationEngine @Inject constructor(
     private val telegram: TelegramSender,
     private val time: TimeSource,
     private val history: AlarmHistoryLogger,
+    private val pendingDeletionDao: PendingTelegramDeletionDao,
 ) {
     suspend fun scheduleNextFireForReminder(reminderId: Long): Long? {
         val reminder = repo.getReminder(reminderId) ?: return null
@@ -112,6 +115,11 @@ class EscalationEngine @Inject constructor(
     }
 
     suspend fun onAlarmFired(escalationId: Long) {
+        // Every alarm tick is a chance to retry any Telegram deletions that a
+        // previous Done/Snooze/Cancel couldn't complete (transient network error
+        // or the receiver process dying mid-call). Run it first so it happens even
+        // when this escalation has since been removed.
+        flushPendingTelegramDeletions()
         val esc = activeDao.getById(escalationId) ?: return
         val reminder = repo.getReminder(esc.reminderId) ?: run {
             activeDao.delete(esc); return
@@ -196,24 +204,28 @@ class EscalationEngine @Inject constructor(
 
     suspend fun done(escalationId: Long) {
         val esc = activeDao.getById(escalationId) ?: return
-        // Capture before the row is deleted — the slow Telegram cleanup below
-        // still needs these ids.
-        val sentTelegramCsv = esc.sentTelegramMessageIdsCsv
         scheduler.cancel(esc.id)
         notifier.cancel(esc.id)
         notifier.stopAlarm()
 
+        // Durably queue the sent-message ids for deletion BEFORE we drop the row
+        // that holds them, so the ids can't be lost if the delete network call
+        // fails or the process dies. The queue is drained below and retried on
+        // every later alarm tick / boot until Telegram confirms each deletion.
+        enqueueTelegramDeletions(esc.sentTelegramMessageIdsCsv)
+
         // Commit all durable state — drop the active row and arm the next
-        // occurrence — BEFORE the best-effort Telegram cleanup. This action is
+        // occurrence — BEFORE the best-effort Telegram flush. This action is
         // delivered to a BroadcastReceiver whose process is only kept alive by
         // the alarm foreground service we just stopped (plus a short goAsync
-        // window). deleteSentTelegramMessages is a network call that can block
+        // window). flushPendingTelegramDeletions is a network call that can block
         // for tens of seconds on a bad connection (15s connect + 20s read,
         // per message); if it ran first and the process was killed mid-call we
         // would have already cancelled the alarm but never removed the row or
         // re-armed the chain, leaving the reminder stuck at a past fire time
         // that never rings again. Keep the network work last so it can't
-        // corrupt the escalation state.
+        // corrupt the escalation state — and the durable queue above means a
+        // killed flush merely defers the deletion rather than dropping it.
         val reminder = repo.getReminder(esc.reminderId)
         activeDao.delete(esc)
         if (reminder != null) {
@@ -232,21 +244,23 @@ class EscalationEngine @Inject constructor(
                 }
             }
         }
-        deleteSentTelegramMessages(sentTelegramCsv)
+        flushPendingTelegramDeletions()
     }
 
     suspend fun snooze(escalationId: Long) {
         val esc = activeDao.getById(escalationId) ?: return
-        // Capture before the row's CSV is cleared — the Telegram cleanup below
-        // still needs these ids.
-        val sentTelegramCsv = esc.sentTelegramMessageIdsCsv
         val chain = runCatching { ChainJson.decode(esc.chainSnapshotJson) }.getOrNull()
             ?: settings.getStageChain()
         notifier.cancelStageVisuals(esc.id)
         notifier.stopAlarm()
 
+        // Durably queue the sent-message ids BEFORE the row's csv is cleared
+        // below, so a failed/interrupted delete can't lose them — the queue is
+        // drained at the end and retried on every later alarm tick / boot.
+        enqueueTelegramDeletions(esc.sentTelegramMessageIdsCsv)
+
         // Persist the snooze (re-armed repeat / advanced cursor) BEFORE the
-        // best-effort Telegram cleanup, for the same reason as done(): the
+        // best-effort Telegram flush, for the same reason as done(): the
         // network delete can block past the receiver's lifetime once the alarm
         // foreground service is gone, and we must not lose the snoozed state if
         // the process is killed mid-call.
@@ -269,7 +283,7 @@ class EscalationEngine @Inject constructor(
             activeDao.update(esc.copy(sentTelegramMessageIdsCsv = ""))
         }
         repo.getReminder(esc.reminderId)?.let { history.snoozed(it.name, nextAt) }
-        deleteSentTelegramMessages(sentTelegramCsv)
+        flushPendingTelegramDeletions()
     }
 
     suspend fun cancelActive(reminderId: Long) {
@@ -285,17 +299,34 @@ class EscalationEngine @Inject constructor(
         if (AlarmService.ringingEscalationId == esc.id) {
             notifier.stopAlarm()
         }
-        deleteSentTelegramMessages(esc.sentTelegramMessageIdsCsv)
+        // Queue durably before the row holding the ids is dropped, then flush.
+        enqueueTelegramDeletions(esc.sentTelegramMessageIdsCsv)
         activeDao.delete(esc)
+        flushPendingTelegramDeletions()
     }
 
     private fun appendMessageId(csv: String, messageId: Long): String =
         if (csv.isEmpty()) messageId.toString() else "$csv,$messageId"
 
-    private suspend fun deleteSentTelegramMessages(csv: String) {
+    /** Persist each id in [csv] into the durable pending-deletion queue. */
+    private suspend fun enqueueTelegramDeletions(csv: String) {
         if (csv.isEmpty()) return
         csv.split(',').forEach { token ->
-            token.toLongOrNull()?.let { telegram.deleteMessage(it) }
+            token.toLongOrNull()?.let { pendingDeletionDao.insert(PendingTelegramDeletionEntity(it)) }
+        }
+    }
+
+    /**
+     * Best-effort drain of the durable pending-deletion queue. An id is removed
+     * only once [TelegramSender.deleteMessage] reports the deletion is resolved
+     * (succeeded, or permanently un-deletable); transient failures stay queued
+     * and are retried on the next alarm tick / boot.
+     */
+    private suspend fun flushPendingTelegramDeletions() {
+        pendingDeletionDao.getAll().forEach { pending ->
+            if (telegram.deleteMessage(pending.messageId)) {
+                pendingDeletionDao.delete(pending.messageId)
+            }
         }
     }
 
@@ -314,6 +345,9 @@ class EscalationEngine @Inject constructor(
     }
 
     suspend fun rescheduleAll() {
+        // Boot / time-change is also a good moment to retry any deletions that
+        // never completed before the device restarted.
+        flushPendingTelegramDeletions()
         activeDao.getAll().forEach { esc ->
             val chain = runCatching { ChainJson.decode(esc.chainSnapshotJson) }.getOrNull() ?: return@forEach
             val type = chain.stage(esc.nextStageIndex.coerceAtMost(chain.lastIndex)).type

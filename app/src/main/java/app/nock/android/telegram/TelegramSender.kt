@@ -78,11 +78,26 @@ class TelegramSender @Inject constructor(
             }
         }
 
+    /**
+     * Attempts to delete a previously-sent Telegram message.
+     *
+     * Returns whether the deletion is **resolved** — i.e. it should be removed
+     * from the durable retry queue and never attempted again — rather than raw
+     * HTTP success. A deletion is resolved when:
+     *  - the API confirms success, OR
+     *  - the message is permanently un-deletable: a 4xx other than 429 (e.g. 400
+     *    "message to delete not found" / "message can't be deleted" — already
+     *    gone, too old, or no rights), so retrying can never succeed, OR
+     *  - Telegram is not configured (no token/chat), so there is nothing to do.
+     *
+     * Returns false (keep retrying) only for transient failures: a network
+     * exception, a 5xx, or 429 rate limiting.
+     */
     suspend fun deleteMessage(messageId: Long): Boolean {
         val token = settings.get(SettingsRepository.KEY_TELEGRAM_TOKEN)?.takeIf { it.isNotBlank() }
-            ?: return false
+            ?: return true
         val chat = settings.get(SettingsRepository.KEY_TELEGRAM_CHAT)?.takeIf { it.isNotBlank() }
-            ?: return false
+            ?: return true
         return deleteMessageRaw(token, chat, messageId)
     }
 
@@ -93,7 +108,16 @@ class TelegramSender @Inject constructor(
                 .toRequestBody("application/json".toMediaType())
             val req = Request.Builder().url(url).post(body).build()
             try {
-                client.newCall(req).execute().use { resp -> resp.isSuccessful }
+                client.newCall(req).execute().use { resp ->
+                    when {
+                        resp.isSuccessful -> true
+                        // Permanent client errors (message already gone / not
+                        // deletable / bad request) can never be fixed by retrying;
+                        // treat as resolved. 429 is rate limiting — retry later.
+                        resp.code in 400..499 && resp.code != 429 -> true
+                        else -> false
+                    }
+                }
             } catch (_: Throwable) {
                 false
             }

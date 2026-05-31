@@ -116,14 +116,19 @@ class AlarmActivity : ComponentActivity() {
 
     private fun bindFromIntent(intent: Intent?) {
         val escalationId = intent?.getLongExtra(IntentExtras.EXTRA_ESCALATION_ID, -1L) ?: -1L
-        val reminderId = intent?.getLongExtra(IntentExtras.EXTRA_REMINDER_ID, -1L) ?: -1L
+        val intentReminderId = intent?.getLongExtra(IntentExtras.EXTRA_REMINDER_ID, -1L) ?: -1L
         escalationIdState.value = escalationId
         groupState.value = null
         lifecycleScope.launch {
-            if (escalationId >= 0L && activeDao.getById(escalationId) == null) {
+            val esc = if (escalationId >= 0L) activeDao.getById(escalationId) else null
+            if (escalationId >= 0L && esc == null) {
                 finish()
                 return@launch
             }
+            // The receiver launches us without a reminderId (it only knows the
+            // escalation), so fall back to the escalation row's reminderId to
+            // resolve the alarm's name and group tint.
+            val reminderId = if (intentReminderId >= 0L) intentReminderId else esc?.reminderId ?: -1L
             val r = if (reminderId >= 0L) repo.getReminder(reminderId) else null
             if (r != null) {
                 nameState.value = r.name

@@ -18,7 +18,8 @@ class AlarmScheduler @Inject constructor(
     private val am: AlarmManager = ctx.getSystemService()!!
 
     fun scheduleStage(escalationId: Long, atMs: Long, stageType: StageType) {
-        val pi = pendingIntent(escalationId)
+        val isLoud = stageType == StageType.ALARM || stageType == StageType.ALARM_VIBRATE
+        val pi = pendingIntent(escalationId, isLoud)
         when (stageType) {
             StageType.ALARM, StageType.ALARM_VIBRATE -> {
                 val showIntent = openAppPI()
@@ -38,10 +39,14 @@ class AlarmScheduler @Inject constructor(
         am.cancel(pendingIntent(escalationId))
     }
 
-    private fun pendingIntent(escalationId: Long): PendingIntent {
+    // isLoud only carries informational extras for the receiver and never
+    // affects PendingIntent matching (equality ignores extras), so cancel()
+    // can keep passing the default and still target the same alarm.
+    private fun pendingIntent(escalationId: Long, isLoud: Boolean = false): PendingIntent {
         val intent = Intent(ctx, EscalationReceiver::class.java).apply {
             action = "${ctx.packageName}.ESCALATION_FIRE"
             putExtra(IntentExtras.EXTRA_ESCALATION_ID, escalationId)
+            putExtra(IntentExtras.EXTRA_IS_LOUD_STAGE, isLoud)
         }
         return PendingIntent.getBroadcast(
             ctx,

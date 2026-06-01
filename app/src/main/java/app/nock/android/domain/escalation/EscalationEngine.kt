@@ -237,7 +237,17 @@ class EscalationEngine @Inject constructor(
                 repo.deleteReminder(reminder)
             } else {
                 val now = time.nowMs()
-                val next = reminder.schedule.nextFireFrom(now, now)
+                // Advance past the occurrence just completed. When Done is pressed
+                // during the pre-trigger window — e.g. the SILENT stage fires 10 min
+                // before the due time and the user acknowledges at 07:39 for a 07:40
+                // reminder — `now` is still earlier than this occurrence's trigger, so
+                // nextFireFrom(now) would return the SAME occurrence and re-arm the
+                // chain we're dismissing. Its pre-trigger stage is already in the past,
+                // so the re-armed chain jumps straight to Telegram/alarm and rings
+                // anyway (the bug this guards against). Anchor the search at the
+                // occurrence's own scheduled time so we always move to the next one.
+                val searchFrom = max(now, reminder.nextFireAt ?: now)
+                val next = reminder.schedule.nextFireFrom(searchFrom, now)
                 repo.updateFireState(reminder.id, next, now)
                 if (next != null) {
                     startEscalationAt(reminder.copy(lastCompletedAt = now, nextFireAt = next), next)

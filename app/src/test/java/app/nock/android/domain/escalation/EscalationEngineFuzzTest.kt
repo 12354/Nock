@@ -57,6 +57,14 @@ import kotlin.random.Random
  *  - Per-escalation timeline (checked afterwards): for any single escalation the
  *    fired stage index is monotonically non-decreasing and within the chain
  *    (holds even across clock jumps, since each re-arm is floored to now + 1s).
+ *  - Per-done (completion retires the occurrence): pressing Done on a fixed-slot
+ *    calendar reminder (Daily/Weekly/Monthly) must arm a DIFFERENT occurrence. A
+ *    row is keyed to its occurrence by startedAtMs, so after Done no surviving row
+ *    for that reminder may still point at the completed trigger — otherwise the
+ *    dismissed slot re-arms and rings again. This is the invariant the
+ *    pre-trigger-window bug violated: Done before the due time re-armed the same
+ *    occurrence, whose past pre-trigger stage made the chain jump straight to the
+ *    alarm. (Completion-anchored IntervalFromLast is excluded — see doneAndAssert.)
  *
  * OnUnlock and group pausing are intentionally excluded here (they're event- /
  * window-gated rather than part of the time-driven fire loop) and are covered
@@ -268,7 +276,51 @@ class EscalationEngineFuzzTest {
 
         private suspend fun doneRandomActive() {
             val id = dao.rows.keys.toList().randomOrNull(rnd) ?: return
+            doneAndAssertAdvanced(id)
+        }
+
+        /**
+         * Complete an escalation and assert the engine's completion contract for
+         * fixed-slot calendar schedules: once Done is pressed, the occurrence just
+         * dismissed must be RETIRED. A row is bound to its occurrence through
+         * startedAtMs (the occurrence's scheduled wall-clock trigger), so no
+         * escalation still armed for this reminder may point back at the completed
+         * trigger — otherwise the dismissed slot re-arms and rings again.
+         *
+         * This is exactly the pre-trigger-window bug: pressing Done before the due
+         * time made nextFireFrom(now) hand back today's slot again, and because its
+         * pre-trigger (SILENT) stage was already in the past the re-armed chain
+         * jumped straight to the alarm and rang anyway.
+         *
+         * Scoped to Daily/Weekly/Monthly on purpose. Those are the schedules whose
+         * occurrence IS a fixed timestamp, so re-arming the identical trigger is
+         * unambiguously wrong. Completion-anchored schedules (IntervalFromLast) are
+         * excluded: their next occurrence is "now + interval", which can legitimately
+         * coincide with the abandoned trigger (e.g. Done pressed the instant after
+         * arming) without being a re-ring. Checked synchronously right after done()
+         * so a later backward clock jump (which legitimately re-arms past
+         * occurrences via rescheduleAll) can't muddy the result.
+         */
+        private suspend fun doneAndAssertAdvanced(id: Long) {
+            val esc = dao.getById(id) ?: return
+            val reminderId = esc.reminderId
+            val schedule = reminders[reminderId]?.schedule
+            val completedTrigger = esc.startedAtMs
             engine.done(id)
+            val isFixedSlotCalendar = schedule is Schedule.Daily ||
+                schedule is Schedule.Weekly ||
+                schedule is Schedule.Monthly
+            if (!isFixedSlotCalendar) return
+            dao.rows.values
+                .filter { it.reminderId == reminderId }
+                .forEach { row ->
+                    assertTrue(
+                        "done() re-armed the completed occurrence for reminder $reminderId: " +
+                            "row.startedAtMs=${row.startedAtMs} must differ from the completed " +
+                            "trigger $completedTrigger ${ctx()}",
+                        row.startedAtMs != completedTrigger,
+                    )
+                }
         }
 
         /**
@@ -305,7 +357,7 @@ class EscalationEngineFuzzTest {
                 assertConsistent("after firing $id")
 
                 if (react && dao.rows.containsKey(id) && rnd.nextBoolean()) {
-                    if (rnd.nextBoolean()) engine.snooze(id) else engine.done(id)
+                    if (rnd.nextBoolean()) engine.snooze(id) else doneAndAssertAdvanced(id)
                     assertConsistent("after reacting to $id")
                 }
 

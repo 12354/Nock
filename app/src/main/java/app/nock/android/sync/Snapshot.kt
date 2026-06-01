@@ -1,5 +1,7 @@
 package app.nock.android.sync
 
+import androidx.room.withTransaction
+import app.nock.android.data.NockDatabase
 import app.nock.android.data.NockRepository
 import app.nock.android.data.SettingsRepository
 import app.nock.android.data.dao.ActiveEscalationDao
@@ -57,6 +59,7 @@ class SnapshotCodec @Inject constructor() {
 
 @Singleton
 class SnapshotService @Inject constructor(
+    private val db: NockDatabase,
     private val groupDao: GroupDao,
     private val reminderDao: ReminderDao,
     private val activeDao: ActiveEscalationDao,
@@ -92,41 +95,47 @@ class SnapshotService @Inject constructor(
         val remoteSettings = snap.settings
         val syncStart = System.currentTimeMillis()
 
-        activeDao.clear()
-        reminderDao.clear()
-        groupDao.clear()
-        settingsDao.clear()
+        // Wipe-and-replace must be atomic: a crash or kill partway through would
+        // otherwise leave the user with a half-cleared database and no rollback.
+        db.withTransaction {
+            activeDao.clear()
+            reminderDao.clear()
+            groupDao.clear()
+            settingsDao.clear()
 
-        groupDao.upsertAll(snap.groups.map {
-            GroupEntity(
-                id = it.id,
-                name = it.name,
-                color = it.color,
-                icon = it.icon,
-                overrideChainJson = it.overrideChainJson,
-                overrideRepeatIntervalMs = it.overrideRepeatIntervalMs,
-                pausedUntilMs = it.pausedUntilMs,
-                telegramSilentMirror = it.telegramSilentMirror,
-                sortIndex = it.sortIndex,
-                seedKey = it.seedKey,
-            )
-        })
-        reminderDao.upsertAll(snap.reminders.map {
-            ReminderEntity(
-                id = it.id,
-                groupId = it.groupId,
-                name = it.name,
-                scheduleType = it.scheduleType,
-                scheduleJson = it.scheduleJson,
-                nextFireAt = it.nextFireAt,
-                lastCompletedAt = it.lastCompletedAt,
-                createdAt = it.createdAt
-            )
-        })
-        settingsDao.upsertAll(remoteSettings.map { (k, v) -> SettingsEntity(k, v) })
-        settings.set(SettingsRepository.KEY_DRIVE_LAST_REMOTE_MS, snap.savedAtMs.toString())
-        settings.set(SettingsRepository.KEY_DRIVE_LAST_SYNC_MS, syncStart.toString())
+            groupDao.upsertAll(snap.groups.map {
+                GroupEntity(
+                    id = it.id,
+                    name = it.name,
+                    color = it.color,
+                    icon = it.icon,
+                    overrideChainJson = it.overrideChainJson,
+                    overrideRepeatIntervalMs = it.overrideRepeatIntervalMs,
+                    pausedUntilMs = it.pausedUntilMs,
+                    telegramSilentMirror = it.telegramSilentMirror,
+                    sortIndex = it.sortIndex,
+                    seedKey = it.seedKey,
+                )
+            })
+            reminderDao.upsertAll(snap.reminders.map {
+                ReminderEntity(
+                    id = it.id,
+                    groupId = it.groupId,
+                    name = it.name,
+                    scheduleType = it.scheduleType,
+                    scheduleJson = it.scheduleJson,
+                    nextFireAt = it.nextFireAt,
+                    lastCompletedAt = it.lastCompletedAt,
+                    createdAt = it.createdAt
+                )
+            })
+            settingsDao.upsertAll(remoteSettings.map { (k, v) -> SettingsEntity(k, v) })
+            settings.set(SettingsRepository.KEY_DRIVE_LAST_REMOTE_MS, snap.savedAtMs.toString())
+            settings.set(SettingsRepository.KEY_DRIVE_LAST_SYNC_MS, syncStart.toString())
+        }
 
+        // Re-arm alarms outside the transaction: it does network/IO (Telegram
+        // flush) and must not run while holding the DB transaction lock.
         engine.rescheduleAll()
         return true
     }

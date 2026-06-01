@@ -1,5 +1,6 @@
 package app.nock.android.ui.voice
 
+import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -30,12 +31,20 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import app.nock.android.R
+import app.nock.android.ui.LocaleHelper
 import app.nock.android.ui.theme.NockTheme
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.delay
 
 @AndroidEntryPoint
 class VoiceAlarmActivity : ComponentActivity() {
+    // Apply the user-selected app language. ComponentActivity (unlike
+    // AppCompatActivity) doesn't pick up AppCompatDelegate's per-app locale, so
+    // wrap the base context the same way MainActivity/AlarmActivity do.
+    override fun attachBaseContext(newBase: Context) {
+        super.attachBaseContext(LocaleHelper.wrap(newBase))
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {

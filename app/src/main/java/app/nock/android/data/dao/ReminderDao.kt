@@ -18,10 +18,14 @@ interface ReminderDao {
     @Query("SELECT * FROM reminders WHERE groupId = :groupId ORDER BY COALESCE(nextFireAt, 9223372036854775807) ASC")
     fun observeByGroup(groupId: Long): Flow<List<ReminderEntity>>
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    // Upsert (not @Insert(REPLACE)): REPLACE would delete the existing row and
+    // re-insert it, cascade-deleting any in-flight active_escalations
+    // (active_escalations FK reminderId ON DELETE CASCADE). @Upsert updates in
+    // place, so editing a reminder preserves its running escalation.
+    @Upsert
     suspend fun insert(r: ReminderEntity): Long
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Upsert
     suspend fun upsertAll(rs: List<ReminderEntity>)
 
     @Update

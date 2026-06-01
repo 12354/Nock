@@ -18,12 +18,18 @@ fun GroupEntity.toDomain(): Group = Group(
     seedKey = seedKey
 )
 
-fun ReminderEntity.toDomain(): Reminder = Reminder(
-    id = id,
-    groupId = groupId,
-    name = name,
-    schedule = ScheduleJson.decode(scheduleJson),
-    nextFireAt = nextFireAt,
-    lastCompletedAt = lastCompletedAt,
-    createdAt = createdAt
-)
+// Returns null when the stored schedule JSON can't be decoded (corrupt or
+// forward-version row). Callers drop such rows instead of letting a single bad
+// reminder throw and take down the entire list query.
+fun ReminderEntity.toDomain(): Reminder? {
+    val schedule = runCatching { ScheduleJson.decode(scheduleJson) }.getOrNull() ?: return null
+    return Reminder(
+        id = id,
+        groupId = groupId,
+        name = name,
+        schedule = schedule,
+        nextFireAt = nextFireAt,
+        lastCompletedAt = lastCompletedAt,
+        createdAt = createdAt
+    )
+}

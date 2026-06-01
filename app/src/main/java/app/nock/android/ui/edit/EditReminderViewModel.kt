@@ -91,7 +91,7 @@ class EditReminderViewModel @Inject constructor(
                     weeklyTimesMinutes = (r.schedule as? Schedule.Weekly)?.timesOfDayMinutes ?: it.weeklyTimesMinutes,
                     monthlyDay = (r.schedule as? Schedule.Monthly)?.dayOfMonth ?: it.monthlyDay,
                     monthlyTimeMinutes = (r.schedule as? Schedule.Monthly)?.timeOfDayMinutes ?: it.monthlyTimeMinutes,
-                    intervalHours = ((r.schedule as? Schedule.IntervalFromLast)?.intervalMs ?: (it.intervalHours * 3_600_000L)).let { (it / 3_600_000L).toInt() },
+                    intervalHours = ((r.schedule as? Schedule.IntervalFromLast)?.intervalMs ?: (it.intervalHours * 3_600_000L)).let { (it / 3_600_000L).toInt().coerceAtLeast(1) },
                     groups = groups
                 )
             }

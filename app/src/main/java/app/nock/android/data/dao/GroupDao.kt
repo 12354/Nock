@@ -15,10 +15,14 @@ interface GroupDao {
     @Query("SELECT * FROM groups WHERE id = :id")
     suspend fun getById(id: Long): GroupEntity?
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    // Upsert (not @Insert(REPLACE)) is essential: REPLACE deletes the
+    // conflicting row before re-inserting, which cascade-deletes every reminder
+    // in the group (reminders FK groupId ON DELETE CASCADE). @Upsert updates the
+    // existing row in place, so editing a group keeps its reminders.
+    @Upsert
     suspend fun upsert(g: GroupEntity): Long
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Upsert
     suspend fun upsertAll(gs: List<GroupEntity>)
 
     @Update

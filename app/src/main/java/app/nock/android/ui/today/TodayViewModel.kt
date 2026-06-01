@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -70,11 +71,24 @@ class TodayViewModel @Inject constructor(
         }
     }
 
+    // Re-emit on a wall-clock cadence so time-derived state (a reminder's
+    // trigger time passing → hasStarted flipping to "firing now") updates on its
+    // own. Without this the list only recomputes on a DB write, so the live
+    // "active now" card could lag behind the actual trigger time. Only runs
+    // while the screen is subscribed (WhileSubscribed below).
+    private val ticker = flow {
+        while (true) {
+            emit(Unit)
+            delay(TICK_INTERVAL_MS)
+        }
+    }
+
     val items: StateFlow<List<TodayItem>> = combine(
         repo.observeReminders(),
         repo.observeGroups(),
-        activeDao.observeAll()
-    ) { reminders, groups, active ->
+        activeDao.observeAll(),
+        ticker
+    ) { reminders, groups, active, _ ->
         val now = System.currentTimeMillis()
         val byId = groups.associateBy { it.id }
         val activeByReminder = active.associateBy { it.reminderId }
@@ -157,5 +171,6 @@ class TodayViewModel @Inject constructor(
 
     companion object {
         const val UNDO_WINDOW_MS: Long = 5_000L
+        private const val TICK_INTERVAL_MS: Long = 30_000L
     }
 }

@@ -56,6 +56,10 @@ class VoiceCaptureService : Service() {
     private var isRecording = false
     private var accumulated: String = ""
     private var sessionPartial: String = ""
+    // Consecutive recognizer errors with no speech progress in between. Reset on
+    // any committed text; used to break out of an otherwise-infinite restart
+    // loop on a persistent hard error (e.g. mic permission denied).
+    private var consecutiveErrors = 0
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -85,6 +89,7 @@ class VoiceCaptureService : Service() {
         isRecording = true
         accumulated = ""
         sessionPartial = ""
+        consecutiveErrors = 0
         scope.launch { VoiceWidgetState.write(applicationContext, VoiceWidgetState.Starting) }
         startSession()
     }
@@ -111,6 +116,7 @@ class VoiceCaptureService : Service() {
                     is SpeechResult.Final -> commitSegment(result.text)
                     is SpeechResult.Cancelled -> { /* keep accumulator */ }
                     is SpeechResult.Error -> {
+                        consecutiveErrors++
                         // Unrecoverable when we're not recording and have nothing
                         // to keep — finalize empty, which just resets to Idle.
                         if (!isRecording && accumulated.isBlank()) {
@@ -120,6 +126,16 @@ class VoiceCaptureService : Service() {
                     }
                 }
                 sessionPartial = ""
+
+                // A persistent hard error (mic permission revoked, recognizer
+                // client error, etc.) makes each restart fail again immediately.
+                // Cap the retries so the foreground mic service can't respin the
+                // recognizer forever; finalize with whatever we already captured.
+                if (isRecording && consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+                    isRecording = false
+                    finalize()
+                    return@start
+                }
 
                 if (isRecording) {
                     scope.launch {
@@ -154,6 +170,9 @@ class VoiceCaptureService : Service() {
     private fun commitSegment(text: String) {
         val t = text.trim()
         if (t.isEmpty()) return
+        // Real speech captured — the recognizer is healthy, so clear the
+        // hard-error streak that guards the restart loop.
+        consecutiveErrors = 0
         accumulated = if (accumulated.isEmpty()) t else "$accumulated $t"
     }
 
@@ -247,5 +266,6 @@ class VoiceCaptureService : Service() {
         private const val NOTIFICATION_ID = 0xC1C2
         private const val REQ_STOP = 1
         private const val RESTART_DELAY_MS = 75L
+        private const val MAX_CONSECUTIVE_ERRORS = 4
     }
 }

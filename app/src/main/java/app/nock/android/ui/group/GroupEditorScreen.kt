@@ -491,15 +491,25 @@ private fun StageEditor(chain: EscalationChain, onChange: (EscalationChain) -> U
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.weight(1f)
                 )
-                val mins = (stage.offsetMs / 60_000L).toInt()
+                // Raw text held locally (keyed on the stage type, which is unique
+                // per chain and follows reorders) so the user can clear the field
+                // and type a leading "-" for pre-trigger offsets. Deriving the
+                // displayed value from offsetMs every keystroke snapped those away
+                // and made the field impossible to clear or make negative.
+                var offsetText by remember(stage.type) {
+                    mutableStateOf((stage.offsetMs / 60_000L).toInt().toString())
+                }
                 OutlinedTextField(
-                    value = mins.toString(),
+                    value = offsetText,
                     onValueChange = { v ->
-                        v.toIntOrNull()?.let { m ->
-                            val list = local.stages.toMutableList()
-                            list[idx] = list[idx].copy(offsetMs = m * 60_000L)
-                            local = EscalationChain(list, local.repeatIntervalMs)
-                            onChange(local)
+                        if (v.isEmpty() || v == "-" || v.toIntOrNull() != null) {
+                            offsetText = v
+                            v.toIntOrNull()?.let { m ->
+                                val list = local.stages.toMutableList()
+                                list[idx] = list[idx].copy(offsetMs = m * 60_000L)
+                                local = EscalationChain(list, local.repeatIntervalMs)
+                                onChange(local)
+                            }
                         }
                     },
                     label = { Text(stringResource(R.string.settings_offset_label)) },
@@ -548,12 +558,20 @@ private fun StageEditor(chain: EscalationChain, onChange: (EscalationChain) -> U
                 }
             }
         }
+        // Same raw-text treatment so the repeat field can be cleared while
+        // typing; keyed on the value so an external chain swap re-initialises it.
+        var repeatText by remember(local.repeatIntervalMs) {
+            mutableStateOf((local.repeatIntervalMs / 60_000L).toInt().toString())
+        }
         OutlinedTextField(
-            value = (local.repeatIntervalMs / 60_000L).toInt().toString(),
+            value = repeatText,
             onValueChange = { v ->
-                v.toIntOrNull()?.let { m -> if (m >= 1) {
-                    local = local.copy(repeatIntervalMs = m * 60_000L); onChange(local)
-                } }
+                if (v.isEmpty() || v.toIntOrNull() != null) {
+                    repeatText = v
+                    v.toIntOrNull()?.let { m -> if (m >= 1) {
+                        local = local.copy(repeatIntervalMs = m * 60_000L); onChange(local)
+                    } }
+                }
             },
             label = { Text(stringResource(R.string.settings_repeat_interval_label)) },
             singleLine = true,

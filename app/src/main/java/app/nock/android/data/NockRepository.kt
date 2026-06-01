@@ -24,14 +24,14 @@ class NockRepository @Inject constructor(
     private val settings: SettingsRepository
 ) {
     fun observeGroups(): Flow<List<Group>> = groupDao.observeAll().map { it.map(GroupEntity::toDomain) }
-    fun observeReminders(): Flow<List<Reminder>> = reminderDao.observeAll().map { it.map(ReminderEntity::toDomain) }
+    fun observeReminders(): Flow<List<Reminder>> = reminderDao.observeAll().map { it.mapNotNull(ReminderEntity::toDomain) }
     fun observeRemindersByGroup(groupId: Long): Flow<List<Reminder>> =
-        reminderDao.observeByGroup(groupId).map { it.map(ReminderEntity::toDomain) }
+        reminderDao.observeByGroup(groupId).map { it.mapNotNull(ReminderEntity::toDomain) }
 
     suspend fun getGroup(id: Long): Group? = groupDao.getById(id)?.toDomain()
     suspend fun getGroups(): List<Group> = groupDao.getAll().map(GroupEntity::toDomain)
     suspend fun getReminder(id: Long): Reminder? = reminderDao.getById(id)?.toDomain()
-    suspend fun getAllReminders(): List<Reminder> = reminderDao.getAll().map(ReminderEntity::toDomain)
+    suspend fun getAllReminders(): List<Reminder> = reminderDao.getAll().mapNotNull(ReminderEntity::toDomain)
 
     suspend fun upsertGroup(g: Group, sortIndex: Int = 0): Long {
         val entity = GroupEntity(

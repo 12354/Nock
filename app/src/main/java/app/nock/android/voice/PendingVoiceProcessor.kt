@@ -11,6 +11,7 @@ import app.nock.android.domain.model.Group
 import app.nock.android.domain.model.Schedule
 import app.nock.android.history.AlarmHistoryLogger
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -50,7 +51,9 @@ class PendingVoiceProcessor @Inject constructor(
     @ApplicationScope private val appScope: CoroutineScope,
 ) {
     private val inFlightMutex = Mutex()
-    private val inFlight = mutableSetOf<Long>()
+    // Maps an id currently being processed to its shared result, so a second
+    // concurrent caller awaits the same outcome instead of failing spuriously.
+    private val inFlight = mutableMapOf<Long, CompletableDeferred<VoiceProcessOutcome>>()
 
     // Ready-to-show confirmation strings emitted once a transcript becomes a
     // real reminder. The UI collects these to show a toast; no replay so a
@@ -104,57 +107,72 @@ class PendingVoiceProcessor @Inject constructor(
      * returned message itself.
      */
     suspend fun process(id: Long, emitAdded: Boolean = true): VoiceProcessOutcome {
-        val acquired = inFlightMutex.withLock { inFlight.add(id) }
-        if (!acquired) {
-            return VoiceProcessOutcome.Failed(ctx.getString(R.string.voice_error_save_failed))
+        val own = CompletableDeferred<VoiceProcessOutcome>()
+        val existing = inFlightMutex.withLock {
+            inFlight[id] ?: run { inFlight[id] = own; null }
         }
-        try {
-            val groups = repo.getGroups()
-            if (groups.isEmpty()) {
-                return recordFailure(id, ctx.getString(R.string.voice_error_no_groups))
-            }
-            var attempt = 0
-            var lastError: String? = null
-            while (attempt < MAX_ATTEMPTS) {
-                attempt++
-                // Deleted while waiting — nothing left to report.
-                val entry = pendingDao.getById(id)
-                    ?: return VoiceProcessOutcome.Failed(ctx.getString(R.string.voice_error_save_failed))
-                pendingDao.update(
-                    entry.copy(
-                        attemptCount = attempt,
-                        lastAttemptAt = System.currentTimeMillis()
-                    )
+        // Another coroutine is already processing this id (e.g. the widget's
+        // createAndAwait racing kickAll at startup). Share its real result rather
+        // than reporting a bogus "save failed" while the other call succeeds.
+        if (existing != null) return existing.await()
+
+        val outcome = try {
+            runProcessing(id, emitAdded)
+        } catch (t: Throwable) {
+            // Publish to any awaiters before clearing the slot so they don't hang.
+            own.completeExceptionally(t)
+            inFlightMutex.withLock { inFlight.remove(id) }
+            throw t
+        }
+        own.complete(outcome)
+        inFlightMutex.withLock { inFlight.remove(id) }
+        return outcome
+    }
+
+    private suspend fun runProcessing(id: Long, emitAdded: Boolean): VoiceProcessOutcome {
+        val groups = repo.getGroups()
+        if (groups.isEmpty()) {
+            return recordFailure(id, ctx.getString(R.string.voice_error_no_groups))
+        }
+        var attempt = 0
+        var lastError: String? = null
+        while (attempt < MAX_ATTEMPTS) {
+            attempt++
+            // Deleted while waiting — nothing left to report.
+            val entry = pendingDao.getById(id)
+                ?: return VoiceProcessOutcome.Failed(ctx.getString(R.string.voice_error_save_failed))
+            pendingDao.update(
+                entry.copy(
+                    attemptCount = attempt,
+                    lastAttemptAt = System.currentTimeMillis()
                 )
-                when (val result = parser.parse(entry.transcript, groups)) {
-                    is DeepSeekParseResult.Ok -> {
-                        val message = persistAndComplete(id, result, groups)
-                        if (emitAdded) _added.tryEmit(message)
-                        return VoiceProcessOutcome.Added(message)
+            )
+            when (val result = parser.parse(entry.transcript, groups)) {
+                is DeepSeekParseResult.Ok -> {
+                    val message = persistAndComplete(id, result, groups)
+                    if (emitAdded) _added.tryEmit(message)
+                    return VoiceProcessOutcome.Added(message)
+                }
+                is DeepSeekParseResult.NotConfigured -> {
+                    return recordFailure(id, ctx.getString(R.string.pending_voice_not_configured), attempt)
+                }
+                is DeepSeekParseResult.Failed -> {
+                    lastError = result.message
+                    if (!result.transient) {
+                        return recordFailure(id, result.message, attempt)
                     }
-                    is DeepSeekParseResult.NotConfigured -> {
-                        return recordFailure(id, ctx.getString(R.string.pending_voice_not_configured), attempt)
-                    }
-                    is DeepSeekParseResult.Failed -> {
-                        lastError = result.message
-                        if (!result.transient) {
-                            return recordFailure(id, result.message, attempt)
-                        }
-                        if (attempt < MAX_ATTEMPTS) {
-                            val backoffMs = BACKOFF_MS_BASE shl (attempt - 1)
-                            delay(backoffMs)
-                        }
+                    if (attempt < MAX_ATTEMPTS) {
+                        val backoffMs = BACKOFF_MS_BASE shl (attempt - 1)
+                        delay(backoffMs)
                     }
                 }
             }
-            return recordFailure(
-                id,
-                lastError ?: ctx.getString(R.string.voice_error_save_failed),
-                MAX_ATTEMPTS
-            )
-        } finally {
-            inFlightMutex.withLock { inFlight.remove(id) }
         }
+        return recordFailure(
+            id,
+            lastError ?: ctx.getString(R.string.voice_error_save_failed),
+            MAX_ATTEMPTS
+        )
     }
 
     /** Saves the real reminder, drops the pending row, and returns the confirmation text. */

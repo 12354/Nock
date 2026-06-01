@@ -135,7 +135,12 @@ class TodayViewModel @Inject constructor(
                 return
             }
             val now = System.currentTimeMillis()
-            val next = r.schedule.nextFireFrom(now, now)
+            // Skip the occurrence just completed (mirrors EscalationEngine.done):
+            // when a reminder is completed at or before its scheduled trigger, search
+            // from the trigger so we advance to the next occurrence instead of
+            // re-arming this one and ringing it again.
+            val searchFrom = maxOf(now, r.nextFireAt ?: now)
+            val next = r.schedule.nextFireFrom(searchFrom, now)
             repo.updateFireState(reminderId, next, now)
             if (next != null) {
                 engine.startEscalationAt(r.copy(lastCompletedAt = now, nextFireAt = next), next)

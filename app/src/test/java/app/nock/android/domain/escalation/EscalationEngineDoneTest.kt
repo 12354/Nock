@@ -78,6 +78,43 @@ class EscalationEngineDoneTest {
         assertTrue(h.dao.rows.values.any { it.reminderId == r.id })
     }
 
+    @Test fun done_during_pretrigger_window_advances_past_the_completed_occurrence() = runTest {
+        // Regression: a daily reminder whose SILENT pre-trigger stage has already
+        // fired (e.g. 10 min before the due time). The user presses Done a minute
+        // BEFORE the trigger. nextFireFrom(now) alone would return today's same
+        // occurrence (its time is still in the future), re-arming the chain we just
+        // dismissed — and since the pre-trigger stage is in the past, the re-armed
+        // chain would jump straight to Telegram and ring anyway.
+        val zone = java.time.ZoneId.systemDefault()
+        // Today's trigger, expressed as the schedule's local time-of-day so the
+        // recurring computation lands on exactly this instant regardless of zone.
+        val trigger = epochMs(2026, 5, 30, 7, 40)
+        val tod = java.time.LocalDateTime.ofInstant(
+            java.time.Instant.ofEpochMilli(trigger), zone
+        )
+        val schedule = Schedule.Daily(listOf(tod.hour * 60 + tod.minute))
+        val pressedAt = trigger - MIN // inside the pre-trigger window, before the due time
+
+        val h = EngineHarness(now = pressedAt)
+        val r = reminder(schedule = schedule, nextFireAt = trigger)
+        h.stubReminderAndGroup(r, group())
+        // Active row started at the occurrence's trigger, currently on the SILENT stage.
+        val row = activeEntity(startedAtMs = trigger, nextStageIndex = 1, nextFireAtMs = trigger + 5 * MIN)
+        h.dao.upsert(row)
+
+        h.engine.done(row.id)
+
+        // lastCompleted is recorded as the press time...
+        coVerify { h.repo.updateFireState(eq(r.id), any(), eq(pressedAt)) }
+        // ...and the freshly-armed escalation must be for a LATER occurrence, never
+        // today's again — startedAtMs is the occurrence trigger the chain runs from.
+        val rearmed = h.dao.rows.values.single { it.reminderId == r.id }
+        assertTrue(
+            "re-armed occurrence ${rearmed.startedAtMs} must be after the completed trigger $trigger",
+            rearmed.startedAtMs > trigger
+        )
+    }
+
     @Test fun done_completes_and_rearms_before_attempting_telegram_cleanup() = runTest {
         val h = EngineHarness(now = NOW)
         val r = reminder(schedule = Schedule.Daily(listOf(10 * 60)))

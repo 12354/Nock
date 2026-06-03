@@ -22,6 +22,7 @@ data class ScheduleEnvelope(
     val dayOfMonth: Int? = null,
     val timeOfDayMinutes: Int? = null,
     val intervalMs: Long? = null,
+    val intervalStartAtMs: Long? = null,
     val armedAtMs: Long? = null
 )
 
@@ -34,7 +35,7 @@ fun Schedule.toEnvelope(): ScheduleEnvelope = when (this) {
         timesOfDayMinutes = timesOfDayMinutes
     )
     is Schedule.Monthly -> ScheduleEnvelope("MONTHLY", dayOfMonth = dayOfMonth, timeOfDayMinutes = timeOfDayMinutes)
-    is Schedule.IntervalFromLast -> ScheduleEnvelope("INTERVAL", intervalMs = intervalMs)
+    is Schedule.IntervalFromLast -> ScheduleEnvelope("INTERVAL", intervalMs = intervalMs, intervalStartAtMs = startAtMs)
     is Schedule.OnUnlock -> ScheduleEnvelope("ON_UNLOCK", armedAtMs = armedAtMs)
 }
 
@@ -43,7 +44,7 @@ fun ScheduleEnvelope.toSchedule(): Schedule = when (type) {
     "DAILY" -> Schedule.Daily(timesOfDayMinutes!!)
     "WEEKLY" -> Schedule.Weekly(daysOfWeek!!.map { DayOfWeek.of(it) }.toSet(), timesOfDayMinutes!!)
     "MONTHLY" -> Schedule.Monthly(dayOfMonth!!, timeOfDayMinutes!!)
-    "INTERVAL" -> Schedule.IntervalFromLast(intervalMs!!)
+    "INTERVAL" -> Schedule.IntervalFromLast(intervalMs!!, startAtMs = intervalStartAtMs)
     "ON_UNLOCK" -> Schedule.OnUnlock(armedAtMs!!)
     else -> error("Unknown schedule type: $type")
 }

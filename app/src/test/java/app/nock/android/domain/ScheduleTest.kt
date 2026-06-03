@@ -66,4 +66,29 @@ class ScheduleTest {
         val next = s.nextFireFrom(now, null, zone)
         assertEquals(now + 8 * 60 * 60_000L, next)
     }
+
+    @Test fun interval_with_future_start_fires_at_start() {
+        val startAt = ms(2026, 1, 20, 10, 0)
+        val s = Schedule.IntervalFromLast(8 * 60 * 60_000L, startAtMs = startAt)
+        val now = ms(2026, 1, 15, 12, 0)
+        val next = s.nextFireFrom(now, null, zone)
+        assertEquals(startAt, next)
+    }
+
+    @Test fun interval_with_past_start_fires_now() {
+        val startAt = ms(2026, 1, 10, 10, 0)
+        val s = Schedule.IntervalFromLast(8 * 60 * 60_000L, startAtMs = startAt)
+        val now = ms(2026, 1, 15, 12, 0)
+        val next = s.nextFireFrom(now, null, zone)
+        assertEquals(now, next)
+    }
+
+    @Test fun interval_with_start_uses_last_completed_after_first_done() {
+        val startAt = ms(2026, 1, 20, 10, 0)
+        val s = Schedule.IntervalFromLast(8 * 60 * 60_000L, startAtMs = startAt)
+        val last = ms(2026, 1, 20, 10, 0)
+        val now = ms(2026, 1, 20, 14, 0)
+        val next = s.nextFireFrom(now, last, zone)
+        assertEquals(last + 8 * 60 * 60_000L, next)
+    }
 }

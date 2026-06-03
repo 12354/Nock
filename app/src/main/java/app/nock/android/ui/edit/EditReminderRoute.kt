@@ -133,7 +133,12 @@ fun EditReminderRoute(
                     onDay = vm::updateMonthlyDay,
                     onTime = vm::updateMonthlyTime
                 )
-                ScheduleKind.INTERVAL -> IntervalEditor(state.intervalHours, vm::updateIntervalHours)
+                ScheduleKind.INTERVAL -> IntervalEditor(
+                    hours = state.intervalHours,
+                    startMs = state.intervalStartMs,
+                    onHoursChange = vm::updateIntervalHours,
+                    onStartChange = vm::updateIntervalStart
+                )
                 ScheduleKind.ON_UNLOCK -> OnUnlockEditor()
             }
 
@@ -282,10 +287,19 @@ private fun parsedSummary(state: EditState): String? {
             state.monthlyDay,
             "%02d:%02d".format(state.monthlyTimeMinutes / 60, state.monthlyTimeMinutes % 60)
         )
-        ScheduleKind.INTERVAL -> stringResource(
-            R.string.parsed_summary_interval,
-            state.intervalHours
-        )
+        ScheduleKind.INTERVAL -> {
+            val base = stringResource(R.string.parsed_summary_interval, state.intervalHours)
+            val startMs = state.intervalStartMs
+            if (startMs != null) {
+                val dt = LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(startMs), ZoneId.systemDefault())
+                stringResource(
+                    R.string.parsed_summary_interval_with_start,
+                    state.intervalHours,
+                    "%04d-%02d-%02d".format(dt.year, dt.monthValue, dt.dayOfMonth),
+                    "%02d:%02d".format(dt.hour, dt.minute)
+                )
+            } else base
+        }
         ScheduleKind.ONESHOT -> {
             val dt = LocalDateTime.ofInstant(
                 java.time.Instant.ofEpochMilli(state.oneShotMs),
@@ -552,16 +566,59 @@ private fun MonthlyEditor(day: Int, timeMin: Int, onDay: (Int) -> Unit, onTime: 
 }
 
 @Composable
-private fun IntervalEditor(hours: Int, onChange: (Int) -> Unit) {
+private fun IntervalEditor(
+    hours: Int,
+    startMs: Long?,
+    onHoursChange: (Int) -> Unit,
+    onStartChange: (Long?) -> Unit
+) {
+    val ctx = LocalContext.current
     Column(modifier = Modifier.padding(horizontal = 16.dp)) {
         Text(stringResource(R.string.edit_interval_label), style = MaterialTheme.typography.labelLarge)
         Spacer(Modifier.height(8.dp))
         OutlinedTextField(
             value = hours.toString(),
-            onValueChange = { it.toIntOrNull()?.let { v -> if (v in 1..168) onChange(v) } },
+            onValueChange = { it.toIntOrNull()?.let { v -> if (v in 1..168) onHoursChange(v) } },
             label = { Text(stringResource(R.string.edit_hours_label)) },
             modifier = Modifier.width(160.dp)
         )
+        Spacer(Modifier.height(8.dp))
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.clickable {
+                if (startMs != null) onStartChange(null)
+                else onStartChange(System.currentTimeMillis() + 3_600_000L)
+            }
+        ) {
+            Checkbox(
+                checked = startMs != null,
+                onCheckedChange = { enabled ->
+                    if (enabled) onStartChange(System.currentTimeMillis() + 3_600_000L)
+                    else onStartChange(null)
+                }
+            )
+            Text(stringResource(R.string.edit_interval_start_label), style = MaterialTheme.typography.bodyMedium)
+        }
+        if (startMs != null) {
+            val dt = remember(startMs) {
+                LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(startMs), ZoneId.systemDefault())
+            }
+            Spacer(Modifier.height(4.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = {
+                    DatePickerDialog(ctx, { _, y, m, d ->
+                        val newDt = dt.withYear(y).withMonth(m + 1).withDayOfMonth(d)
+                        onStartChange(newDt.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli())
+                    }, dt.year, dt.monthValue - 1, dt.dayOfMonth).show()
+                }) { Text("%04d-%02d-%02d".format(dt.year, dt.monthValue, dt.dayOfMonth)) }
+                OutlinedButton(onClick = {
+                    TimePickerDialog(ctx, { _, h, mn ->
+                        val newDt = dt.withHour(h).withMinute(mn).withSecond(0).withNano(0)
+                        onStartChange(newDt.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli())
+                    }, dt.hour, dt.minute, true).show()
+                }) { Text("%02d:%02d".format(dt.hour, dt.minute)) }
+            }
+        }
     }
 }
 

@@ -36,6 +36,7 @@ data class EditState(
     val monthlyDay: Int = 1,
     val monthlyTimeMinutes: Int = 9 * 60,
     val intervalHours: Int = 8,
+    val intervalStartMs: Long? = null,
     val groups: List<Group> = emptyList(),
     val nlInput: String = "",
     val nlThinking: Boolean = false,
@@ -92,6 +93,7 @@ class EditReminderViewModel @Inject constructor(
                     monthlyDay = (r.schedule as? Schedule.Monthly)?.dayOfMonth ?: it.monthlyDay,
                     monthlyTimeMinutes = (r.schedule as? Schedule.Monthly)?.timeOfDayMinutes ?: it.monthlyTimeMinutes,
                     intervalHours = ((r.schedule as? Schedule.IntervalFromLast)?.intervalMs ?: (it.intervalHours * 3_600_000L)).let { (it / 3_600_000L).toInt().coerceAtLeast(1) },
+                    intervalStartMs = (r.schedule as? Schedule.IntervalFromLast)?.startAtMs,
                     groups = groups
                 )
             }
@@ -108,6 +110,7 @@ class EditReminderViewModel @Inject constructor(
     fun updateMonthlyDay(d: Int) = _state.update { it.copy(monthlyDay = d) }
     fun updateMonthlyTime(t: Int) = _state.update { it.copy(monthlyTimeMinutes = t) }
     fun updateIntervalHours(h: Int) = _state.update { it.copy(intervalHours = h) }
+    fun updateIntervalStart(ms: Long?) = _state.update { it.copy(intervalStartMs = ms) }
 
     fun updateNl(input: String) {
         _state.update {
@@ -172,7 +175,8 @@ class EditReminderViewModel @Inject constructor(
         )
         is Schedule.IntervalFromLast -> st.copy(
             scheduleType = ScheduleKind.INTERVAL,
-            intervalHours = (s.intervalMs / 3_600_000L).toInt().coerceAtLeast(1)
+            intervalHours = (s.intervalMs / 3_600_000L).toInt().coerceAtLeast(1),
+            intervalStartMs = s.startAtMs
         )
         is Schedule.OnUnlock -> st.copy(scheduleType = ScheduleKind.ON_UNLOCK)
     }
@@ -235,7 +239,7 @@ class EditReminderViewModel @Inject constructor(
         ScheduleKind.DAILY -> Schedule.Daily(s.dailyTimesMinutes)
         ScheduleKind.WEEKLY -> Schedule.Weekly(s.weeklyDays, s.weeklyTimesMinutes)
         ScheduleKind.MONTHLY -> Schedule.Monthly(s.monthlyDay, s.monthlyTimeMinutes)
-        ScheduleKind.INTERVAL -> Schedule.IntervalFromLast(s.intervalHours * 3_600_000L)
+        ScheduleKind.INTERVAL -> Schedule.IntervalFromLast(s.intervalHours * 3_600_000L, s.intervalStartMs)
         ScheduleKind.ON_UNLOCK -> Schedule.OnUnlock(System.currentTimeMillis())
     }
 

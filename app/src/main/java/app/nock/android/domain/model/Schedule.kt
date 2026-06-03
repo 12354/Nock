@@ -55,12 +55,18 @@ sealed class Schedule {
         }
     }
 
-    data class IntervalFromLast(val intervalMs: Long) : Schedule() {
+    data class IntervalFromLast(val intervalMs: Long, val startAtMs: Long? = null) : Schedule() {
         override val isOneTime: Boolean = false
         override fun nextFireFrom(now: Long, lastCompletedAt: Long?, zone: ZoneId): Long? {
-            val base = lastCompletedAt ?: now
-            val next = base + intervalMs
-            return if (next < now) now else next
+            if (lastCompletedAt != null) {
+                val next = lastCompletedAt + intervalMs
+                return if (next < now) now else next
+            }
+            // First fire: respect explicit start time, or fall back to now + interval
+            if (startAtMs != null) {
+                return if (startAtMs >= now) startAtMs else now
+            }
+            return now + intervalMs
         }
     }
 

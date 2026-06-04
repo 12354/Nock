@@ -29,6 +29,16 @@ android {
             storePassword = "android"
             keyAlias = "androiddebugkey"
             keyPassword = "android"
+            // Sign with v1 (JAR), v2 and v3 schemes. With minSdk 29 the Android
+            // Gradle plugin defaults to v2-only, which several OEM package
+            // installers and Play Protect treat as suspicious and silently
+            // dismiss ("install window opens and instantly closes"). Enabling
+            // v1 maximizes installer compatibility and v3 covers modern devices.
+            // The signing certificate is unchanged, so existing installs keep
+            // updating in place.
+            enableV1Signing = true
+            enableV2Signing = true
+            enableV3Signing = true
         }
     }
 

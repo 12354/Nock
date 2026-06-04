@@ -106,6 +106,12 @@ class EscalationEngineFuzzTest {
         private val groups = LinkedHashMap<Long, Group>()
         private val pending = LinkedHashMap<Long, Pending>()
         private val displayed = ArrayList<Pair<Long, StageType>>()
+        // Telegram message lifecycle: every id we hand back from send() and every
+        // id the engine later asks us to delete. Lets the oracles assert that a
+        // chain abandoned by snooze/done/cancel/move cleans up the messages it
+        // sent (just like the real Telegram chat would otherwise accumulate them).
+        private val sentTelegrams = HashSet<Long>()
+        private val deletedTelegrams = HashSet<Long>()
         private val log = ArrayList<FiredEvent>()
         private var nextReminderId = 100L
         private var telegramMessageId = 1L
@@ -180,11 +186,17 @@ class EscalationEngineFuzzTest {
                 displayed += arg<Long>(2) to StageType.ALARM
             }
 
-            // --- Telegram returns increasing message ids; deletes are no-ops ---
+            // --- Telegram returns increasing message ids; deletes always succeed,
+            // and both directions are recorded so the cleanup oracle can run ---
             coEvery { telegram.send(any(), any()) } answers {
-                TelegramResult(ok = true, messageId = telegramMessageId++)
+                val id = telegramMessageId++
+                sentTelegrams += id
+                TelegramResult(ok = true, messageId = id)
             }
-            coEvery { telegram.deleteMessage(any()) } returns true
+            coEvery { telegram.deleteMessage(any()) } answers {
+                deletedTelegrams += firstArg<Long>()
+                true
+            }
         }
 
         /** Runs the random loop and returns how many alarms were delivered. */
@@ -195,13 +207,14 @@ class EscalationEngineFuzzTest {
             for (s in 0 until iterations) {
                 step = s
                 when (rnd.nextInt(100)) {
-                    in 0..32 -> tick()                 // wait forward, then fire/react
-                    in 33..42 -> changeDeviceClock()   // jump device date+time (often backward)
-                    in 43..50 -> spuriousDelivery()    // stale / too-early alarm delivery
-                    in 51..61 -> addReminder()
-                    in 62..72 -> snoozeRandomActive()
-                    in 73..83 -> doneRandomActive()
-                    in 84..91 -> retimeRandomAlarm()   // user edits the alarm's own time/date
+                    in 0..30 -> tick()                 // wait forward, then fire/react
+                    in 31..40 -> changeDeviceClock()   // jump device date+time (often backward)
+                    in 41..48 -> spuriousDelivery()    // stale / too-early alarm delivery
+                    in 49..58 -> addReminder()
+                    in 59..68 -> snoozeRandomActive()
+                    in 69..78 -> doneRandomActive()
+                    in 79..85 -> retimeRandomAlarm()   // user edits the alarm's own time/date
+                    in 86..92 -> directRearmRandomActive() // re-arm an in-flight chain without pre-cancel
                     else -> modifyRandomSchedule()     // user swaps the whole schedule
                 }
                 assertConsistent("after step $s (action complete)")
@@ -271,12 +284,40 @@ class EscalationEngineFuzzTest {
 
         private suspend fun snoozeRandomActive() {
             val id = dao.rows.keys.toList().randomOrNull(rnd) ?: return
+            snoozeAndAssertCleaned(id)
+        }
+
+        /** Snooze, asserting the abandoned stage's sent Telegrams were deleted. */
+        private suspend fun snoozeAndAssertCleaned(id: Long) {
+            val sent = sentIdsOf(id)
             engine.snooze(id)
+            assertTelegramsDeleted(sent, "after snooze of $id")
         }
 
         private suspend fun doneRandomActive() {
             val id = dao.rows.keys.toList().randomOrNull(rnd) ?: return
             doneAndAssertAdvanced(id)
+        }
+
+        /**
+         * Re-arm a reminder by calling startEscalationAt directly while it still
+         * has a live escalation — the low-level "move" path used by the fire-time
+         * reschedule branch and by any caller that doesn't pre-cancel. The alarm
+         * AND the sent Telegrams must move with it: no orphaned pending alarm (the
+         * bijection oracle) and no stranded messages (the cleanup oracle).
+         */
+        private suspend fun directRearmRandomActive() {
+            val escId = dao.rows.keys.toList().randomOrNull(rnd) ?: return
+            val row = dao.getById(escId) ?: return
+            val reminder = reminders[row.reminderId] ?: return
+            val newTrigger = reminder.schedule
+                .nextFireFrom(clock.now, reminder.lastCompletedAt) ?: return
+            val sent = sentIdsOf(escId)
+            // Move the reminder's authoritative trigger, then re-arm straight
+            // through the engine (no cancelActive first).
+            reminders[row.reminderId] = reminder.copy(nextFireAt = newTrigger)
+            engine.startEscalationAt(reminders.getValue(row.reminderId), newTrigger)
+            assertTelegramsDeleted(sent, "after direct re-arm of $escId")
         }
 
         /**
@@ -306,7 +347,9 @@ class EscalationEngineFuzzTest {
             val reminderId = esc.reminderId
             val schedule = reminders[reminderId]?.schedule
             val completedTrigger = esc.startedAtMs
+            val sent = sentIdsOf(id)
             engine.done(id)
+            assertTelegramsDeleted(sent, "after done of $id")
             val isFixedSlotCalendar = schedule is Schedule.Daily ||
                 schedule is Schedule.Weekly ||
                 schedule is Schedule.Monthly
@@ -332,16 +375,20 @@ class EscalationEngineFuzzTest {
         private suspend fun retimeRandomAlarm() {
             val id = reminders.keys.toList().randomOrNull(rnd) ?: return
             val current = reminders.getValue(id)
+            val sent = sentIdsOfReminder(id)
             reminders[id] = current.copy(schedule = retime(current.schedule))
             engine.scheduleNextFireForReminder(id)
+            assertTelegramsDeleted(sent, "after retime of reminder $id")
         }
 
         private suspend fun modifyRandomSchedule() {
             val id = reminders.keys.toList().randomOrNull(rnd) ?: return
+            val sent = sentIdsOfReminder(id)
             reminders[id] = reminders.getValue(id).copy(schedule = randomSchedule())
             // scheduleNextFireForReminder cancels any prior active escalation and
             // re-arms from the new schedule.
             engine.scheduleNextFireForReminder(id)
+            assertTelegramsDeleted(sent, "after schedule swap of reminder $id")
         }
 
         // ----- Firing ----------------------------------------------------------
@@ -357,7 +404,7 @@ class EscalationEngineFuzzTest {
                 assertConsistent("after firing $id")
 
                 if (react && dao.rows.containsKey(id) && rnd.nextBoolean()) {
-                    if (rnd.nextBoolean()) engine.snooze(id) else doneAndAssertAdvanced(id)
+                    if (rnd.nextBoolean()) snoozeAndAssertCleaned(id) else doneAndAssertAdvanced(id)
                     assertConsistent("after reacting to $id")
                 }
 
@@ -435,6 +482,33 @@ class EscalationEngineFuzzTest {
                     "pending type != row stage type for $id ($where) ${ctx()}",
                     chain.stage(idx).type, p.type,
                 )
+
+                // Stale-after-move oracle: when the reminder currently points at a
+                // FUTURE occurrence, the live row must be armed for exactly that
+                // occurrence, and startedAtMs must be a real slot of the reminder's
+                // CURRENT schedule. A move that changed the reminder's trigger but
+                // left its escalation behind (or an onAlarmFired that fired a stale
+                // stage) shows up here. Scoped to fixed-slot calendar schedules,
+                // whose occurrences ARE fixed timestamps; an overdue/boot-replay
+                // reminder keeps nextFireAt in the past and is excluded by nf>now.
+                val rem = reminders[row.reminderId]
+                val sched = rem?.schedule
+                val nf = rem?.nextFireAt
+                val isCalendar = sched is Schedule.Daily ||
+                    sched is Schedule.Weekly ||
+                    sched is Schedule.Monthly
+                if (isCalendar && nf != null && nf > clock.now) {
+                    assertEquals(
+                        "row armed for a stale occurrence (reminder moved): " +
+                            "startedAtMs=${row.startedAtMs} but reminder.nextFireAt=$nf ($where) ${ctx()}",
+                        nf, row.startedAtMs,
+                    )
+                    assertTrue(
+                        "row.startedAtMs=${row.startedAtMs} is not a slot of the reminder's " +
+                            "current schedule ($where) ${ctx()}",
+                        sched!!.nextFireFrom(row.startedAtMs - 1, null) == row.startedAtMs,
+                    )
+                }
             }
         }
 
@@ -457,6 +531,31 @@ class EscalationEngineFuzzTest {
 
         private fun chainOf(row: ActiveEscalationEntity): EscalationChain =
             runCatching { ChainJson.decode(row.chainSnapshotJson) }.getOrElse { TEST_CHAIN }
+
+        /** Telegram message ids an escalation row has recorded as sent. */
+        private fun sentIdsOf(escId: Long): List<Long> =
+            dao.rows[escId]?.sentTelegramMessageIdsCsv.orEmpty()
+                .split(',').mapNotNull { it.toLongOrNull() }
+
+        private fun sentIdsOfReminder(reminderId: Long): List<Long> =
+            dao.rows.values.firstOrNull { it.reminderId == reminderId }
+                ?.sentTelegramMessageIdsCsv.orEmpty()
+                .split(',').mapNotNull { it.toLongOrNull() }
+
+        /**
+         * Every message [sentBefore] an abandoned chain had sent must have been
+         * handed to deleteMessage by the time the abandoning action returned —
+         * the engine enqueues + flushes deletions synchronously on
+         * snooze/done/cancel/move.
+         */
+        private fun assertTelegramsDeleted(sentBefore: List<Long>, where: String) {
+            sentBefore.forEach { mid ->
+                assertTrue(
+                    "telegram $mid from an abandoned chain was not deleted ($where) ${ctx()}",
+                    mid in deletedTelegrams,
+                )
+            }
+        }
 
         private fun randomDelta(): Long = when (rnd.nextInt(10)) {
             in 0..3 -> rnd.nextLong(1, 30) * MIN              // minutes

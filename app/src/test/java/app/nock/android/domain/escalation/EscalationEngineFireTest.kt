@@ -65,6 +65,53 @@ class EscalationEngineFireTest {
         verify { h.notifier.showAlarm(any(), any(), eq(row.id)) }
     }
 
+    // --- Moved reminder reschedules instead of firing a stale stage --------
+
+    @Test fun moved_reminder_reschedules_to_new_trigger_without_firing() = runTest {
+        val h = EngineHarness(now = NOW)
+        // The chain was armed for an occurrence at NOW + 10 min (its SILENT pre-
+        // stage is due now), but the reminder has since been moved to NOW + 60 min.
+        val moved = reminder(nextFireAt = NOW + 60 * MIN)
+        h.stubReminderAndGroup(moved, group())
+        val row = activeEntity(
+            startedAtMs = NOW + 10 * MIN,
+            nextStageIndex = 0,
+            nextFireAtMs = NOW,
+        )
+        h.dao.upsert(row)
+
+        h.engine.onAlarmFired(row.id)
+
+        // Nothing fired for the stale occurrence...
+        verify(exactly = 0) { h.notifier.showSilent(any(), any(), any(), any()) }
+        coVerify(exactly = 0) { h.telegram.send(any(), any()) }
+        // ...and a fresh chain is armed for the moved trigger: SILENT (-10 min)
+        // lands at NOW + 50 min.
+        val rearmed = h.dao.rows.values.single()
+        assertEquals(0, rearmed.nextStageIndex)
+        assertEquals(NOW + 50 * MIN, rearmed.nextFireAtMs)
+        verify { h.scheduler.scheduleStage(eq(rearmed.id), eq(NOW + 50 * MIN), eq(StageType.SILENT)) }
+    }
+
+    @Test fun overdue_reminder_with_future_synthetic_start_still_fires() = runTest {
+        val h = EngineHarness(now = NOW)
+        // Boot-replay shape: a synthetic startedAt sits in the future while the
+        // reminder's own trigger is overdue (in the past). This must NOT be
+        // mistaken for a "moved" reminder — the due stage still fires.
+        val overdue = reminder(nextFireAt = NOW - 30 * MIN)
+        h.stubReminderAndGroup(overdue, group())
+        val row = activeEntity(
+            startedAtMs = NOW + 10 * MIN, // SILENT (offset -10) is due now
+            nextStageIndex = 0,
+            nextFireAtMs = NOW,
+        )
+        h.dao.upsert(row)
+
+        h.engine.onAlarmFired(row.id)
+
+        verify { h.notifier.showSilent(any(), any(), eq(row.id), eq("")) }
+    }
+
     // --- Per-stage dispatch -------------------------------------------------
 
     @Test fun fire_silent_stage_shows_silent_notification() = runTest {

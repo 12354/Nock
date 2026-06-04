@@ -46,6 +46,17 @@ class EscalationEngine @Inject constructor(
     }
 
     suspend fun startEscalationAt(reminder: Reminder, scheduledAtMs: Long) {
+        // Re-arming for this reminder (e.g. it was moved to a new time) must
+        // first tear down any escalation already armed for it. upsert() below
+        // REPLACEs the row on the unique reminderId index, but AlarmManager keys
+        // its alarms by escalation id — a surviving prior alarm would keep firing
+        // for the OLD time even though its backing row was replaced. Cancel and
+        // delete the old escalation explicitly so the move actually moves every
+        // already-scheduled alarm. (Callers that pre-cancel see a harmless no-op.)
+        activeDao.getByReminderId(reminder.id)?.let { existing ->
+            scheduler.cancel(existing.id)
+            activeDao.delete(existing)
+        }
         val group = repo.getGroup(reminder.groupId) ?: return
         val chain = repo.effectiveChain(group)
         val now = time.nowMs()
@@ -129,6 +140,27 @@ class EscalationEngine @Inject constructor(
             ?: settings.getStageChain()
 
         val now = time.nowMs()
+
+        // The reminder may have been moved after this chain was armed. The active
+        // row records the occurrence it fires for in startedAtMs; the reminder's
+        // authoritative trigger is nextFireAt, which is rewritten whenever the
+        // reminder is edited/moved. If the reminder now points at a *different*
+        // still-upcoming occurrence, this queued alarm is for the wrong time AND
+        // date — re-arm from the reminder's current trigger instead of firing the
+        // stale stage (which would ring on the old schedule and re-send Telegram).
+        //
+        // Guarded to the future-trigger case so two legitimate shapes are left
+        // alone: a normal in-progress chain (startedAtMs == nextFireAt, no drift)
+        // and an overdue boot replay, whose synthetic startedAt deliberately sits
+        // in the future while nextFireAt stays in the past.
+        val trigger = reminder.nextFireAt
+        if (trigger != null && trigger > now && esc.startedAtMs > now &&
+            kotlin.math.abs(trigger - esc.startedAtMs) > SANITY_TOLERANCE_MS
+        ) {
+            cancelActive(reminder.id)
+            startEscalationAt(reminder, trigger)
+            return
+        }
 
         // Last-second sanity check before we escalate. The escalation row records
         // nextFireAtMs — the chain-derived instant the next stage is actually due

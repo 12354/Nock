@@ -127,6 +127,20 @@ class UpdateManager(private val context: Context) {
                         }
                     }
                 }
+
+                // Never hand a partial or non-APK file to the installer: that is
+                // itself a cause of the installer opening and instantly closing
+                // ("problem parsing the package"). Verify the download is
+                // complete and really is an APK (ZIP local-file-header magic)
+                // before returning it.
+                if (totalBytes > 0 && downloadedBytes != totalBytes) {
+                    apkFile.delete()
+                    return@withContext null
+                }
+                if (!isApkFile(apkFile)) {
+                    apkFile.delete()
+                    return@withContext null
+                }
                 onProgress(1f)
                 apkFile
             } finally {
@@ -134,6 +148,28 @@ class UpdateManager(private val context: Context) {
             }
         } catch (e: Exception) {
             null
+        }
+    }
+
+    /**
+     * An APK is a ZIP archive, so a valid download must start with the ZIP
+     * local-file-header magic ("PK"). This cheaply rejects HTML
+     * error pages or truncated/empty files that would otherwise make the system
+     * installer open and immediately dismiss.
+     */
+    private fun isApkFile(file: File): Boolean {
+        if (file.length() < 4) return false
+        return try {
+            file.inputStream().use { input ->
+                val header = ByteArray(4)
+                if (input.read(header) != 4) return false
+                header[0] == 0x50.toByte() && // 'P'
+                    header[1] == 0x4B.toByte() && // 'K'
+                    header[2] == 0x03.toByte() &&
+                    header[3] == 0x04.toByte()
+            }
+        } catch (e: Exception) {
+            false
         }
     }
 

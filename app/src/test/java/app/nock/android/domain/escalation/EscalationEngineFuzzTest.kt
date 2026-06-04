@@ -43,7 +43,10 @@ import kotlin.random.Random
  * forward or BACKWARD (an NTP/timezone/manual change, which triggers the app's
  * ACTION_TIME_CHANGED re-arm); delivers a stale/early alarm; adds a reminder;
  * snoozes or dismisses an active one; edits an alarm's own fire time/date (the
- * user moving when it should ring); or swaps a reminder's whole schedule.
+ * user moving when it should ring); swaps a reminder's whole schedule; or
+ * REBOOTS the device — AlarmManager drops every pending alarm while the Room
+ * tables survive, and BootReceiver's rescheduleAll must re-arm them all and
+ * catch up anything that came due while the device was off.
  *
  * Oracles:
  *  - INV (consistency): after EVERY mutation, the set of active escalation rows
@@ -57,6 +60,13 @@ import kotlin.random.Random
  *  - Per-escalation timeline (checked afterwards): for any single escalation the
  *    fired stage index is monotonically non-decreasing and within the chain
  *    (holds even across clock jumps, since each re-arm is floored to now + 1s).
+ *  - Telegram conservation (no leak / no over-delete): every message id ever
+ *    returned by send() must, at every observable point, be either still owned
+ *    by a live escalation row (its csv) OR already deleted because its chain was
+ *    abandoned — never both and never neither. The two sets must partition the
+ *    sent ids exactly. A chain that drops its messages without cleaning up leaks
+ *    (sent ∉ live ∧ ∉ deleted); a chain whose still-live message is wiped from
+ *    the chat over-deletes (id ∈ live ∧ ∈ deleted). Checked after every mutation.
  *  - Per-done (completion retires the occurrence): pressing Done on a fixed-slot
  *    calendar reminder (Daily/Weekly/Monthly) must arm a DIFFERENT occurrence. A
  *    row is keyed to its occurrence by startedAtMs, so after Done no surviving row
@@ -86,7 +96,7 @@ class EscalationEngineFuzzTest {
 
     @Test fun fuzz_alarm_lifecycle_across_many_random_runs() = runTest {
         var totalFired = 0
-        for (seed in listOf(1L, 2L, 3L, 7L, 42L, 1234L, 99_999L, 2_026_05_30L)) {
+        for (seed in listOf(1L, 2L, 3L, 7L, 13L, 42L, 271L, 1234L, 31337L, 99_999L, 2_026_05_30L)) {
             totalFired += World(seed).run(iterations = 500)
         }
         // Across all runs the simulated clock crosses many schedules, so a large
@@ -207,15 +217,17 @@ class EscalationEngineFuzzTest {
             for (s in 0 until iterations) {
                 step = s
                 when (rnd.nextInt(100)) {
-                    in 0..30 -> tick()                 // wait forward, then fire/react
-                    in 31..40 -> changeDeviceClock()   // jump device date+time (often backward)
-                    in 41..48 -> spuriousDelivery()    // stale / too-early alarm delivery
-                    in 49..58 -> addReminder()
-                    in 59..68 -> snoozeRandomActive()
-                    in 69..78 -> doneRandomActive()
-                    in 79..85 -> retimeRandomAlarm()   // user edits the alarm's own time/date
-                    in 86..92 -> directRearmRandomActive() // re-arm an in-flight chain without pre-cancel
-                    else -> modifyRandomSchedule()     // user swaps the whole schedule
+                    in 0..28 -> tick()                 // wait forward, then fire/react
+                    in 29..38 -> changeDeviceClock()   // jump device date+time (often backward)
+                    in 39..46 -> spuriousDelivery()    // stale / too-early alarm delivery
+                    in 47..52 -> addReminder()
+                    in 53..61 -> snoozeRandomActive()
+                    in 62..70 -> doneRandomActive()
+                    in 71..77 -> retimeRandomAlarm()   // user edits the alarm's own time/date
+                    in 78..84 -> directRearmRandomActive() // re-arm an in-flight chain without pre-cancel
+                    in 85..90 -> modifyRandomSchedule()    // user swaps the whole schedule
+                    in 91..96 -> simulateReboot()      // device restart: alarms lost, tables survive
+                    else -> orphanReminder()           // reminder removed out-of-band; row lingers
                 }
                 assertConsistent("after step $s (action complete)")
             }
@@ -255,6 +267,58 @@ class EscalationEngineFuzzTest {
             clock.set((clock.now + delta).coerceAtLeast(NOW - 30L * 24 * 60 * MIN))
             engine.rescheduleAll()
             drainDueAlarms(react = true)
+        }
+
+        /**
+         * Reboot the device. A restart wipes every alarm AlarmManager was
+         * holding (the OS does not persist them across boot), but the Room
+         * tables — active escalations and reminders — survive on disk. Time
+         * usually passed while the device was off. BootReceiver runs
+         * rescheduleAll(), which must re-arm an alarm for every surviving row
+         * (restoring the bijection from scratch) and catch up anything that
+         * came due in the meantime. Unlike changeDeviceClock this clears the
+         * pending table first, so it exercises rescheduleAll's "nothing is
+         * armed yet" path rather than rescheduling over already-present alarms.
+         */
+        private suspend fun simulateReboot() {
+            pending.clear()
+            if (rnd.nextBoolean()) clock.advanceBy(randomDelta())
+            engine.rescheduleAll()
+            drainDueAlarms(react = true)
+        }
+
+        /**
+         * Delete a reminder out-of-band — as a Drive sync pulling a remote
+         * delete, or a manual DB edit, would — WITHOUT routing it through the
+         * engine, so its active escalation row (and pending alarm) is left
+         * dangling with no backing reminder. Its alarm is then delivered (the OS
+         * still holds the PendingIntent), and the engine must self-heal: drop the
+         * orphan row, delete any Telegram messages it already sent, and leave no
+         * pending alarm behind. The bijection and Telegram-conservation oracles
+         * enforce exactly that. (directRearm/retime/modify pick from the reminder
+         * map and so never touch an orphan; snooze/done/fire pick from the row
+         * table and are all null-reminder safe.)
+         */
+        private suspend fun orphanReminder() {
+            val row = dao.rows.values.randomOrNull(rnd) ?: return
+            // Put the row into the state that makes self-heal interesting: a chain
+            // that has ALREADY sent a Telegram. This is exactly what Room persists
+            // after a SILENT-mirror / TELEGRAM stage, so stamping one on (and
+            // registering it as sent, as the telegram mock would) faithfully models
+            // that durable state rather than racing the random world into it. A
+            // naive self-heal that drops the row without cleanup would strand it.
+            val mid = telegramMessageId++
+            sentTelegrams += mid
+            val csv = row.sentTelegramMessageIdsCsv
+            dao.update(row.copy(sentTelegramMessageIdsCsv = if (csv.isEmpty()) "$mid" else "$csv,$mid"))
+            // Drop the reminder out-of-band (a sync delete / manual DB edit) while
+            // its escalation row and pending alarm survive, then deliver the
+            // still-armed alarm. deliver() detects the missing reminder and routes
+            // to onAlarmFired's self-heal, which must delete the orphan row, delete
+            // the Telegram it sent, and leave no pending alarm — enforced by the
+            // bijection and Telegram-conservation oracles on the next assert.
+            reminders.remove(row.reminderId)
+            deliver(row.id)
         }
 
         /**
@@ -414,10 +478,17 @@ class EscalationEngineFuzzTest {
 
         private suspend fun deliver(id: Long) {
             val row = dao.getById(id) ?: return
+            // AlarmManager consumes an exact one-shot the moment it delivers it —
+            // the OS does not keep a fired alarm around. Model that by dropping
+            // the entry from the pending table now: if the chain continues the
+            // engine re-arms the same id (re-adding it), and if the engine instead
+            // tears the chain down (self-heal of an orphan row) no stale alarm is
+            // left behind. Either way the bijection oracle reflects reality.
+            pending.remove(id)
             val reminder = reminders[row.reminderId]
             if (reminder == null) {
-                // Engine self-heals (deletes the orphan row); not expected in this
-                // world, but don't crash the fuzzer over it.
+                // The reminder was deleted out-of-band; the engine must self-heal
+                // by dropping the orphan row (and cleaning up its Telegrams).
                 engine.onAlarmFired(id)
                 return
             }
@@ -485,31 +556,70 @@ class EscalationEngineFuzzTest {
 
                 // Stale-after-move oracle: when the reminder currently points at a
                 // FUTURE occurrence, the live row must be armed for exactly that
-                // occurrence, and startedAtMs must be a real slot of the reminder's
-                // CURRENT schedule. A move that changed the reminder's trigger but
-                // left its escalation behind (or an onAlarmFired that fired a stale
-                // stage) shows up here. Scoped to fixed-slot calendar schedules,
-                // whose occurrences ARE fixed timestamps; an overdue/boot-replay
-                // reminder keeps nextFireAt in the past and is excluded by nf>now.
+                // occurrence. A move that changed the reminder's trigger but left
+                // its escalation behind (or an onAlarmFired that fired a stale
+                // stage) shows up here. This holds for EVERY schedule kind: until
+                // its trigger arrives the row's startedAtMs is the trigger, so any
+                // upcoming nextFireAt must equal startedAtMs. An overdue or
+                // boot-replayed reminder keeps nextFireAt in the past (and a boot
+                // replay parks startedAtMs in the synthetic future), so the nf>now
+                // guard excludes exactly those legitimately-divergent shapes.
                 val rem = reminders[row.reminderId]
                 val sched = rem?.schedule
                 val nf = rem?.nextFireAt
-                val isCalendar = sched is Schedule.Daily ||
-                    sched is Schedule.Weekly ||
-                    sched is Schedule.Monthly
-                if (isCalendar && nf != null && nf > clock.now) {
+                if (nf != null && nf > clock.now) {
                     assertEquals(
                         "row armed for a stale occurrence (reminder moved): " +
                             "startedAtMs=${row.startedAtMs} but reminder.nextFireAt=$nf ($where) ${ctx()}",
                         nf, row.startedAtMs,
                     )
-                    assertTrue(
-                        "row.startedAtMs=${row.startedAtMs} is not a slot of the reminder's " +
-                            "current schedule ($where) ${ctx()}",
-                        sched!!.nextFireFrom(row.startedAtMs - 1, null) == row.startedAtMs,
-                    )
+                    // For fixed-slot calendar schedules the trigger must also be a
+                    // real slot of the reminder's CURRENT schedule (round-trips
+                    // through nextFireFrom). Completion-anchored schedules
+                    // (IntervalFromLast/OneShot) don't round-trip this way, so the
+                    // slot check is scoped to the calendar kinds.
+                    val isCalendar = sched is Schedule.Daily ||
+                        sched is Schedule.Weekly ||
+                        sched is Schedule.Monthly
+                    if (isCalendar) {
+                        assertTrue(
+                            "row.startedAtMs=${row.startedAtMs} is not a slot of the reminder's " +
+                                "current schedule ($where) ${ctx()}",
+                            sched!!.nextFireFrom(row.startedAtMs - 1, null) == row.startedAtMs,
+                        )
+                    }
                 }
             }
+            assertTelegramLifecycle(where)
+        }
+
+        /**
+         * Telegram message conservation. Every id we ever returned from send() is
+         * tracked in [sentTelegrams]; the engine either keeps it referenced by a
+         * live escalation row (so a later snooze/done/cancel/move can still delete
+         * it) or, having abandoned that chain, has already deleted it. The live and
+         * deleted sets must therefore PARTITION the sent ids exactly:
+         *   - an id that is in neither was LEAKED — a chain dropped its messages
+         *     without queuing them for deletion (the bug a0eb443 fixed for moves);
+         *   - an id that is in both was OVER-DELETED — a still-live chain's message
+         *     was wiped from the chat out from under it.
+         * Holds at every quiescent point because each abandoning action enqueues
+         * the row's ids and flushes (deleting them) and clears/drops the row in the
+         * same call, while each fire appends the new id to its row before returning.
+         */
+        private fun assertTelegramLifecycle(where: String) {
+            val live = dao.rows.values
+                .flatMap { it.sentTelegramMessageIdsCsv.split(',').mapNotNull(String::toLongOrNull) }
+                .toSet()
+            val overDeleted = live intersect deletedTelegrams
+            assertTrue(
+                "telegram(s) $overDeleted deleted while still owned by a live chain ($where) ${ctx()}",
+                overDeleted.isEmpty(),
+            )
+            assertEquals(
+                "telegram ids not conserved: sent must equal live ∪ deleted ($where) ${ctx()}",
+                sentTelegrams, live + deletedTelegrams,
+            )
         }
 
         /** After the run, every alarm's history must be well-formed. */
@@ -567,17 +677,32 @@ class EscalationEngineFuzzTest {
         private fun randomSchedule(): Schedule = when (rnd.nextInt(5)) {
             0 -> Schedule.Daily(randomTimes())
             1 -> Schedule.Weekly(randomDays(), randomTimes())
-            2 -> Schedule.Monthly(rnd.nextInt(1, 29), rnd.nextInt(0, 1440))
-            3 -> Schedule.IntervalFromLast(rnd.nextLong(1, 600) * MIN)
+            2 -> randomMonthly()
+            3 -> randomInterval()
             else -> Schedule.OneShot(clock.now + rnd.nextLong(-120, 6_000) * MIN)
+        }
+
+        // Days 1..31 on purpose: 29/30/31 exercise Monthly's month-length
+        // clamping (a day past the end of February/April/etc. coerces to the
+        // last day of that month), which days 1..28 never reach.
+        private fun randomMonthly(): Schedule =
+            Schedule.Monthly(rnd.nextInt(1, 32), rnd.nextInt(0, 1440))
+
+        // Sometimes pin an explicit start time (the second IntervalFromLast field)
+        // so the "first fire respects startAtMs" branch is covered, not just the
+        // "now + interval" default. The start can sit in the past or the future.
+        private fun randomInterval(): Schedule {
+            val interval = rnd.nextLong(1, 600) * MIN
+            val start = if (rnd.nextBoolean()) clock.now + rnd.nextLong(-120, 6_000) * MIN else null
+            return Schedule.IntervalFromLast(interval, start)
         }
 
         /** Change only the time/date fields of a schedule, keeping its kind. */
         private fun retime(s: Schedule): Schedule = when (s) {
             is Schedule.Daily -> Schedule.Daily(randomTimes())
             is Schedule.Weekly -> Schedule.Weekly(randomDays(), randomTimes())
-            is Schedule.Monthly -> Schedule.Monthly(rnd.nextInt(1, 29), rnd.nextInt(0, 1440))
-            is Schedule.IntervalFromLast -> Schedule.IntervalFromLast(rnd.nextLong(1, 600) * MIN)
+            is Schedule.Monthly -> randomMonthly()
+            is Schedule.IntervalFromLast -> randomInterval()
             is Schedule.OneShot -> Schedule.OneShot(clock.now + rnd.nextLong(-120, 6_000) * MIN)
             is Schedule.OnUnlock -> s // not produced in this fuzzer
         }

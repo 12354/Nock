@@ -42,6 +42,50 @@ class EscalationEngineScheduleTest {
         assertEquals(1, h.dao.rows.size)
     }
 
+    // --- Re-arming a moved reminder cancels its prior alarm ----------------
+
+    @Test fun rearming_cancels_and_replaces_the_previous_escalation() = runTest {
+        val h = EngineHarness(now = NOW)
+        val r = reminder()
+        h.stubReminderAndGroup(r, group())
+        // An escalation is already armed for this reminder (e.g. it is mid-chain
+        // with ALARM_VIBRATE queued 2 min out).
+        val old = activeEntity(id = 5, nextStageIndex = 2, nextFireAtMs = NOW + 2 * MIN)
+        h.dao.upsert(old)
+
+        // The reminder is moved far into the future and re-armed.
+        h.engine.startEscalationAt(r, NOW + 24 * 60 * MIN)
+
+        // The previously scheduled alarm is cancelled, the old row is gone, and
+        // only the freshly-armed escalation remains.
+        verify { h.scheduler.cancel(5L) }
+        val row = h.dao.rows.values.single()
+        assertEquals(0, row.nextStageIndex)
+        assertEquals(NOW + 24 * 60 * MIN - 10 * MIN, row.nextFireAtMs)
+    }
+
+    @Test fun rearming_deletes_the_previous_chains_sent_telegrams() = runTest {
+        val h = EngineHarness(now = NOW)
+        val r = reminder()
+        h.stubReminderAndGroup(r, group())
+        // The escalation being moved already sent two Telegram messages.
+        h.dao.upsert(
+            activeEntity(
+                id = 5,
+                nextStageIndex = 2,
+                nextFireAtMs = NOW + 2 * MIN,
+                sentTelegramMessageIdsCsv = "11,22",
+            )
+        )
+
+        h.engine.startEscalationAt(r, NOW + 24 * 60 * MIN)
+
+        // Moving the alarm undoes the abandoned chain's side effects, just like
+        // snooze/cancel/done do.
+        coVerify { h.telegram.deleteMessage(11L) }
+        coVerify { h.telegram.deleteMessage(22L) }
+    }
+
     // --- Stage selection on arm --------------------------------------------
 
     @Test fun future_trigger_with_short_lead_skips_past_silent_pre_stage() = runTest {

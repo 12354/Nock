@@ -26,6 +26,17 @@ class FakeActiveEscalationDao : ActiveEscalationDao {
         rows.values.firstOrNull { it.reminderId == reminderId }
 
     override suspend fun upsert(e: ActiveEscalationEntity): Long {
+        // Mirror the real table: @Insert(onConflict = REPLACE) against the unique
+        // reminderId index (and the primary key). A row whose reminderId collides
+        // with an existing, different row is deleted before the new one lands —
+        // so there is never more than one escalation per reminder. AlarmManager
+        // keys its alarms by escalation id, NOT reminderId, so this REPLACE is
+        // exactly where a careless re-arm orphans the previous alarm; modelling it
+        // faithfully lets the bijection oracle catch that.
+        rows.values
+            .filter { it.reminderId == e.reminderId && it.id != e.id }
+            .map { it.id }
+            .forEach { rows.remove(it) }
         val id = if (e.id == 0L) nextId++ else e.id
         rows[id] = e.copy(id = id)
         return id

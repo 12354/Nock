@@ -145,7 +145,16 @@ class EscalationEngine @Inject constructor(
         flushPendingTelegramDeletions()
         val esc = activeDao.getById(escalationId) ?: return
         val reminder = repo.getReminder(esc.reminderId) ?: run {
-            activeDao.delete(esc); return
+            // The reminder this chain belonged to is gone (deleted out-of-band —
+            // e.g. a sync removing it — leaving an orphan escalation). Drop the
+            // orphan row, but first clean up the Telegram messages it already
+            // sent, exactly as every other teardown path does; otherwise those
+            // messages are stranded in the chat forever. Queue durably, delete
+            // the row, then flush the best-effort network deletes last.
+            enqueueTelegramDeletions(esc.sentTelegramMessageIdsCsv)
+            activeDao.delete(esc)
+            flushPendingTelegramDeletions()
+            return
         }
         val group = repo.getGroup(reminder.groupId) ?: return
         val chain = runCatching { ChainJson.decode(esc.chainSnapshotJson) }.getOrNull()

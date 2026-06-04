@@ -43,7 +43,9 @@ import kotlin.random.Random
  * forward or BACKWARD (an NTP/timezone/manual change, which triggers the app's
  * ACTION_TIME_CHANGED re-arm); delivers a stale/early alarm; adds a reminder;
  * snoozes or dismisses an active one; edits an alarm's own fire time/date (the
- * user moving when it should ring); swaps a reminder's whole schedule; or
+ * user moving when it should ring); drags a live alarm forward or BACKWARD to an
+ * exact instant mid-escalation (covering the far-future, imminent, and overdue
+ * arm-from-trigger branches); swaps a reminder's whole schedule; or
  * REBOOTS the device — AlarmManager drops every pending alarm while the Room
  * tables survive, and BootReceiver's rescheduleAll must re-arm them all and
  * catch up anything that came due while the device was off.
@@ -217,17 +219,18 @@ class EscalationEngineFuzzTest {
             for (s in 0 until iterations) {
                 step = s
                 when (rnd.nextInt(100)) {
-                    in 0..28 -> tick()                 // wait forward, then fire/react
-                    in 29..38 -> changeDeviceClock()   // jump device date+time (often backward)
-                    in 39..46 -> spuriousDelivery()    // stale / too-early alarm delivery
-                    in 47..52 -> addReminder()
-                    in 53..61 -> snoozeRandomActive()
-                    in 62..70 -> doneRandomActive()
-                    in 71..77 -> retimeRandomAlarm()   // user edits the alarm's own time/date
-                    in 78..84 -> directRearmRandomActive() // re-arm an in-flight chain without pre-cancel
-                    in 85..90 -> modifyRandomSchedule()    // user swaps the whole schedule
-                    in 91..96 -> simulateReboot()      // device restart: alarms lost, tables survive
-                    else -> orphanReminder()           // reminder removed out-of-band; row lingers
+                    in 0..25 -> tick()                 // wait forward, then fire/react
+                    in 26..35 -> changeDeviceClock()   // jump device date+time (often backward)
+                    in 36..43 -> spuriousDelivery()    // stale / too-early alarm delivery
+                    in 44..49 -> addReminder()
+                    in 50..58 -> snoozeRandomActive()
+                    in 59..67 -> doneRandomActive()
+                    in 68..74 -> retimeRandomAlarm()   // user edits the alarm's own time/date
+                    in 75..81 -> directRearmRandomActive() // re-arm an in-flight chain without pre-cancel
+                    in 82..87 -> modifyRandomSchedule()    // user swaps the whole schedule
+                    in 88..92 -> simulateReboot()      // device restart: alarms lost, tables survive
+                    in 93..95 -> orphanReminder()      // reminder removed out-of-band; row lingers
+                    else -> moveAlarmExactTime()       // drag a live alarm fwd/back to an exact time
                 }
                 assertConsistent("after step $s (action complete)")
             }
@@ -319,6 +322,44 @@ class EscalationEngineFuzzTest {
             // bijection and Telegram-conservation oracles on the next assert.
             reminders.remove(row.reminderId)
             deliver(row.id)
+        }
+
+        /**
+         * Drag a live alarm to an exact new fire time — forward or BACKWARD —
+         * while it is mid-escalation at whatever stage it currently sits in.
+         * Models the user re-timing the alarm to a specific instant (a one-off
+         * move). Re-armed through the engine's move path, which tears the current
+         * chain down (cancelling its alarm and deleting the Telegrams it already
+         * sent) and rebuilds a fresh chain from the new trigger. The delta is
+         * drawn to hit all three arm-from-trigger branches deterministically over
+         * a run:
+         *   - far future  -> the full pre-trigger window is still ahead;
+         *   - imminent     -> pre-trigger stages already sit in the past and must
+         *                     be skipped (firstPendingStage), so nothing — and no
+         *                     Telegram — fires the instant it is saved;
+         *   - backward/overdue -> the trigger is already past, so the chain must
+         *                     jump straight to the latest stage now due (stageDueAt).
+         * The bijection, per-fire stage, and Telegram-conservation oracles check
+         * each case at the stage the chain happened to be in.
+         */
+        private suspend fun moveAlarmExactTime() {
+            val escId = dao.rows.keys.toList().randomOrNull(rnd) ?: return
+            val row = dao.getById(escId) ?: return
+            val reminder = reminders[row.reminderId] ?: return
+            val delta = when (rnd.nextInt(3)) {
+                0 -> -rnd.nextLong(1, 600) * MIN      // backward into the past (overdue)
+                1 -> rnd.nextLong(1, 9) * MIN         // imminent: pre-trigger stages already passed
+                else -> rnd.nextLong(20, 6_000) * MIN // far future: full pre-trigger window ahead
+            }
+            val newTrigger = clock.now + delta
+            val sent = sentIdsOf(escId)
+            // An exact-time move is a one-off retarget, so model it as a OneShot at
+            // the chosen instant; nextFireAt mirrors it so the stale-occurrence
+            // oracle sees a consistent trigger.
+            val moved = reminder.copy(schedule = Schedule.OneShot(newTrigger), nextFireAt = newTrigger)
+            reminders[row.reminderId] = moved
+            engine.startEscalationAt(moved, newTrigger)
+            assertTelegramsDeleted(sent, "after exact-time move of $escId by ${delta}ms")
         }
 
         /**

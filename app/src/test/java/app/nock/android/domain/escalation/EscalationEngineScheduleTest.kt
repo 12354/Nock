@@ -64,6 +64,28 @@ class EscalationEngineScheduleTest {
         assertEquals(NOW + 24 * 60 * MIN - 10 * MIN, row.nextFireAtMs)
     }
 
+    @Test fun rearming_deletes_the_previous_chains_sent_telegrams() = runTest {
+        val h = EngineHarness(now = NOW)
+        val r = reminder()
+        h.stubReminderAndGroup(r, group())
+        // The escalation being moved already sent two Telegram messages.
+        h.dao.upsert(
+            activeEntity(
+                id = 5,
+                nextStageIndex = 2,
+                nextFireAtMs = NOW + 2 * MIN,
+                sentTelegramMessageIdsCsv = "11,22",
+            )
+        )
+
+        h.engine.startEscalationAt(r, NOW + 24 * 60 * MIN)
+
+        // Moving the alarm undoes the abandoned chain's side effects, just like
+        // snooze/cancel/done do.
+        coVerify { h.telegram.deleteMessage(11L) }
+        coVerify { h.telegram.deleteMessage(22L) }
+    }
+
     // --- Stage selection on arm --------------------------------------------
 
     @Test fun future_trigger_with_short_lead_skips_past_silent_pre_stage() = runTest {

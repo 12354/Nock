@@ -53,9 +53,21 @@ class EscalationEngine @Inject constructor(
         // for the OLD time even though its backing row was replaced. Cancel and
         // delete the old escalation explicitly so the move actually moves every
         // already-scheduled alarm. (Callers that pre-cancel see a harmless no-op.)
+        //
+        // Moving the alarm also has to undo the side effects the abandoned chain
+        // already produced — chiefly the Telegram messages it sent — exactly as
+        // snooze()/cancelActive()/done() do. Otherwise a reminder moved after its
+        // TELEGRAM stage fired would strand those messages in the chat. Queue them
+        // for deletion (durably, before the row holding the ids is dropped) and
+        // flush, so the new occurrence starts clean.
         activeDao.getByReminderId(reminder.id)?.let { existing ->
             scheduler.cancel(existing.id)
+            if (AlarmService.ringingEscalationId == existing.id) {
+                notifier.stopAlarm()
+            }
+            enqueueTelegramDeletions(existing.sentTelegramMessageIdsCsv)
             activeDao.delete(existing)
+            flushPendingTelegramDeletions()
         }
         val group = repo.getGroup(reminder.groupId) ?: return
         val chain = repo.effectiveChain(group)
@@ -157,7 +169,9 @@ class EscalationEngine @Inject constructor(
         if (trigger != null && trigger > now && esc.startedAtMs > now &&
             kotlin.math.abs(trigger - esc.startedAtMs) > SANITY_TOLERANCE_MS
         ) {
-            cancelActive(reminder.id)
+            // startEscalationAt tears this stale escalation down first — cancelling
+            // its alarm and deleting any Telegram it already sent — then arms the
+            // chain for the reminder's current trigger.
             startEscalationAt(reminder, trigger)
             return
         }

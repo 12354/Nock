@@ -179,7 +179,13 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun deleteGroup(g: Group) {
-        viewModelScope.launch { repo.deleteGroup(g) }
+        viewModelScope.launch {
+            // Cancel scheduled/ringing alarms for the group's reminders before the
+            // FK cascade deletes them, otherwise their OS alarms are orphaned and
+            // still fire for a reminder that no longer appears in any list.
+            engine.cancelActiveForGroup(g.id)
+            repo.deleteGroup(g)
+        }
     }
 
     fun setDeepSeek(apiKey: String, model: String, baseUrl: String, context: String) {

@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.nock.android.data.NockRepository
 import app.nock.android.data.SettingsRepository
+import app.nock.android.domain.escalation.EscalationEngine
 import app.nock.android.domain.model.DefaultChain
 import app.nock.android.domain.model.EscalationChain
 import app.nock.android.domain.model.Group
@@ -36,6 +37,7 @@ data class GroupEditorState(
 class GroupEditorViewModel @Inject constructor(
     private val repo: NockRepository,
     private val settings: SettingsRepository,
+    private val engine: EscalationEngine,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(GroupEditorState())
@@ -117,6 +119,11 @@ class GroupEditorViewModel @Inject constructor(
     suspend fun delete() {
         val s = _state.value
         if (s.id == 0L) return
-        repo.getGroup(s.id)?.let { repo.deleteGroup(it) }
+        repo.getGroup(s.id)?.let {
+            // Cancel any scheduled/ringing alarms for this group's reminders
+            // before the cascade delete drops the rows out from under them.
+            engine.cancelActiveForGroup(it.id)
+            repo.deleteGroup(it)
+        }
     }
 }

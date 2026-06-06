@@ -351,6 +351,20 @@ class EscalationEngine @Inject constructor(
         flushPendingTelegramDeletions()
     }
 
+    // Deleting a group cascade-deletes its reminders and their active_escalations
+    // rows (FK ON DELETE CASCADE), but a row deletion does NOT cancel the alarm
+    // AlarmManager already holds for it — that alarm keeps its status-bar icon and
+    // still fires (or, if a reminder was mid-escalation, keeps ringing through the
+    // foreground service) for a reminder that now exists in no list. Tear every
+    // in-flight escalation down explicitly before the group is removed, exactly as
+    // the single-reminder delete paths do. Must run BEFORE repo.deleteGroup: once
+    // the cascade fires, the reminders are gone and these rows can't be found.
+    suspend fun cancelActiveForGroup(groupId: Long) {
+        repo.getAllReminders()
+            .filter { it.groupId == groupId }
+            .forEach { cancelActive(it.id) }
+    }
+
     suspend fun cancelActive(reminderId: Long) {
         val esc = activeDao.getByReminderId(reminderId) ?: return
         scheduler.cancel(esc.id)

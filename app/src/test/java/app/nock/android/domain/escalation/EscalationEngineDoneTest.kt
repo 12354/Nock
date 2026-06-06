@@ -208,4 +208,41 @@ class EscalationEngineDoneTest {
         coVerify { h.telegram.deleteMessage(7L) }
         assertEquals(0, h.dao.rows.size)
     }
+
+    // --- cancelActiveForGroup ----------------------------------------------
+
+    @Test fun cancelActiveForGroup_cancels_every_reminder_in_the_group_only() = runTest {
+        // Regression: deleting a group cascade-deletes its reminders + active rows
+        // but never cancelled the OS alarms, so a phantom alarm kept firing for a
+        // reminder that exists in no list. cancelActiveForGroup must tear down each
+        // in-group escalation (cancelling its alarm) and leave other groups alone.
+        val h = EngineHarness(now = NOW)
+        val inGroupA = reminder(id = 1L, groupId = 100L)
+        val inGroupB = reminder(id = 2L, groupId = 100L)
+        val otherGroup = reminder(id = 3L, groupId = 200L)
+        coEvery { h.repo.getAllReminders() } returns listOf(inGroupA, inGroupB, otherGroup)
+        val a = h.dao.upsert(activeEntity(id = 0L, reminderId = 1L, nextStageIndex = 0, nextFireAtMs = NOW))
+        val b = h.dao.upsert(activeEntity(id = 0L, reminderId = 2L, nextStageIndex = 0, nextFireAtMs = NOW))
+        val c = h.dao.upsert(activeEntity(id = 0L, reminderId = 3L, nextStageIndex = 0, nextFireAtMs = NOW))
+
+        h.engine.cancelActiveForGroup(100L)
+
+        verify { h.scheduler.cancel(a) }
+        verify { h.scheduler.cancel(b) }
+        verify(exactly = 0) { h.scheduler.cancel(c) }
+        assertNull(h.dao.getById(a))
+        assertNull(h.dao.getById(b))
+        // The unrelated group's escalation survives.
+        assertEquals(c, h.dao.getById(c)?.id)
+    }
+
+    @Test fun cancelActiveForGroup_with_no_active_reminders_is_a_noop() = runTest {
+        val h = EngineHarness(now = NOW)
+        // A reminder in the group exists but has no in-flight escalation.
+        coEvery { h.repo.getAllReminders() } returns listOf(reminder(id = 1L, groupId = 100L))
+
+        h.engine.cancelActiveForGroup(100L)
+
+        verify(exactly = 0) { h.scheduler.cancel(any()) }
+    }
 }

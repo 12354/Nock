@@ -1,7 +1,11 @@
 package app.nock.android.domain.escalation
 
 import app.nock.android.alarm.AlarmService
+import app.nock.android.data.json.ChainJson
+import app.nock.android.domain.model.EscalationChain
 import app.nock.android.domain.model.Schedule
+import app.nock.android.domain.model.StageConfig
+import app.nock.android.domain.model.StageType
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.verify
@@ -244,5 +248,75 @@ class EscalationEngineDoneTest {
         h.engine.cancelActiveForGroup(100L)
 
         verify(exactly = 0) { h.scheduler.cancel(any()) }
+    }
+
+    // --- rearmGroup --------------------------------------------------------
+
+    @Test fun rearmGroup_replaces_not_started_escalation_with_current_chain() = runTest {
+        // Editing a group's chain must take effect on its already-armed (but not
+        // yet firing) reminders right away — the stale escalation is torn down and
+        // a fresh one carrying the new chain is armed.
+        val h = EngineHarness(now = NOW)
+        val g = group(id = 100L)
+        val r = reminder(id = 1L, groupId = 100L, nextFireAt = NOW + 60 * MIN)
+        coEvery { h.repo.getGroup(100L) } returns g
+        coEvery { h.repo.getAllReminders() } returns listOf(r)
+        val newChain = EscalationChain(
+            stages = listOf(StageConfig(StageType.ALARM, 0L)),
+            repeatIntervalMs = 5 * MIN,
+        )
+        coEvery { h.repo.effectiveChain(g) } returns newChain
+        // Armed but not started: its occurrence trigger is still in the future.
+        val old = activeEntity(
+            id = 0L, reminderId = 1L, startedAtMs = NOW + 60 * MIN,
+            nextStageIndex = 0, nextFireAtMs = NOW + 50 * MIN, chain = TEST_CHAIN,
+        )
+        val oldId = h.dao.upsert(old)
+
+        h.engine.rearmGroup(100L)
+
+        verify { h.scheduler.cancel(oldId) }
+        val rows = h.dao.rows.values.filter { it.reminderId == 1L }
+        assertEquals(1, rows.size)
+        assertEquals(ChainJson.encode(newChain), rows.single().chainSnapshotJson)
+    }
+
+    @Test fun rearmGroup_leaves_in_flight_escalation_untouched() = runTest {
+        // A chain already firing keeps its snapshot so the edit can't double-send
+        // or skip a stage mid-escalation.
+        val h = EngineHarness(now = NOW)
+        val g = group(id = 100L)
+        val r = reminder(id = 1L, groupId = 100L, nextFireAt = NOW - 5 * MIN)
+        coEvery { h.repo.getGroup(100L) } returns g
+        coEvery { h.repo.getAllReminders() } returns listOf(r)
+        val inflight = activeEntity(
+            id = 0L, reminderId = 1L, startedAtMs = NOW - 5 * MIN,
+            nextStageIndex = 2, nextFireAtMs = NOW + MIN, chain = TEST_CHAIN,
+        )
+        val id = h.dao.upsert(inflight)
+
+        h.engine.rearmGroup(100L)
+
+        verify(exactly = 0) { h.scheduler.cancel(id) }
+        assertEquals(ChainJson.encode(TEST_CHAIN), h.dao.getById(id)?.chainSnapshotJson)
+        assertEquals(2, h.dao.getById(id)?.nextStageIndex)
+    }
+
+    @Test fun rearmGroup_paused_group_is_a_noop() = runTest {
+        // Pause owns arming; rearm must not tear down a paused group's escalations.
+        val h = EngineHarness(now = NOW)
+        val g = group(id = 100L, pausedUntilMs = NOW + 60 * MIN)
+        coEvery { h.repo.getGroup(100L) } returns g
+        coEvery { h.repo.getAllReminders() } returns listOf(reminder(id = 1L, groupId = 100L, nextFireAt = NOW + 60 * MIN))
+        val old = activeEntity(
+            id = 0L, reminderId = 1L, startedAtMs = NOW + 60 * MIN,
+            nextStageIndex = 0, nextFireAtMs = NOW + 50 * MIN,
+        )
+        val id = h.dao.upsert(old)
+
+        h.engine.rearmGroup(100L)
+
+        verify(exactly = 0) { h.scheduler.cancel(any()) }
+        assertEquals(id, h.dao.getById(id)?.id)
     }
 }

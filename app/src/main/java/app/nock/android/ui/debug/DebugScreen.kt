@@ -116,7 +116,9 @@ fun DebugScreen(
             }
 
             sectionHeader("Settings", snapshot.settings.size)
-            items(snapshot.settings, key = { "s-${it.key}" }) { RawRow("${it.key} = ${it.value}") }
+            items(snapshot.settings, key = { "s-${it.key}" }) {
+                RawRow("${it.key} = ${DebugViewModel.displaySetting(it.key, it.value)}")
+            }
 
             sectionHeader("Pending voice", snapshot.pendingVoice.size)
             items(snapshot.pendingVoice, key = { "pv-${it.id}" }) { RawRow(it.toString()) }

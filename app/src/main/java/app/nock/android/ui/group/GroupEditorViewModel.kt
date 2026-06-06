@@ -113,7 +113,11 @@ class GroupEditorViewModel @Inject constructor(
             telegramSilentMirror = s.telegramSilentMirror,
             seedKey = s.seedKey,
         )
-        return repo.upsertGroup(group)
+        val id = repo.upsertGroup(group)
+        // Apply a changed chain/timing to this group's already-armed reminders
+        // right away instead of waiting for each to next fire.
+        engine.rearmGroup(id)
+        return id
     }
 
     suspend fun delete() {

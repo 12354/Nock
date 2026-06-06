@@ -157,7 +157,7 @@ class DebugViewModel @Inject constructor(
         }
         appendLine()
         appendLine("== SETTINGS (${s.settings.size}) ==")
-        s.settings.forEach { appendLine("${it.key} = ${it.value}") }
+        s.settings.forEach { appendLine("${it.key} = ${displaySetting(it.key, it.value)}") }
         appendLine()
         appendLine("== PENDING VOICE (${s.pendingVoice.size}) ==")
         s.pendingVoice.forEach { appendLine(it.toString()) }
@@ -170,5 +170,22 @@ class DebugViewModel @Inject constructor(
         private val FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
         fun ts(ms: Long): String =
             FMT.format(Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()))
+
+        // Settings keys whose values are credentials / identifiers that must not
+        // appear verbatim in a dump the user copies into a chat or bug report.
+        private val SECRET_KEY_MARKERS = listOf("token", "api_key", "secret", "password", "chat")
+
+        fun isSecret(key: String): Boolean =
+            SECRET_KEY_MARKERS.any { key.contains(it, ignoreCase = true) }
+
+        /** Mask a secret to a fingerprint: first/last chars + length, never the body. */
+        fun redact(value: String): String = when {
+            value.isBlank() -> value
+            value.length <= 6 -> "•••• (redacted)"
+            else -> "${value.take(3)}…${value.takeLast(2)} (${value.length} chars, redacted)"
+        }
+
+        fun displaySetting(key: String, value: String): String =
+            if (isSecret(key)) redact(value) else value
     }
 }

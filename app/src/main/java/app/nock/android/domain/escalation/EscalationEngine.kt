@@ -143,7 +143,21 @@ class EscalationEngine @Inject constructor(
         // or the receiver process dying mid-call). Run it first so it happens even
         // when this escalation has since been removed.
         flushPendingTelegramDeletions()
-        val esc = activeDao.getById(escalationId) ?: return
+        val esc = activeDao.getById(escalationId) ?: run {
+            // No backing row, yet the OS still delivered this alarm. That means it
+            // was orphaned in AlarmManager — e.g. a group deleted before the
+            // cancel-on-delete fix cascade-removed the escalation row but not the
+            // alarm it had scheduled. We can't enumerate those stale OS alarms to
+            // cancel them up front, but the OS hands each one back to us here at
+            // least once, so self-heal on delivery: tear down any notification or
+            // ringing alarm that may have been left stuck for this id. We do NOT
+            // reschedule, so the orphan lapses for good after this fire.
+            notifier.cancel(escalationId)
+            if (AlarmService.ringingEscalationId == escalationId) {
+                notifier.stopAlarm()
+            }
+            return
+        }
         val reminder = repo.getReminder(esc.reminderId) ?: run {
             // The reminder this chain belonged to is gone (deleted out-of-band —
             // e.g. a sync removing it — leaving an orphan escalation). Drop the
@@ -349,6 +363,20 @@ class EscalationEngine @Inject constructor(
         }
         repo.getReminder(esc.reminderId)?.let { history.snoozed(it.name, nextAt) }
         flushPendingTelegramDeletions()
+    }
+
+    // Deleting a group cascade-deletes its reminders and their active_escalations
+    // rows (FK ON DELETE CASCADE), but a row deletion does NOT cancel the alarm
+    // AlarmManager already holds for it — that alarm keeps its status-bar icon and
+    // still fires (or, if a reminder was mid-escalation, keeps ringing through the
+    // foreground service) for a reminder that now exists in no list. Tear every
+    // in-flight escalation down explicitly before the group is removed, exactly as
+    // the single-reminder delete paths do. Must run BEFORE repo.deleteGroup: once
+    // the cascade fires, the reminders are gone and these rows can't be found.
+    suspend fun cancelActiveForGroup(groupId: Long) {
+        repo.getAllReminders()
+            .filter { it.groupId == groupId }
+            .forEach { cancelActive(it.id) }
     }
 
     suspend fun cancelActive(reminderId: Long) {

@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.Hub
@@ -77,6 +78,7 @@ object SettingsCategory {
     const val NOTIFICATIONS = "notifications"
     const val INTEGRATIONS = "integrations"
     const val DIAGNOSTICS = "diagnostics"
+    const val DEBUG = "debug"
 }
 
 /**
@@ -124,6 +126,13 @@ fun SettingsScreen(
                     title = stringResource(R.string.settings_cat_diagnostics),
                     subtitle = stringResource(R.string.settings_cat_diagnostics_sub),
                     onClick = { onOpenCategory(SettingsCategory.DIAGNOSTICS) }
+                )
+                HorizontalDivider()
+                CategoryRow(
+                    icon = Icons.Filled.Build,
+                    title = stringResource(R.string.settings_cat_debug),
+                    subtitle = stringResource(R.string.settings_cat_debug_sub),
+                    onClick = { onOpenCategory(SettingsCategory.DEBUG) }
                 )
             }
         }

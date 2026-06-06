@@ -24,6 +24,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import app.nock.android.R
+import app.nock.android.ui.debug.DebugScreen
 import app.nock.android.ui.edit.EditReminderRoute
 import app.nock.android.ui.group.GroupEditorScreen
 import app.nock.android.ui.reminders.RemindersScreen
@@ -126,6 +127,9 @@ fun NockApp(
             }
             composable("settings/${SettingsCategory.DIAGNOSTICS}") {
                 DiagnosticsSettingsScreen(onBack = { nav.popBackStack() })
+            }
+            composable("settings/${SettingsCategory.DEBUG}") {
+                DebugScreen(onBack = { nav.popBackStack() })
             }
             composable("edit?id={id}") { entry ->
                 val id = entry.arguments?.getString("id")?.toLongOrNull() ?: 0L

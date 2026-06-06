@@ -404,6 +404,16 @@ class EscalationEngine @Inject constructor(
             }
     }
 
+    // The global stage chain is the effective chain for every group that has no
+    // override, so editing it has to re-arm those groups' reminders exactly as
+    // editing a group's own chain does. Groups carrying an override are unaffected
+    // by a global change and are left alone.
+    suspend fun rearmDefaultChainGroups() {
+        repo.getGroups()
+            .filter { it.overrideChain == null }
+            .forEach { rearmGroup(it.id) }
+    }
+
     suspend fun cancelActive(reminderId: Long) {
         val esc = activeDao.getByReminderId(reminderId) ?: return
         scheduler.cancel(esc.id)

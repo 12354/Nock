@@ -217,6 +217,12 @@ fun NotificationsSettingsScreen(
     vm: SettingsViewModel = hiltViewModel(),
 ) {
     val state by vm.state.collectAsState()
+    // Editing the global chain saves per-keystroke; apply it to already-armed
+    // reminders once, when this screen leaves composition (back, system back, or
+    // navigating into a group editor — the re-arm is idempotent either way).
+    DisposableEffect(Unit) {
+        onDispose { vm.applyChainEditsIfDirty() }
+    }
     CategoryScaffold(stringResource(R.string.settings_cat_notifications), onBack) {
         state.chain?.let {
             StageChainSection(chain = it, onChange = vm::setChain)

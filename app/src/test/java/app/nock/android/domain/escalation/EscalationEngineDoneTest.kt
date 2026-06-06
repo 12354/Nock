@@ -309,6 +309,32 @@ class EscalationEngineDoneTest {
         assertEquals(ChainJson.encode(newChain), rows.single().chainSnapshotJson)
     }
 
+    @Test fun rearmDefaultChainGroups_rearms_only_groups_without_override() = runTest {
+        // A global stage-chain edit must reach reminders in groups that use the
+        // default chain, but leave groups with their own override alone.
+        val h = EngineHarness(now = NOW)
+        val defaultGroup = group(id = 10L, overrideChain = null)
+        val overrideGroup = group(id = 20L, overrideChain = TEST_CHAIN)
+        coEvery { h.repo.getGroups() } returns listOf(defaultGroup, overrideGroup)
+        coEvery { h.repo.getGroup(10L) } returns defaultGroup
+        coEvery { h.repo.getGroup(20L) } returns overrideGroup
+        coEvery { h.repo.getAllReminders() } returns listOf(
+            reminder(id = 1L, groupId = 10L, nextFireAt = NOW + 60 * MIN),
+            reminder(id = 2L, groupId = 20L, nextFireAt = NOW + 60 * MIN),
+        )
+        val defaultEsc = h.dao.upsert(
+            activeEntity(id = 0L, reminderId = 1L, startedAtMs = NOW + 60 * MIN, nextStageIndex = 0, nextFireAtMs = NOW + 50 * MIN)
+        )
+        val overrideEsc = h.dao.upsert(
+            activeEntity(id = 0L, reminderId = 2L, startedAtMs = NOW + 60 * MIN, nextStageIndex = 0, nextFireAtMs = NOW + 50 * MIN)
+        )
+
+        h.engine.rearmDefaultChainGroups()
+
+        verify { h.scheduler.cancel(defaultEsc) }
+        verify(exactly = 0) { h.scheduler.cancel(overrideEsc) }
+    }
+
     @Test fun rearmGroup_paused_group_is_a_noop() = runTest {
         // Pause owns arming; rearm must not tear down a paused group's escalations.
         val h = EngineHarness(now = NOW)

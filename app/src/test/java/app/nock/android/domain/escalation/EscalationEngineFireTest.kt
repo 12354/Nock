@@ -1,5 +1,6 @@
 package app.nock.android.domain.escalation
 
+import app.nock.android.alarm.AlarmService
 import app.nock.android.domain.model.StageType
 import app.nock.android.telegram.TelegramResult
 import io.mockk.coEvery
@@ -7,6 +8,7 @@ import io.mockk.coVerify
 import io.mockk.slot
 import io.mockk.verify
 import kotlinx.coroutines.test.runTest
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -294,11 +296,49 @@ class EscalationEngineFireTest {
         verify(exactly = 0) { h.notifier.showAlarm(any(), any(), any()) }
     }
 
-    @Test fun fire_unknown_escalation_is_a_noop() = runTest {
+    // AlarmService.ringingEscalationId has a private setter; set it via reflection
+    // to exercise the "is this orphan the alarm currently ringing?" branch.
+    private fun setRinging(id: Long?) {
+        val field = AlarmService::class.java.getDeclaredField("ringingEscalationId")
+        field.isAccessible = true
+        field.set(null, id)
+    }
+
+    @After fun resetRinging() = setRinging(null)
+
+    @Test fun fire_unknown_escalation_does_not_reschedule() = runTest {
         val h = harnessWithReminder()
 
         h.engine.onAlarmFired(12345L)
 
         verify(exactly = 0) { h.scheduler.scheduleStage(any(), any(), any()) }
+    }
+
+    @Test fun fire_orphaned_alarm_self_heals_a_stuck_ring() = runTest {
+        // Existing-user case: a group deleted before the cancel-on-delete fix
+        // cascade-removed the escalation row but left its alarm scheduled in the
+        // OS. When that orphan fires (and it had been left ringing), the engine
+        // must stop the stuck alarm and clear its notification rather than bail.
+        val h = harnessWithReminder()
+        val orphanId = 777L
+        setRinging(orphanId)
+
+        h.engine.onAlarmFired(orphanId)
+
+        verify { h.notifier.cancel(orphanId) }
+        verify { h.notifier.stopAlarm() }
+        verify(exactly = 0) { h.scheduler.scheduleStage(any(), any(), any()) }
+    }
+
+    @Test fun fire_orphaned_alarm_clears_notification_but_spares_other_ring() = runTest {
+        // The orphan is not the alarm currently ringing: clear its own stale
+        // notification but never silence whatever else is legitimately ringing.
+        val h = harnessWithReminder()
+        setRinging(555L)
+
+        h.engine.onAlarmFired(777L)
+
+        verify { h.notifier.cancel(777L) }
+        verify(exactly = 0) { h.notifier.stopAlarm() }
     }
 }

@@ -143,7 +143,21 @@ class EscalationEngine @Inject constructor(
         // or the receiver process dying mid-call). Run it first so it happens even
         // when this escalation has since been removed.
         flushPendingTelegramDeletions()
-        val esc = activeDao.getById(escalationId) ?: return
+        val esc = activeDao.getById(escalationId) ?: run {
+            // No backing row, yet the OS still delivered this alarm. That means it
+            // was orphaned in AlarmManager — e.g. a group deleted before the
+            // cancel-on-delete fix cascade-removed the escalation row but not the
+            // alarm it had scheduled. We can't enumerate those stale OS alarms to
+            // cancel them up front, but the OS hands each one back to us here at
+            // least once, so self-heal on delivery: tear down any notification or
+            // ringing alarm that may have been left stuck for this id. We do NOT
+            // reschedule, so the orphan lapses for good after this fire.
+            notifier.cancel(escalationId)
+            if (AlarmService.ringingEscalationId == escalationId) {
+                notifier.stopAlarm()
+            }
+            return
+        }
         val reminder = repo.getReminder(esc.reminderId) ?: run {
             // The reminder this chain belonged to is gone (deleted out-of-band —
             // e.g. a sync removing it — leaving an orphan escalation). Drop the

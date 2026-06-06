@@ -281,25 +281,32 @@ class EscalationEngineDoneTest {
         assertEquals(ChainJson.encode(newChain), rows.single().chainSnapshotJson)
     }
 
-    @Test fun rearmGroup_leaves_in_flight_escalation_untouched() = runTest {
-        // A chain already firing keeps its snapshot so the edit can't double-send
-        // or skip a stage mid-escalation.
+    @Test fun rearmGroup_rearms_in_flight_escalation_too() = runTest {
+        // A user who changes a group's schedule does not expect an already-firing
+        // chain to keep escalating on the old one. The stale in-flight escalation
+        // is torn down and re-armed under the new chain (like moving a task).
         val h = EngineHarness(now = NOW)
         val g = group(id = 100L)
         val r = reminder(id = 1L, groupId = 100L, nextFireAt = NOW - 5 * MIN)
         coEvery { h.repo.getGroup(100L) } returns g
         coEvery { h.repo.getAllReminders() } returns listOf(r)
+        val newChain = EscalationChain(
+            stages = listOf(StageConfig(StageType.ALARM, 0L)),
+            repeatIntervalMs = 5 * MIN,
+        )
+        coEvery { h.repo.effectiveChain(g) } returns newChain
         val inflight = activeEntity(
             id = 0L, reminderId = 1L, startedAtMs = NOW - 5 * MIN,
             nextStageIndex = 2, nextFireAtMs = NOW + MIN, chain = TEST_CHAIN,
         )
-        val id = h.dao.upsert(inflight)
+        val oldId = h.dao.upsert(inflight)
 
         h.engine.rearmGroup(100L)
 
-        verify(exactly = 0) { h.scheduler.cancel(id) }
-        assertEquals(ChainJson.encode(TEST_CHAIN), h.dao.getById(id)?.chainSnapshotJson)
-        assertEquals(2, h.dao.getById(id)?.nextStageIndex)
+        verify { h.scheduler.cancel(oldId) }
+        val rows = h.dao.rows.values.filter { it.reminderId == 1L }
+        assertEquals(1, rows.size)
+        assertEquals(ChainJson.encode(newChain), rows.single().chainSnapshotJson)
     }
 
     @Test fun rearmGroup_paused_group_is_a_noop() = runTest {

@@ -382,25 +382,24 @@ class EscalationEngine @Inject constructor(
     // Editing a group's chain/timing only writes the group row; the escalations
     // already armed for its reminders keep the chain they snapshotted when armed,
     // so a changed chain wouldn't take effect until each reminder next fires (or a
-    // reboot). Re-arm them now so the edit applies immediately — mirroring how
-    // editing a *reminder* re-arms via cancelActive + startEscalationAt.
+    // reboot). Re-arm them now so the edit applies immediately — including chains
+    // already in flight: a user who changes the schedule does not expect the old
+    // one to keep firing. This mirrors moving a reminder — startEscalationAt tears
+    // the stale chain down (cancelling its alarm, stopping a live ring, deleting
+    // any Telegram it already sent) and re-arms from the reminder's current trigger
+    // at the stage that is due now under the new chain.
     //
-    // Only re-arm escalations that haven't begun firing yet: an in-flight chain
-    // keeps its snapshot so a mid-escalation edit can't double-send a stage or
-    // skip one. Paused groups are left untouched — pause semantics own arming, and
-    // startEscalationAt would just tear the chain down without re-arming anyway.
+    // Paused groups are left untouched — pause owns arming, and startEscalationAt
+    // would tear the chain down without re-arming.
     suspend fun rearmGroup(groupId: Long) {
         val group = repo.getGroup(groupId) ?: return
-        val now = time.nowMs()
-        if (group.isPaused(now)) return
+        if (group.isPaused(time.nowMs())) return
         repo.getAllReminders()
             .filter { it.groupId == groupId }
             .forEach { reminder ->
                 // OnUnlock reminders are event-triggered, not time-armed.
                 if (reminder.schedule is Schedule.OnUnlock) return@forEach
                 val trigger = reminder.nextFireAt ?: return@forEach
-                val active = activeDao.getByReminderId(reminder.id)
-                if (active != null && now >= active.startedAtMs) return@forEach
                 startEscalationAt(reminder, trigger)
             }
     }

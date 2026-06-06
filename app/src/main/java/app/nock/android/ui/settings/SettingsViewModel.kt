@@ -14,12 +14,14 @@ import app.nock.android.domain.model.EscalationChain
 import app.nock.android.domain.model.Group
 import app.nock.android.domain.model.StageConfig
 import app.nock.android.domain.model.StageType
+import app.nock.android.di.ApplicationScope
 import app.nock.android.sync.DriveSyncClient
 import app.nock.android.sync.SyncOutcome
 import app.nock.android.history.AlarmHistoryLogger
 import app.nock.android.telegram.TelegramSender
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -54,6 +56,7 @@ class SettingsViewModel @Inject constructor(
     private val seedGroupLocaleSync: SeedGroupLocaleSync,
     private val alarmHistory: AlarmHistoryLogger,
     private val activeDao: ActiveEscalationDao,
+    @ApplicationScope private val appScope: CoroutineScope,
 ) : ViewModel() {
 
     fun syncSeedGroupNames() {
@@ -126,8 +129,31 @@ class SettingsViewModel @Inject constructor(
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsState())
 
+    // The global chain editor saves on every tweak; mark it dirty so we re-arm the
+    // affected (no-override) groups once, when the user leaves the screen.
+    @Volatile private var chainEdited = false
+
     fun setChain(chain: EscalationChain) {
+        chainEdited = true
         viewModelScope.launch { settings.setStageChain(chain) }
+    }
+
+    /**
+     * Apply a global-chain edit to already-armed reminders, called when the
+     * Notifications screen is left. Runs on the application scope (not
+     * viewModelScope, which is cancelled as the screen's ViewModel is cleared) so
+     * the re-arm always completes. Re-persists the latest chain first so the
+     * re-arm can't read a stale value if the final keystroke's write was still in
+     * flight (or lost to the same cancellation).
+     */
+    fun applyChainEditsIfDirty() {
+        if (!chainEdited) return
+        chainEdited = false
+        val chain = state.value.chain ?: return
+        appScope.launch {
+            settings.setStageChain(chain)
+            engine.rearmDefaultChainGroups()
+        }
     }
 
     fun setTelegram(token: String, chat: String) {

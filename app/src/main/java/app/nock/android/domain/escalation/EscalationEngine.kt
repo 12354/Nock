@@ -379,6 +379,41 @@ class EscalationEngine @Inject constructor(
             .forEach { cancelActive(it.id) }
     }
 
+    // Editing a group's chain/timing only writes the group row; the escalations
+    // already armed for its reminders keep the chain they snapshotted when armed,
+    // so a changed chain wouldn't take effect until each reminder next fires (or a
+    // reboot). Re-arm them now so the edit applies immediately — including chains
+    // already in flight: a user who changes the schedule does not expect the old
+    // one to keep firing. This mirrors moving a reminder — startEscalationAt tears
+    // the stale chain down (cancelling its alarm, stopping a live ring, deleting
+    // any Telegram it already sent) and re-arms from the reminder's current trigger
+    // at the stage that is due now under the new chain.
+    //
+    // Paused groups are left untouched — pause owns arming, and startEscalationAt
+    // would tear the chain down without re-arming.
+    suspend fun rearmGroup(groupId: Long) {
+        val group = repo.getGroup(groupId) ?: return
+        if (group.isPaused(time.nowMs())) return
+        repo.getAllReminders()
+            .filter { it.groupId == groupId }
+            .forEach { reminder ->
+                // OnUnlock reminders are event-triggered, not time-armed.
+                if (reminder.schedule is Schedule.OnUnlock) return@forEach
+                val trigger = reminder.nextFireAt ?: return@forEach
+                startEscalationAt(reminder, trigger)
+            }
+    }
+
+    // The global stage chain is the effective chain for every group that has no
+    // override, so editing it has to re-arm those groups' reminders exactly as
+    // editing a group's own chain does. Groups carrying an override are unaffected
+    // by a global change and are left alone.
+    suspend fun rearmDefaultChainGroups() {
+        repo.getGroups()
+            .filter { it.overrideChain == null }
+            .forEach { rearmGroup(it.id) }
+    }
+
     suspend fun cancelActive(reminderId: Long) {
         val esc = activeDao.getByReminderId(reminderId) ?: return
         scheduler.cancel(esc.id)

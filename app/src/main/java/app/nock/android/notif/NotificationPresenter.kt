@@ -33,6 +33,15 @@ class NotificationPresenter @Inject constructor(
         nm.notify(escalationId.toInt(), notif)
     }
 
+    fun showVibrate(reminder: Reminder, group: Group, escalationId: Long, suffix: String = "") {
+        val notif = baseBuilder(reminder, group, escalationId, Channels.VIBRATE)
+            .setContentText("${group.name}$suffix")
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setDefaults(NotificationCompat.DEFAULT_VIBRATE)
+            .build()
+        nm.notify(escalationId.toInt(), notif)
+    }
+
     fun showAlarm(reminder: Reminder, group: Group, escalationId: Long) {
         // The alarm notification is posted by AlarmService.startForeground() so
         // it's bound to the running foreground service — that keeps it ongoing

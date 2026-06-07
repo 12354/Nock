@@ -1,6 +1,6 @@
 package app.nock.android.domain.model
 
-enum class StageType { SILENT, TELEGRAM, ALARM_VIBRATE, ALARM }
+enum class StageType { SILENT, VIBRATE, TELEGRAM, ALARM_VIBRATE, ALARM }
 
 data class StageConfig(
     val type: StageType,
@@ -52,12 +52,26 @@ data class EscalationChain(
 }
 
 object DefaultChain {
+    /**
+     * Alarm-clock-shaped escalation: the louder stages build up *before* the
+     * scheduled time so the final ALARM rings exactly at the task's time
+     * (offset 0), like a normal alarm clock — just with gentler nudges leading
+     * up to it. Everything before the ALARM is a lead-up warning:
+     *
+     *   VIBRATE        @ -10 min  silent heads-up that buzzes the phone
+     *   TELEGRAM       @  -5 min  message mirrored to Telegram
+     *   ALARM_VIBRATE  @  -2 min  vibrate-only alarm (last quiet warning)
+     *   ALARM          @   0 min  full loud alarm, rings at the scheduled time
+     *
+     * If the alarm goes unacknowledged it keeps re-ringing every repeat
+     * interval until the user marks it done.
+     */
     val CHAIN = EscalationChain(
         stages = listOf(
-            StageConfig(StageType.SILENT, -10 * 60_000L),
-            StageConfig(StageType.TELEGRAM, 5 * 60_000L),
-            StageConfig(StageType.ALARM_VIBRATE, 8 * 60_000L),
-            StageConfig(StageType.ALARM, 10 * 60_000L),
+            StageConfig(StageType.VIBRATE, -10 * 60_000L),
+            StageConfig(StageType.TELEGRAM, -5 * 60_000L),
+            StageConfig(StageType.ALARM_VIBRATE, -2 * 60_000L),
+            StageConfig(StageType.ALARM, 0L),
         ),
         repeatIntervalMs = 10 * 60_000L
     )

@@ -21,6 +21,8 @@
     <!-- Notification channels -->
     <string name="channel_silent_name">Stille Erinnerungen</string>
     <string name="channel_silent_desc">Leise Hinweise ohne Ton.</string>
+    <string name="channel_vibrate_name">Vibrierende Erinnerungen</string>
+    <string name="channel_vibrate_desc">Lautlose Hinweise, die vibrieren, ohne Ton.</string>
     <string name="channel_alarm_name">Laute Alarme</string>
     <string name="channel_alarm_desc">Wichtige Alarme, die „Nicht stören" durchbrechen.</string>
     <string name="channel_service_name">Alarmdienst</string>
@@ -193,6 +195,7 @@
 
     <!-- Stage types (StageType enum) -->
     <string name="stage_type_silent">Leise</string>
+    <string name="stage_type_vibrate">Vibration</string>
     <string name="stage_type_alarm">Alarm</string>
     <string name="stage_type_alarm_vibrate">Alarm (nur Vibration)</string>
     <string name="stage_type_telegram">Telegram</string>

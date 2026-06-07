@@ -232,6 +232,12 @@ class EscalationEngine @Inject constructor(
                     sentMessageId = telegram.send(reminder, silent = true).messageId
                 }
             }
+            StageType.VIBRATE -> {
+                notifier.showVibrate(reminder, group, escalationId)
+                if (group.telegramSilentMirror) {
+                    sentMessageId = telegram.send(reminder, silent = true).messageId
+                }
+            }
             StageType.TELEGRAM -> {
                 sentMessageId = telegram.send(reminder, silent = false).messageId
                 notifier.showSilent(reminder, group, escalationId, suffix = " (Telegram sent)")

@@ -12,6 +12,7 @@ import javax.inject.Singleton
 
 object Channels {
     const val SILENT = "nock_silent_v2"
+    const val VIBRATE = "nock_vibrate_v1"
     const val ALARM = "nock_alarm_v2"
     const val SERVICE = "nock_service"
 
@@ -38,6 +39,19 @@ class NockNotificationChannels @Inject constructor(
                 setSound(null, null)
                 enableVibration(false)
                 setShowBadge(false)
+            }
+        )
+
+        nm.createNotificationChannel(
+            NotificationChannel(
+                Channels.VIBRATE,
+                ctx.getString(R.string.channel_vibrate_name),
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = ctx.getString(R.string.channel_vibrate_desc)
+                setSound(null, null)
+                enableVibration(true)
+                lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
             }
         )
 

@@ -35,8 +35,8 @@ class SettingsRepository @Inject constructor(
         const val KEY_TRIP_HOME_LON = "trip_home_lon"
         const val KEY_TRIP_BUFFER_MIN = "trip_buffer_min"
         const val KEY_TRIP_TRAVEL_MODE = "trip_travel_mode"
-        // CSV of CalendarContract calendar ids to import located events from.
-        // Empty/unset means "all visible calendars".
+        // CSV of CalendarContract calendar ids the user opted in to. Only events
+        // from these calendars become trip alarms; empty/unset means none.
         const val KEY_TRIP_CALENDAR_IDS = "trip_calendar_ids"
 
         const val DEFAULT_DEEPSEEK_MODEL = "deepseek-v4-flash"

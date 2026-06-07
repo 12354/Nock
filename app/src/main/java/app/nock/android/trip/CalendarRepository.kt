@@ -60,16 +60,18 @@ class CalendarRepository @Inject constructor(
     }
 
     /**
-     * Located, timed (non all-day) event instances beginning in [nowMs, untilMs].
+     * Located, timed (non all-day) event instances beginning in [nowMs, untilMs],
+     * restricted to the calendars the user chose. Only events from [calendarIds]
+     * are returned; an empty set yields nothing (the user hasn't opted any in).
      * Recurring events are expanded into individual instances via the Instances
-     * table. When [calendarIds] is empty, all visible calendars are included.
+     * table.
      */
     fun upcomingLocatedEvents(
         nowMs: Long,
         untilMs: Long,
         calendarIds: Set<Long>,
     ): List<CalendarEvent> {
-        if (!hasPermission()) return emptyList()
+        if (!hasPermission() || calendarIds.isEmpty()) return emptyList()
         val uri = CalendarContract.Instances.CONTENT_URI.buildUpon()
             .appendPath(nowMs.toString())
             .appendPath(untilMs.toString())
@@ -94,7 +96,7 @@ class CalendarRepository @Inject constructor(
                 val location = c.getString(3)?.trim().orEmpty()
                 if (location.isEmpty()) continue
                 val calId = c.getLong(4)
-                if (calendarIds.isNotEmpty() && calId !in calendarIds) continue
+                if (calId !in calendarIds) continue
                 out += CalendarEvent(
                     calendarId = calId,
                     eventId = c.getLong(0),

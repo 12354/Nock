@@ -742,10 +742,14 @@ private fun TripsSection(state: SettingsState, vm: SettingsViewModel) {
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold
                 )
-                // Empty stored selection means "all calendars" — reflect that as
-                // every box checked so the user can deselect from a sensible default.
-                val allIds = state.tripCalendars.map { it.id }.toSet()
-                val selected = state.tripSelectedCalendarIds.ifEmpty { allIds }
+                Text(
+                    stringResource(R.string.trips_calendars_help),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.outline
+                )
+                // Only the calendars the user explicitly checks are watched;
+                // nothing is selected by default.
+                val selected = state.tripSelectedCalendarIds
                 state.tripCalendars.forEach { cal ->
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(

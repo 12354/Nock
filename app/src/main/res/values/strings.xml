@@ -269,6 +269,7 @@
     <string name="trips_calendar_permission_help">Trip alarms read your device calendar (including Google Calendar) to find located events. No data leaves your phone except the addresses sent to TomTom for routing.</string>
     <string name="trips_grant_calendar">Grant calendar access</string>
     <string name="trips_calendars_title">Calendars to watch</string>
+    <string name="trips_calendars_help">Only events from the calendars you check here are turned into trip alarms.</string>
     <string name="trips_status_ok">Routing OK — TomTom key and home address look good.</string>
     <string name="trips_status_error">Couldn\'t reach the routing service. Check the TomTom key and home address.</string>
     <string name="trips_status_no_key">Enter your TomTom API key first.</string>

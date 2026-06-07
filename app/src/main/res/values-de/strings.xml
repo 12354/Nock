@@ -22,13 +22,13 @@
     <string name="channel_silent_name">Stille Erinnerungen</string>
     <string name="channel_silent_desc">Leise Hinweise ohne Ton.</string>
     <string name="channel_alarm_name">Laute Alarme</string>
-    <string name="channel_alarm_desc">Wichtige Alarme, die „Nicht stören" durchbrechen.</string>
+    <string name="channel_alarm_desc">Wichtige Alarme, die „Nicht stören“ durchbrechen.</string>
     <string name="channel_service_name">Alarmdienst</string>
     <string name="channel_service_desc">Hält den aktiven Alarmton am Laufen.</string>
 
     <!-- Today screen -->
     <string name="today_empty_title">Noch keine Erinnerungen</string>
-    <string name="today_empty_subtitle">Tippe auf „Hinzufügen", um deine erste zu erstellen.</string>
+    <string name="today_empty_subtitle">Tippe auf „Hinzufügen“, um deine erste zu erstellen.</string>
     <string name="today_no_next_fire">kein nächster Termin</string>
     <string name="today_firing_now">läuft jetzt</string>
     <string name="today_section_active_now">Aktiv</string>
@@ -98,7 +98,7 @@
     <string name="edit_monthly_label">Monatlich</string>
     <string name="edit_day_label">Tag</string>
     <string name="edit_at_time">um %1$s</string>
-    <string name="edit_interval_label">Intervall nach letztem „Erledigt"</string>
+    <string name="edit_interval_label">Intervall nach letztem „Erledigt“</string>
     <string name="edit_hours_label">Stunden</string>
     <string name="edit_escalation_section">Eskalation</string>
     <string name="edit_using_group_chain">Kette der Gruppe %1$s wird verwendet</string>
@@ -203,7 +203,7 @@
     <string name="voice_idle_prompt">Mikrofon halten und Alarm beschreiben</string>
     <string name="voice_listening">Höre zu…</string>
     <string name="voice_thinking">Erinnerung wird erstellt…</string>
-    <string name="voice_hold_hint">z. B. „Erinnere mich, jeden Dienstag um 20 Uhr den Müll rauszubringen"</string>
+    <string name="voice_hold_hint">z. B. „Erinnere mich, jeden Dienstag um 20 Uhr den Müll rauszubringen“</string>
     <string name="voice_success_prefix">Erstellt: %1$s</string>
     <string name="voice_error_prefix">Sprachfehler: %1$s</string>
     <string name="voice_error_empty_transcript">Keine Sprache erkannt</string>
@@ -217,7 +217,7 @@
 
     <!-- Toast shown once a voice transcript has been turned into a real reminder.
          %1$s is the reminder text, %2$s is a natural-language "when" phrase. -->
-    <string name="voice_added_toast">„%1$s" hinzugefügt · %2$s</string>
+    <string name="voice_added_toast">„%1$s“ hinzugefügt · %2$s</string>
     <string name="voice_when_today">heute um %1$s</string>
     <string name="voice_when_tomorrow">morgen um %1$s</string>
     <plurals name="voice_when_in_days">

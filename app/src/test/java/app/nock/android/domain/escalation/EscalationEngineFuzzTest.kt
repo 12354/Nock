@@ -183,11 +183,11 @@ class EscalationEngineFuzzTest {
 
             // --- Notifier records the single stage it displays per fire ---
             every { notifier.showSilent(any(), any(), any(), any()) } answers {
-                val id = arg<Long>(2)
-                val suffix = arg<String>(3)
-                // SILENT shows no suffix; the TELEGRAM stage reuses the silent
-                // notification with a " (Telegram sent)" suffix.
-                displayed += id to if (suffix.isEmpty()) StageType.SILENT else StageType.TELEGRAM
+                displayed += arg<Long>(2) to StageType.SILENT
+            }
+            // The TELEGRAM stage posts the audible pre-alarm notification.
+            coEvery { notifier.showPreAlarm(any(), any(), any(), any()) } answers {
+                displayed += arg<Long>(2) to StageType.TELEGRAM
             }
             every { notifier.showAlarmVibrate(any(), any(), any()) } answers {
                 displayed += arg<Long>(2) to StageType.ALARM_VIBRATE

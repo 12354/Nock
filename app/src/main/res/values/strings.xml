@@ -23,6 +23,8 @@
     <string name="channel_silent_desc">Quiet heads-up notifications, no sound.</string>
     <string name="channel_vibrate_name">Vibrating reminders</string>
     <string name="channel_vibrate_desc">Silent heads-up notifications that vibrate, no sound.</string>
+    <string name="channel_prealarm_name">Pre-alarm sound</string>
+    <string name="channel_prealarm_desc">Audible heads-up notification before the alarm rings.</string>
     <string name="channel_alarm_name">Loud alarms</string>
     <string name="channel_alarm_desc">Critical alarms that pierce Do Not Disturb.</string>
     <string name="channel_service_name">Alarm service</string>
@@ -199,6 +201,15 @@
     <string name="stage_type_alarm">Alarm</string>
     <string name="stage_type_alarm_vibrate">Alarm (vibration only)</string>
     <string name="stage_type_telegram">Telegram</string>
+
+    <!-- Pre-alarm sound picker -->
+    <string name="settings_prealarm_sound_title">Pre-alarm sound</string>
+    <string name="settings_prealarm_sound_desc">Sound played by the notification before the alarm (the Telegram stage), in addition to the Telegram message.</string>
+    <string name="settings_prealarm_sound_current">Current: %1$s</string>
+    <string name="settings_prealarm_sound_choose">Choose sound</string>
+    <string name="settings_prealarm_sound_default">Default notification sound</string>
+    <string name="settings_prealarm_sound_silent">Silent</string>
+    <string name="settings_prealarm_sound_custom">Custom sound</string>
 
     <string name="default_reminder_name">Reminder</string>
 

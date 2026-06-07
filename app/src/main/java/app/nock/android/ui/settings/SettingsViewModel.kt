@@ -43,6 +43,8 @@ data class SettingsState(
     val deepSeekModel: String = SettingsRepository.DEFAULT_DEEPSEEK_MODEL,
     val deepSeekBaseUrl: String = SettingsRepository.DEFAULT_DEEPSEEK_BASE_URL,
     val deepSeekContext: String = "",
+    // null = not set (default notification tone); "" = silent; else a sound URI.
+    val preAlarmSoundUri: String? = null,
 )
 
 @HiltViewModel
@@ -126,6 +128,7 @@ class SettingsViewModel @Inject constructor(
             deepSeekBaseUrl = kv[SettingsRepository.KEY_DEEPSEEK_BASE_URL]?.takeIf { it.isNotBlank() }
                 ?: SettingsRepository.DEFAULT_DEEPSEEK_BASE_URL,
             deepSeekContext = kv[SettingsRepository.KEY_DEEPSEEK_CONTEXT].orEmpty(),
+            preAlarmSoundUri = kv[SettingsRepository.KEY_PREALARM_SOUND],
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsState())
 
@@ -153,6 +156,13 @@ class SettingsViewModel @Inject constructor(
         appScope.launch {
             settings.setStageChain(chain)
             engine.rearmDefaultChainGroups()
+        }
+    }
+
+    /** Persist the chosen pre-alarm sound: null URI = silent, else the sound URI. */
+    fun setPreAlarmSound(uri: String?) {
+        viewModelScope.launch {
+            settings.set(SettingsRepository.KEY_PREALARM_SOUND, uri ?: "")
         }
     }
 

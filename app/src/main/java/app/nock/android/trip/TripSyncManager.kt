@@ -134,7 +134,7 @@ class TripSyncManager @Inject constructor(
         val travel = if (hasLocation) resolveTravelMs(origin, dest, e.beginMs, mode, existing?.lastTravelMs) else 0L
         val leaveBy = TripMath.leaveBy(e.beginMs, travel)
 
-        val name = reminderName(e.title, hasLocation)
+        val name = reminderName(e.title, showLeaveFor(hasLocation, travel))
         val existingReminder = existing?.let { repo.getReminder(it.reminderId) }
         val reminderId = repo.saveReminder(
             id = existing?.reminderId ?: 0L,
@@ -193,10 +193,13 @@ class TripSyncManager @Inject constructor(
     ) {
         val leaveBy = TripMath.leaveBy(trip.eventStartMs, travelMs)
         val reminder = repo.getReminder(reminderId) ?: return
+        // A recompute can push travel above/below the trip threshold, so refresh
+        // the name to keep the "Leave for …" framing in sync with the estimate.
+        val name = reminderName(trip.title, showLeaveFor(trip.location.isNotBlank(), travelMs))
         repo.saveReminder(
             id = reminderId,
             groupId = reminder.groupId,
-            name = reminder.name,
+            name = name,
             schedule = Schedule.OneShot(leaveBy),
             nextFireAt = leaveBy,
             lastCompletedAt = reminder.lastCompletedAt,
@@ -321,6 +324,15 @@ class TripSyncManager @Inject constructor(
         )
     }
 
-    private fun reminderName(title: String, hasLocation: Boolean): String =
-        if (hasLocation) ctx.getString(R.string.trips_reminder_name, title) else title
+    /**
+     * Whether to frame a reminder as a trip ("Leave for …"). A located event
+     * whose travel time is under [TripDefaults.MIN_TRIP_TRAVEL_MS] is close
+     * enough that a leave-by departure prompt is just noise, so it shows the
+     * plain event title like a location-less event.
+     */
+    private fun showLeaveFor(hasLocation: Boolean, travelMs: Long): Boolean =
+        hasLocation && travelMs >= TripDefaults.MIN_TRIP_TRAVEL_MS
+
+    private fun reminderName(title: String, showLeaveFor: Boolean): String =
+        if (showLeaveFor) ctx.getString(R.string.trips_reminder_name, title) else title
 }

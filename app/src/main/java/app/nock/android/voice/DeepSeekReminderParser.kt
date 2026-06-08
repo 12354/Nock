@@ -138,10 +138,14 @@ class DeepSeekReminderParser @Inject constructor(
     ): String {
         val fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss")
         val dow = now.dayOfWeek.name
-        val groupCatalog = groups.joinToString("\n") { g ->
-            val desc = SEED_GROUP_DESCRIPTIONS[g.seedKey]
-            if (desc != null) "              - \"${g.name}\" — $desc" else "              - \"${g.name}\" (custom group)"
-        }
+        // The calendar-import group (Appointments / Termine) is populated from the
+        // device calendar, not from voice capture, so never offer it as a target.
+        val groupCatalog = groups
+            .filter { it.seedKey != TRIPS_SEED_KEY }
+            .joinToString("\n") { g ->
+                val desc = SEED_GROUP_DESCRIPTIONS[g.seedKey]
+                if (desc != null) "              - \"${g.name}\" — $desc" else "              - \"${g.name}\" (custom group)"
+            }
         val personalContext = if (userContext.isNotBlank()) {
             "\n\n" + """
                 Personal context provided by the user (use it to resolve names, relationships,
@@ -193,6 +197,9 @@ $groupCatalog
     }
 
     companion object {
+        // Seed key of the calendar-import group created by TripSyncManager.
+        private const val TRIPS_SEED_KEY = "trips"
+
         private val SEED_GROUP_DESCRIPTIONS = mapOf(
             "pets" to "anything about pets or animals: feeding, walking, vet visits, grooming, litter box, cage cleaning.",
             "meds" to "medication and supplements: taking pills, vitamins, insulin, inhaler, prescription refills, doctor-prescribed treatments.",

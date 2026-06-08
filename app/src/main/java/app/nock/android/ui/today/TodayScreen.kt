@@ -18,8 +18,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -27,13 +29,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import app.nock.android.R
+import app.nock.android.update.UpdateManager
+import app.nock.android.update.UpdateResult
+import app.nock.android.update.UpdateState
 import app.nock.android.domain.model.EscalationChain
 import app.nock.android.domain.model.Group
 import app.nock.android.ui.components.GroupAvatar
@@ -124,6 +132,9 @@ fun TodayScreen(
             modifier = Modifier.fillMaxSize().padding(padding),
             contentPadding = PaddingValues(top = 8.dp, bottom = 96.dp)
         ) {
+            item("update-banner") {
+                UpdateNowBar()
+            }
             if (activeItem != null) {
                 item("active-header") {
                     AnimatedVisibility(
@@ -183,6 +194,160 @@ fun TodayScreen(
                             onClick = { onEditReminder(item.reminder.id) }
                         )
                     }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Slim, dismissable "Update ready" banner pinned to the top of the Today list.
+ * Mirrors the M3 dark mock: an amber accent dot, a one-line version label, a
+ * dismiss (×) and an Update action that flips to an "Updating…" spinner while the
+ * download/install runs. It only renders when [UpdateManager] reports a genuine
+ * update is available — otherwise the slot is empty and the list looks untouched.
+ */
+@Composable
+private fun UpdateNowBar() {
+    // Design accent: amber pill on the dark surface, with a near-black label on
+    // the filled Update button so it reads on the bright fill.
+    val accent = Color(0xFFFFB070)
+    val onAccent = Color(0xFF3A2410)
+
+    val context = LocalContext.current
+    val updateManager = remember { UpdateManager(context) }
+    val scope = rememberCoroutineScope()
+    var updateState by remember { mutableStateOf<UpdateState>(UpdateState.Idle) }
+    var dismissed by remember { mutableStateOf(false) }
+
+    suspend fun doCheck() {
+        updateState = UpdateState.Checking
+        updateState = when (val result = updateManager.checkForUpdate()) {
+            is UpdateResult.Success ->
+                if (result.info.hasUpdate) UpdateState.Available(result.info)
+                else UpdateState.UpToDate
+            is UpdateResult.Failure -> UpdateState.Error(result.error)
+        }
+    }
+
+    LaunchedEffect(Unit) { doCheck() }
+
+    // The system installer is a separate activity: when the user backs out of it
+    // our activity resumes still parked on "Updating…". Re-check on resume so the
+    // banner returns to Available (cancelled) or disappears (installed).
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME && updateState is UpdateState.Installing) {
+                scope.launch { doCheck() }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    val state = updateState
+    val isUpdating = state is UpdateState.Downloading || state is UpdateState.Installing
+    val info = (state as? UpdateState.Available)?.info
+
+    // Unobtrusive by design: show only while an update is in play, and let the
+    // user dismiss it for the session.
+    if (dismissed || (info == null && !isUpdating)) return
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 4.dp),
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        border = androidx.compose.foundation.BorderStroke(1.dp, accent.copy(alpha = 0.3f)),
+    ) {
+        Row(
+            modifier = Modifier.padding(start = 14.dp, top = 8.dp, end = 8.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(30.dp)
+                    .clip(CircleShape)
+                    .background(accent.copy(alpha = 0.16f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.SystemUpdate,
+                    contentDescription = null,
+                    tint = accent,
+                    modifier = Modifier.size(17.dp)
+                )
+            }
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(
+                        if (isUpdating) R.string.today_update_updating else R.string.today_update_ready
+                    ),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                Text(
+                    text = if (isUpdating) {
+                        stringResource(R.string.today_update_applying)
+                    } else {
+                        stringResource(R.string.today_update_version, info!!.remoteVersionCode)
+                    },
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 11.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            if (isUpdating) {
+                CircularProgressIndicator(
+                    modifier = Modifier
+                        .padding(end = 6.dp)
+                        .size(18.dp),
+                    strokeWidth = 2.dp,
+                    color = accent
+                )
+            } else {
+                IconButton(onClick = { dismissed = true }, modifier = Modifier.size(32.dp)) {
+                    Icon(
+                        Icons.Filled.Close,
+                        contentDescription = stringResource(R.string.today_update_dismiss),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+                val downloadFailedMsg = stringResource(R.string.settings_update_download_failed)
+                Button(
+                    onClick = {
+                        scope.launch {
+                            updateState = UpdateState.Downloading(0f)
+                            val apk = updateManager.downloadUpdate { progress ->
+                                updateState = UpdateState.Downloading(progress)
+                            }
+                            if (apk != null) {
+                                updateState = UpdateState.Installing
+                                updateManager.installApk(apk)
+                            } else {
+                                updateState = UpdateState.Error(downloadFailedMsg)
+                            }
+                        }
+                    },
+                    shape = RoundedCornerShape(17.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = accent,
+                        contentColor = onAccent
+                    ),
+                    contentPadding = PaddingValues(horizontal = 16.dp),
+                    modifier = Modifier.height(34.dp)
+                ) {
+                    Text(
+                        stringResource(R.string.today_update_action),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
                 }
             }
         }

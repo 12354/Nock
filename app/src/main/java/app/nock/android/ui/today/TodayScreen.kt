@@ -232,13 +232,17 @@ private fun UpdateNowBar() {
 
     LaunchedEffect(Unit) { doCheck() }
 
-    // The system installer is a separate activity: when the user backs out of it
-    // our activity resumes still parked on "Updating…". Re-check on resume so the
-    // banner returns to Available (cancelled) or disappears (installed).
+    // Re-check every time the app is brought to the foreground, not just on the
+    // first composition, so a release published while the app sat in the
+    // background is picked up on the next open without a cold start. This also
+    // covers the system installer (a separate activity): when the user backs out
+    // of it our activity resumes still parked on "Updating…", and the re-check
+    // returns the banner to Available (cancelled) or removes it (installed). Skip
+    // only while a download is mid-flight, so we don't clobber its progress.
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME && updateState is UpdateState.Installing) {
+            if (event == Lifecycle.Event.ON_RESUME && updateState !is UpdateState.Downloading) {
                 scope.launch { doCheck() }
             }
         }

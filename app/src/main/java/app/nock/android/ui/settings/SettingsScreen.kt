@@ -768,10 +768,16 @@ private fun TripsSection(state: SettingsState, vm: SettingsViewModel) {
                 modifier = Modifier.fillMaxWidth()
             )
             Spacer(Modifier.height(12.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = { persist() }) { Text(stringResource(R.string.save)) }
                 OutlinedButton(onClick = { persist(); vm.testRoute() }) {
                     Text(stringResource(R.string.trips_test_route))
+                }
+                OutlinedButton(
+                    onClick = { persist(); vm.syncTripsNow() },
+                    enabled = state.tripHasCalendarPermission,
+                ) {
+                    Text(stringResource(R.string.trips_sync_now))
                 }
             }
             state.tripStatus?.let {

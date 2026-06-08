@@ -15,7 +15,8 @@ import androidx.glance.state.PreferencesGlanceStateDefinition
  *  * [Idle]      — nothing happening; tap starts recording.
  *  * [Starting]  — tap received, foreground service spinning up the recognizer.
  *  * [Recording] — recognizer is live; tap stops and finalizes.
- *  * [Stopping]  — stop received; finalizing transcript (parsing + toast) in the background.
+ *  * [Stopping]  — stop received; finalizing transcript (parsing + toast) in the
+ *                  background. The widget already renders its non-recording pose.
  *
  * The service is the single source of truth — every transition flows through
  * [write], which persists into the Glance [PreferencesGlanceStateDefinition]
@@ -31,7 +32,13 @@ import androidx.glance.state.PreferencesGlanceStateDefinition
 enum class VoiceWidgetState {
     Idle, Starting, Recording, Stopping;
 
-    val isActive: Boolean get() = this == Starting || this == Recording || this == Stopping
+    // Only the live-capture phases read as "recording" in the UI. [Stopping] is
+    // deliberately excluded: once the user taps to stop, the widget flips back
+    // to its non-recording pose immediately, even though the transcript is still
+    // being parsed in the background. The state is kept distinct from [Idle]
+    // (rather than just writing Idle) so a process killed mid-finalize still
+    // restores to a sane, non-recording widget via persistence.
+    val isActive: Boolean get() = this == Starting || this == Recording
 
     companion object {
         private val KEY = stringPreferencesKey("voice_widget_state")

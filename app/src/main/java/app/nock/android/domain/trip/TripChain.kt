@@ -43,7 +43,12 @@ object TripChain {
 object TripDefaults {
     const val BUFFER_MS: Long = 30 * 60_000L
     const val REPEAT_INTERVAL_MS: Long = 10 * 60_000L
-    /** How far ahead calendar events are imported as trip reminders. */
-    const val LOOKAHEAD_MS: Long = 48L * 60 * 60_000L
+    /**
+     * How far ahead calendar events are imported as trip reminders. Kept wide
+     * enough that the next several days of trips are visible in the lists, not
+     * just the imminent ones; the traffic-aware leave-by time still refines
+     * itself as each trip nears via the scheduled recomputes.
+     */
+    const val LOOKAHEAD_MS: Long = 7L * 24 * 60 * 60_000L
     const val TRAVEL_MODE: String = "car"
 }

@@ -95,6 +95,38 @@ class EscalationEngineFireTest {
         verify { h.scheduler.scheduleStage(eq(rearmed.id), eq(NOW + 50 * MIN), eq(StageType.SILENT)) }
     }
 
+    @Test fun moved_reminder_reschedules_even_when_chain_already_started_and_was_snoozed() = runTest {
+        val h = EngineHarness(now = NOW)
+        // User story: the alarm came up (chain started 10 min ago, now on its
+        // repeating ALARM stage) and the user snoozed it — so a re-ring is queued
+        // for NOW. Then they moved the task to the next day (NOW + 24h). The stale
+        // snoozed chain must NOT ring again on the old schedule; the move has to fix
+        // the live escalation and re-arm for the new day.
+        val moved = reminder(nextFireAt = NOW + 24 * 60 * MIN)
+        h.stubReminderAndGroup(moved, group())
+        val row = activeEntity(
+            startedAtMs = NOW - 10 * MIN, // already escalating (started in the past)
+            nextStageIndex = 3,           // ALARM (last) stage, snoozed
+            nextFireAtMs = NOW,           // snooze re-ring is due now
+        )
+        h.dao.upsert(row)
+
+        h.engine.onAlarmFired(row.id)
+
+        // The stale ALARM must not ring, and no repeat is re-queued for the old day.
+        verify(exactly = 0) { h.notifier.showAlarm(any(), any(), any()) }
+        // A fresh chain is armed for the moved trigger: SILENT (-10 min) lands at
+        // NOW + 24h - 10 min.
+        val rearmed = h.dao.rows.values.single()
+        assertEquals(0, rearmed.nextStageIndex)
+        assertEquals(NOW + 24 * 60 * MIN - 10 * MIN, rearmed.nextFireAtMs)
+        verify {
+            h.scheduler.scheduleStage(
+                eq(rearmed.id), eq(NOW + 24 * 60 * MIN - 10 * MIN), eq(StageType.SILENT)
+            )
+        }
+    }
+
     @Test fun overdue_reminder_with_future_synthetic_start_still_fires() = runTest {
         val h = EngineHarness(now = NOW)
         // Boot-replay shape: a synthetic startedAt sits in the future while the

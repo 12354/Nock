@@ -184,12 +184,20 @@ class EscalationEngine @Inject constructor(
         // date — re-arm from the reminder's current trigger instead of firing the
         // stale stage (which would ring on the old schedule and re-send Telegram).
         //
-        // Guarded to the future-trigger case so two legitimate shapes are left
-        // alone: a normal in-progress chain (startedAtMs == nextFireAt, no drift)
-        // and an overdue boot replay, whose synthetic startedAt deliberately sits
-        // in the future while nextFireAt stays in the past.
+        // This holds even when the old chain had ALREADY started escalating and the
+        // user had snoozed it: moving the alarm must fix the live escalation too, or
+        // the snoozed chain keeps re-ringing on the old schedule (every repeat
+        // interval) for an occurrence the user has since pushed to another day. So
+        // the drift is detected purely from the trigger moving to a different
+        // upcoming occurrence — not from whether startedAtMs is still in the future.
+        //
+        // The two legitimate non-moved shapes are left alone by the conditions:
+        //   - a normal in-progress chain (whether still pre-trigger or already
+        //     firing) has startedAtMs == nextFireAt, so the drift magnitude is ~0;
+        //   - an overdue boot replay's synthetic startedAt deliberately sits in the
+        //     future while nextFireAt stays in the PAST, so `trigger > now` is false.
         val trigger = reminder.nextFireAt
-        if (trigger != null && trigger > now && esc.startedAtMs > now &&
+        if (trigger != null && trigger > now &&
             kotlin.math.abs(trigger - esc.startedAtMs) > SANITY_TOLERANCE_MS
         ) {
             // startEscalationAt tears this stale escalation down first — cancelling

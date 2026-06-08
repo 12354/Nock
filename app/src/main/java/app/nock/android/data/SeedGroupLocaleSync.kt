@@ -46,7 +46,10 @@ class SeedGroupLocaleSync @Inject constructor(
 
         groups.forEach { g ->
             val key = g.seedKey ?: nameToKey[g.name] ?: return@forEach
-            val currentTranslation = ctx.getString(seedData.groups.first { it.key == key }.nameRes)
+            // A group may carry a seedKey that isn't a SeedData seed (e.g. the
+            // device-local "trips" group). Those have no translations to sync — skip them.
+            val seed = seedData.groups.firstOrNull { it.key == key } ?: return@forEach
+            val currentTranslation = ctx.getString(seed.nameRes)
             val knownNames = translations[key]?.values?.toSet().orEmpty()
             val isUntouchedSeed = g.name in knownNames
             val needsBackfill = g.seedKey == null && key in translations

@@ -5,12 +5,14 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import app.nock.android.data.dao.ActiveEscalationDao
+import app.nock.android.data.dao.CalendarTripDao
 import app.nock.android.data.dao.GroupDao
 import app.nock.android.data.dao.PendingTelegramDeletionDao
 import app.nock.android.data.dao.PendingVoiceReminderDao
 import app.nock.android.data.dao.ReminderDao
 import app.nock.android.data.dao.SettingsDao
 import app.nock.android.data.entity.ActiveEscalationEntity
+import app.nock.android.data.entity.CalendarTripEntity
 import app.nock.android.data.entity.GroupEntity
 import app.nock.android.data.entity.PendingTelegramDeletionEntity
 import app.nock.android.data.entity.PendingVoiceReminderEntity
@@ -24,9 +26,10 @@ import app.nock.android.data.entity.SettingsEntity
         ActiveEscalationEntity::class,
         SettingsEntity::class,
         PendingVoiceReminderEntity::class,
-        PendingTelegramDeletionEntity::class
+        PendingTelegramDeletionEntity::class,
+        CalendarTripEntity::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = true
 )
 abstract class NockDatabase : RoomDatabase() {
@@ -36,6 +39,7 @@ abstract class NockDatabase : RoomDatabase() {
     abstract fun settingsDao(): SettingsDao
     abstract fun pendingVoiceReminderDao(): PendingVoiceReminderDao
     abstract fun pendingTelegramDeletionDao(): PendingTelegramDeletionDao
+    abstract fun calendarTripDao(): CalendarTripDao
 }
 
 val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -74,6 +78,39 @@ val MIGRATION_4_5 = object : Migration(4, 5) {
                 "`messageId` INTEGER NOT NULL, " +
                 "PRIMARY KEY(`messageId`)" +
                 ")"
+        )
+    }
+}
+
+val MIGRATION_5_6 = object : Migration(5, 6) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `calendar_trips` (" +
+                "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`reminderId` INTEGER NOT NULL, " +
+                "`calendarId` INTEGER NOT NULL, " +
+                "`eventId` INTEGER NOT NULL, " +
+                "`eventStartMs` INTEGER NOT NULL, " +
+                "`title` TEXT NOT NULL, " +
+                "`location` TEXT NOT NULL, " +
+                "`originAddress` TEXT, " +
+                "`travelMode` TEXT NOT NULL, " +
+                "`bufferMs` INTEGER NOT NULL, " +
+                "`originLat` REAL, " +
+                "`originLon` REAL, " +
+                "`destLat` REAL, " +
+                "`destLon` REAL, " +
+                "`lastTravelMs` INTEGER, " +
+                "`lastComputedAtMs` INTEGER" +
+                ")"
+        )
+        db.execSQL(
+            "CREATE UNIQUE INDEX IF NOT EXISTS `index_calendar_trips_reminderId` " +
+                "ON `calendar_trips` (`reminderId`)"
+        )
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS `index_calendar_trips_eventId` " +
+                "ON `calendar_trips` (`eventId`)"
         )
     }
 }

@@ -19,11 +19,19 @@ import androidx.core.content.getSystemService
 import app.nock.android.alarm.AlarmActivity
 import app.nock.android.alarm.AlarmService
 import app.nock.android.alarm.IntentExtras
+import app.nock.android.di.ApplicationScope
+import app.nock.android.trip.TripSyncManager
 import app.nock.android.ui.theme.NockTheme
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
+import javax.inject.Inject
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+
+    @Inject lateinit var trips: TripSyncManager
+    @Inject @ApplicationScope lateinit var appScope: CoroutineScope
 
     private val notifPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -72,6 +80,10 @@ class MainActivity : ComponentActivity() {
             }
             runCatching { startActivity(intent) }
         }
+
+        // Import/refresh calendar trip reminders on every foreground. No-ops
+        // quickly when the feature is off or calendar permission isn't granted.
+        appScope.launch { runCatching { trips.syncNow() } }
     }
 
     private fun requestPermissionsIfNeeded() {

@@ -293,6 +293,7 @@ fun IntegrationsSettingsScreen(
     val state by vm.state.collectAsState()
     CategoryScaffold(stringResource(R.string.settings_cat_integrations), onBack) {
         TelegramSection(state.telegramToken, state.telegramChat, state.telegramStatus, vm)
+        TripsSection(state, vm)
         DeepSeekSection(state.deepSeekApiKey, state.deepSeekModel, state.deepSeekBaseUrl, state.deepSeekContext, vm)
         DriveSection(state.driveEmail, state.driveLastSyncMs, state.driveStatus, vm)
     }
@@ -703,6 +704,128 @@ private fun DriveSection(email: String?, lastSyncMs: Long?, status: String?, vm:
         if (status != null) {
             Spacer(Modifier.height(8.dp))
             Text(status, style = MaterialTheme.typography.bodySmall)
+        }
+    }
+}
+
+@Composable
+private fun TripsSection(state: SettingsState, vm: SettingsViewModel) {
+    var enabled by remember(state.tripsEnabled) { mutableStateOf(state.tripsEnabled) }
+    var key by remember(state.tomtomKey) { mutableStateOf(state.tomtomKey) }
+    var home by remember(state.tripHomeAddress) { mutableStateOf(state.tripHomeAddress) }
+    var buffer by remember(state.tripBufferMin) { mutableStateOf(state.tripBufferMin.toString()) }
+
+    val permLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted -> if (granted) vm.onCalendarPermissionResult() }
+
+    fun persist() = vm.setTrips(enabled, key, home, buffer.toIntOrNull() ?: state.tripBufferMin)
+
+    SectionCard(stringResource(R.string.trips_title)) {
+        Text(
+            stringResource(R.string.trips_help),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.outline
+        )
+        Spacer(Modifier.height(12.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(stringResource(R.string.trips_enable), modifier = Modifier.weight(1f))
+            Switch(
+                checked = enabled,
+                onCheckedChange = {
+                    enabled = it
+                    if (it && !state.tripHasCalendarPermission) {
+                        permLauncher.launch(android.Manifest.permission.READ_CALENDAR)
+                    }
+                    persist()
+                }
+            )
+        }
+
+        if (enabled) {
+            Spacer(Modifier.height(12.dp))
+            OutlinedTextField(
+                value = key,
+                onValueChange = { key = it },
+                label = { Text(stringResource(R.string.trips_tomtom_key)) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(Modifier.height(8.dp))
+            OutlinedTextField(
+                value = home,
+                onValueChange = { home = it },
+                label = { Text(stringResource(R.string.trips_home_address)) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(Modifier.height(8.dp))
+            OutlinedTextField(
+                value = buffer,
+                onValueChange = { v -> buffer = v.filter { it.isDigit() }.take(3) },
+                label = { Text(stringResource(R.string.trips_buffer_minutes)) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(Modifier.height(12.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = { persist() }) { Text(stringResource(R.string.save)) }
+                OutlinedButton(onClick = { persist(); vm.testRoute() }) {
+                    Text(stringResource(R.string.trips_test_route))
+                }
+            }
+            state.tripStatus?.let {
+                Spacer(Modifier.height(8.dp))
+                Text(it, style = MaterialTheme.typography.bodySmall)
+            }
+
+            Spacer(Modifier.height(16.dp))
+            if (!state.tripHasCalendarPermission) {
+                Text(
+                    stringResource(R.string.trips_calendar_permission_help),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.outline
+                )
+                Spacer(Modifier.height(8.dp))
+                Button(onClick = { permLauncher.launch(android.Manifest.permission.READ_CALENDAR) }) {
+                    Text(stringResource(R.string.trips_grant_calendar))
+                }
+            } else {
+                Text(
+                    stringResource(R.string.trips_calendars_title),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    stringResource(R.string.trips_calendars_help),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.outline
+                )
+                // Only the calendars the user explicitly checks are watched;
+                // nothing is selected by default.
+                val selected = state.tripSelectedCalendarIds
+                state.tripCalendars.forEach { cal ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(
+                            checked = cal.id in selected,
+                            onCheckedChange = { checked ->
+                                val next = if (checked) selected + cal.id else selected - cal.id
+                                vm.setTripCalendars(next)
+                            }
+                        )
+                        Column {
+                            Text(cal.displayName, style = MaterialTheme.typography.bodyMedium)
+                            if (cal.accountName.isNotBlank()) {
+                                Text(
+                                    cal.accountName,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.outline
+                                )
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }

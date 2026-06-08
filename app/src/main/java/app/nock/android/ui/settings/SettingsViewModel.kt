@@ -19,6 +19,11 @@ import app.nock.android.sync.DriveSyncClient
 import app.nock.android.sync.SyncOutcome
 import app.nock.android.history.AlarmHistoryLogger
 import app.nock.android.telegram.TelegramSender
+import app.nock.android.trip.CalendarInfo
+import app.nock.android.trip.CalendarRepository
+import app.nock.android.trip.TomTomClient
+import app.nock.android.trip.TripSyncManager
+import app.nock.android.domain.trip.TripDefaults
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
@@ -43,6 +48,14 @@ data class SettingsState(
     val deepSeekModel: String = SettingsRepository.DEFAULT_DEEPSEEK_MODEL,
     val deepSeekBaseUrl: String = SettingsRepository.DEFAULT_DEEPSEEK_BASE_URL,
     val deepSeekContext: String = "",
+    val tripsEnabled: Boolean = false,
+    val tomtomKey: String = "",
+    val tripHomeAddress: String = "",
+    val tripBufferMin: Int = (TripDefaults.BUFFER_MS / 60_000L).toInt(),
+    val tripStatus: String? = null,
+    val tripHasCalendarPermission: Boolean = false,
+    val tripCalendars: List<CalendarInfo> = emptyList(),
+    val tripSelectedCalendarIds: Set<Long> = emptySet(),
     // null = not set (default notification tone); "" = silent; else a sound URI.
     val preAlarmSoundUri: String? = null,
 )
@@ -58,6 +71,9 @@ class SettingsViewModel @Inject constructor(
     private val seedGroupLocaleSync: SeedGroupLocaleSync,
     private val alarmHistory: AlarmHistoryLogger,
     private val activeDao: ActiveEscalationDao,
+    private val trips: TripSyncManager,
+    private val tomtom: TomTomClient,
+    private val calendar: CalendarRepository,
     @ApplicationScope private val appScope: CoroutineScope,
 ) : ViewModel() {
 
@@ -104,12 +120,14 @@ class SettingsViewModel @Inject constructor(
     }
 
     private val statusFlow = MutableStateFlow(Pair<String?, String?>(null, null))
+    private val tripStatusFlow = MutableStateFlow<String?>(null)
 
     val state: StateFlow<SettingsState> = combine(
         settings.observeAll(),
         repo.observeGroups(),
-        statusFlow
-    ) { kv, groups, status ->
+        statusFlow,
+        tripStatusFlow
+    ) { kv, groups, status, tripStatus ->
         val chain = (kv[SettingsRepository.KEY_STAGE_CHAIN])?.let {
             runCatching { app.nock.android.data.json.ChainJson.decode(it) }.getOrNull()
         } ?: app.nock.android.domain.model.DefaultChain.CHAIN
@@ -128,6 +146,16 @@ class SettingsViewModel @Inject constructor(
             deepSeekBaseUrl = kv[SettingsRepository.KEY_DEEPSEEK_BASE_URL]?.takeIf { it.isNotBlank() }
                 ?: SettingsRepository.DEFAULT_DEEPSEEK_BASE_URL,
             deepSeekContext = kv[SettingsRepository.KEY_DEEPSEEK_CONTEXT].orEmpty(),
+            tripsEnabled = kv[SettingsRepository.KEY_TRIPS_ENABLED]?.toBooleanStrictOrNull() == true,
+            tomtomKey = kv[SettingsRepository.KEY_TOMTOM_KEY].orEmpty(),
+            tripHomeAddress = kv[SettingsRepository.KEY_TRIP_HOME_ADDRESS].orEmpty(),
+            tripBufferMin = kv[SettingsRepository.KEY_TRIP_BUFFER_MIN]?.toIntOrNull()
+                ?: (TripDefaults.BUFFER_MS / 60_000L).toInt(),
+            tripStatus = tripStatus,
+            tripHasCalendarPermission = calendar.hasPermission(),
+            tripCalendars = if (calendar.hasPermission()) calendar.listCalendars() else emptyList(),
+            tripSelectedCalendarIds = kv[SettingsRepository.KEY_TRIP_CALENDAR_IDS]
+                ?.split(',')?.mapNotNull { it.trim().toLongOrNull() }?.toSet().orEmpty(),
             preAlarmSoundUri = kv[SettingsRepository.KEY_PREALARM_SOUND],
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsState())
@@ -221,6 +249,53 @@ class SettingsViewModel @Inject constructor(
             // still fire for a reminder that no longer appears in any list.
             engine.cancelActiveForGroup(g.id)
             repo.deleteGroup(g)
+        }
+    }
+
+    fun setTrips(enabled: Boolean, tomtomKey: String, homeAddress: String, bufferMin: Int) {
+        appScope.launch {
+            val prevHome = settings.get(SettingsRepository.KEY_TRIP_HOME_ADDRESS).orEmpty()
+            settings.set(SettingsRepository.KEY_TRIPS_ENABLED, enabled.toString())
+            settings.set(SettingsRepository.KEY_TOMTOM_KEY, tomtomKey.trim())
+            settings.set(SettingsRepository.KEY_TRIP_HOME_ADDRESS, homeAddress.trim())
+            settings.set(SettingsRepository.KEY_TRIP_BUFFER_MIN, bufferMin.coerceAtLeast(1).toString())
+            // The cached home coordinates are only valid for the old address.
+            if (homeAddress.trim() != prevHome) {
+                settings.clear(SettingsRepository.KEY_TRIP_HOME_LAT)
+                settings.clear(SettingsRepository.KEY_TRIP_HOME_LON)
+            }
+            runCatching { trips.syncNow() }
+        }
+    }
+
+    fun setTripCalendars(ids: Set<Long>) {
+        appScope.launch {
+            settings.set(SettingsRepository.KEY_TRIP_CALENDAR_IDS, ids.joinToString(","))
+            runCatching { trips.syncNow() }
+        }
+    }
+
+    /** Called after the calendar permission is granted so trips import immediately. */
+    fun onCalendarPermissionResult() {
+        appScope.launch { runCatching { trips.syncNow() } }
+        // Nudge the state flow so the calendar list / permission flag re-evaluate.
+        tripStatusFlow.value = tripStatusFlow.value
+    }
+
+    /** Validates the TomTom key + home address by geocoding the home address. */
+    fun testRoute() {
+        viewModelScope.launch {
+            val home = settings.get(SettingsRepository.KEY_TRIP_HOME_ADDRESS).orEmpty()
+            val key = settings.get(SettingsRepository.KEY_TOMTOM_KEY).orEmpty()
+            tripStatusFlow.value = when {
+                key.isBlank() -> ctx.getString(R.string.trips_status_no_key)
+                home.isBlank() -> ctx.getString(R.string.trips_status_no_home)
+                else -> {
+                    val geo = tomtom.geocode(home)
+                    if (geo != null) ctx.getString(R.string.trips_status_ok)
+                    else ctx.getString(R.string.trips_status_error)
+                }
+            }
         }
     }
 

@@ -19,6 +19,7 @@
     <uses-permission android:name="android.permission.GET_ACCOUNTS" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.READ_CALENDAR" />
 
     <queries>
         <intent>
@@ -109,6 +110,10 @@
 
         <receiver
             android:name=".alarm.NotificationActionReceiver"
+            android:exported="false" />
+
+        <receiver
+            android:name=".alarm.TripReceiver"
             android:exported="false" />
 
         <receiver

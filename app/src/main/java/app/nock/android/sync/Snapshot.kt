@@ -5,6 +5,7 @@ import app.nock.android.data.NockDatabase
 import app.nock.android.data.NockRepository
 import app.nock.android.data.SettingsRepository
 import app.nock.android.data.dao.ActiveEscalationDao
+import app.nock.android.data.dao.CalendarTripDao
 import app.nock.android.data.dao.GroupDao
 import app.nock.android.data.dao.ReminderDao
 import app.nock.android.data.dao.SettingsDao
@@ -64,18 +65,27 @@ class SnapshotService @Inject constructor(
     private val reminderDao: ReminderDao,
     private val activeDao: ActiveEscalationDao,
     private val settingsDao: SettingsDao,
+    private val calendarTripDao: CalendarTripDao,
     private val settings: SettingsRepository,
     private val codec: SnapshotCodec,
     private val engine: EscalationEngine,
     private val repo: NockRepository,
 ) {
+    // The Trips group and its reminders are derived from the device's calendar
+    // and rebuilt by TripSyncManager, so they are device-local: excluded from
+    // the snapshot to avoid duplicating them (with stale, unmanaged copies) on
+    // other devices.
+    private val tripsSeedKey = "trips"
+
     suspend fun export(): String {
-        val groups = groupDao.getAll().map {
+        val allGroups = groupDao.getAll()
+        val tripsGroupIds = allGroups.filter { it.seedKey == tripsSeedKey }.map { it.id }.toSet()
+        val groups = allGroups.filter { it.id !in tripsGroupIds }.map {
             GroupSnap(it.id, it.name, it.color, it.icon, it.overrideChainJson,
                 it.overrideRepeatIntervalMs, it.pausedUntilMs, it.telegramSilentMirror, it.sortIndex,
                 it.seedKey)
         }
-        val reminders = reminderDao.getAll().map {
+        val reminders = reminderDao.getAll().filter { it.groupId !in tripsGroupIds }.map {
             ReminderSnap(it.id, it.groupId, it.name, it.scheduleType, it.scheduleJson,
                 it.nextFireAt, it.lastCompletedAt, it.createdAt)
         }
@@ -102,6 +112,10 @@ class SnapshotService @Inject constructor(
             reminderDao.clear()
             groupDao.clear()
             settingsDao.clear()
+            // Trip links point at reminders we're about to wipe; clear them so
+            // TripSyncManager rebuilds trips cleanly on the next sync instead of
+            // treating every event as a permanently-dismissed tombstone.
+            calendarTripDao.clear()
 
             groupDao.upsertAll(snap.groups.map {
                 GroupEntity(

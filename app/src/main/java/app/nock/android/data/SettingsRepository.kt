@@ -19,6 +19,7 @@ class SettingsRepository @Inject constructor(
         const val KEY_TELEGRAM_TOKEN = "telegram_token"
         const val KEY_TELEGRAM_CHAT = "telegram_chat"
         const val KEY_ALARM_SOUND = "alarm_sound_uri"
+        const val KEY_PREALARM_SOUND = "prealarm_sound_uri"
         const val KEY_DRIVE_ACCOUNT = "drive_account"
         const val KEY_DRIVE_LAST_SYNC_MS = "drive_last_sync_ms"
         const val KEY_DRIVE_LAST_REMOTE_MS = "drive_last_remote_ms"

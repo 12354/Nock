@@ -164,7 +164,7 @@ class EscalationEngineFireTest {
         h.engine.onAlarmFired(row.id)
 
         coVerify { h.telegram.send(any(), eq(false)) }
-        verify { h.notifier.showSilent(any(), any(), eq(row.id), eq(" (Telegram sent)")) }
+        coVerify { h.notifier.showPreAlarm(any(), any(), eq(row.id), eq(" (Telegram sent)")) }
         assertEquals("999", h.dao.getById(row.id)!!.sentTelegramMessageIdsCsv)
     }
 

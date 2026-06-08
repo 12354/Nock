@@ -207,6 +207,7 @@ class AlarmHistoryLogger @Inject constructor(
 
     private fun stageLabel(t: StageType): String = when (t) {
         StageType.SILENT -> "silent"
+        StageType.VIBRATE -> "buzz"
         StageType.TELEGRAM -> "telegram"
         StageType.ALARM_VIBRATE -> "vibrate"
         StageType.ALARM -> "alarm"

@@ -7,6 +7,8 @@ package app.nock.android.ui.settings
 
 import android.app.Activity
 import android.content.Intent
+import android.media.RingtoneManager
+import android.os.Build
 import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -227,7 +229,59 @@ fun NotificationsSettingsScreen(
         state.chain?.let {
             StageChainSection(chain = it, onChange = vm::setChain)
         }
+        PreAlarmSoundSection(state.preAlarmSoundUri, vm)
         GroupsSection(state.groups, onEditGroup, onAddGroup = { onEditGroup(0L) })
+    }
+}
+
+@Composable
+private fun PreAlarmSoundSection(soundUri: String?, vm: SettingsViewModel) {
+    val ctx = LocalContext.current
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode != Activity.RESULT_OK) return@rememberLauncherForActivityResult
+        val picked: android.net.Uri? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            result.data?.getParcelableExtra(RingtoneManager.EXTRA_RINGTONE_PICKED_URI, android.net.Uri::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            result.data?.getParcelableExtra(RingtoneManager.EXTRA_RINGTONE_PICKED_URI)
+        }
+        // A null picked URI means the user chose "Silent".
+        vm.setPreAlarmSound(picked?.toString())
+    }
+
+    val currentLabel = when {
+        soundUri == null -> stringResource(R.string.settings_prealarm_sound_default)
+        soundUri.isBlank() -> stringResource(R.string.settings_prealarm_sound_silent)
+        else -> remember(soundUri) {
+            runCatching { RingtoneManager.getRingtone(ctx, android.net.Uri.parse(soundUri))?.getTitle(ctx) }
+                .getOrNull()
+        } ?: stringResource(R.string.settings_prealarm_sound_custom)
+    }
+
+    SectionCard(stringResource(R.string.settings_prealarm_sound_title)) {
+        Text(
+            stringResource(R.string.settings_prealarm_sound_desc),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.outline,
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            stringResource(R.string.settings_prealarm_sound_current, currentLabel),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        Spacer(Modifier.height(8.dp))
+        OutlinedButton(onClick = {
+            val existing = soundUri?.takeIf { it.isNotBlank() }?.let { android.net.Uri.parse(it) }
+            val intent = Intent(RingtoneManager.ACTION_RINGTONE_PICKER).apply {
+                putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, RingtoneManager.TYPE_NOTIFICATION)
+                putExtra(RingtoneManager.EXTRA_RINGTONE_TITLE, ctx.getString(R.string.settings_prealarm_sound_title))
+                putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true)
+                putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, true)
+                putExtra(RingtoneManager.EXTRA_RINGTONE_DEFAULT_URI, RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION))
+                putExtra(RingtoneManager.EXTRA_RINGTONE_EXISTING_URI, existing)
+            }
+            launcher.launch(intent)
+        }) { Text(stringResource(R.string.settings_prealarm_sound_choose)) }
     }
 }
 

@@ -56,6 +56,8 @@ data class SettingsState(
     val tripHasCalendarPermission: Boolean = false,
     val tripCalendars: List<CalendarInfo> = emptyList(),
     val tripSelectedCalendarIds: Set<Long> = emptySet(),
+    // null = not set (default notification tone); "" = silent; else a sound URI.
+    val preAlarmSoundUri: String? = null,
 )
 
 @HiltViewModel
@@ -154,6 +156,7 @@ class SettingsViewModel @Inject constructor(
             tripCalendars = if (calendar.hasPermission()) calendar.listCalendars() else emptyList(),
             tripSelectedCalendarIds = kv[SettingsRepository.KEY_TRIP_CALENDAR_IDS]
                 ?.split(',')?.mapNotNull { it.trim().toLongOrNull() }?.toSet().orEmpty(),
+            preAlarmSoundUri = kv[SettingsRepository.KEY_PREALARM_SOUND],
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsState())
 
@@ -181,6 +184,13 @@ class SettingsViewModel @Inject constructor(
         appScope.launch {
             settings.setStageChain(chain)
             engine.rearmDefaultChainGroups()
+        }
+    }
+
+    /** Persist the chosen pre-alarm sound: null URI = silent, else the sound URI. */
+    fun setPreAlarmSound(uri: String?) {
+        viewModelScope.launch {
+            settings.set(SettingsRepository.KEY_PREALARM_SOUND, uri ?: "")
         }
     }
 

@@ -5,6 +5,9 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.media.RingtoneManager
+import android.net.Uri
+import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.content.getSystemService
 import app.nock.android.R
@@ -12,6 +15,7 @@ import app.nock.android.alarm.AlarmActivity
 import app.nock.android.alarm.AlarmService
 import app.nock.android.alarm.IntentExtras
 import app.nock.android.alarm.NotificationActionReceiver
+import app.nock.android.data.SettingsRepository
 import app.nock.android.domain.model.Group
 import app.nock.android.domain.model.Reminder
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -20,7 +24,9 @@ import javax.inject.Singleton
 
 @Singleton
 class NotificationPresenter @Inject constructor(
-    @ApplicationContext private val ctx: Context
+    @ApplicationContext private val ctx: Context,
+    private val settings: SettingsRepository,
+    private val channels: NockNotificationChannels,
 ) {
     private val nm: NotificationManager = ctx.getSystemService()!!
 
@@ -29,6 +35,42 @@ class NotificationPresenter @Inject constructor(
             .setContentText("${group.name}$suffix")
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setSilent(true)
+            .build()
+        nm.notify(escalationId.toInt(), notif)
+    }
+
+    /**
+     * A normal heads-up notification that plays the user-chosen pre-alarm sound.
+     * Used by the pre-trigger TELEGRAM stage so there's an audible nudge on the
+     * phone in addition to the Telegram message. The sound is resolved from
+     * settings: absent = default notification tone, blank = silent, else a
+     * specific ringtone/notification URI the user picked.
+     */
+    suspend fun showPreAlarm(reminder: Reminder, group: Group, escalationId: Long, suffix: String = "") {
+        val stored = settings.get(SettingsRepository.KEY_PREALARM_SOUND)
+        val soundUri: Uri? = when {
+            stored == null -> RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+            stored.isBlank() -> null
+            else -> Uri.parse(stored)
+        }
+        val channelId = channels.ensurePreAlarmChannel(soundUri)
+        val notif = baseBuilder(reminder, group, escalationId, channelId)
+            .setContentText("${group.name}$suffix")
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .apply {
+                // On pre-O there are no channels, so the sound rides on the
+                // notification itself.
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O && soundUri != null) setSound(soundUri)
+            }
+            .build()
+        nm.notify(escalationId.toInt(), notif)
+    }
+
+    fun showVibrate(reminder: Reminder, group: Group, escalationId: Long, suffix: String = "") {
+        val notif = baseBuilder(reminder, group, escalationId, Channels.VIBRATE)
+            .setContentText("${group.name}$suffix")
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setDefaults(NotificationCompat.DEFAULT_VIBRATE)
             .build()
         nm.notify(escalationId.toInt(), notif)
     }

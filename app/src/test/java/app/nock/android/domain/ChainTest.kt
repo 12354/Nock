@@ -48,32 +48,34 @@ class ChainTest {
         assertEquals(0, chain.stageDueAt(startedAtMs = 0L, nowMs = -30 * 60_000L))
     }
 
-    @Test fun stageDueAt_picks_silent_when_elapsed_matches_first_offset() {
+    @Test fun stageDueAt_picks_vibrate_at_first_offset() {
         val chain = DefaultChain.CHAIN
-        // 10 min before scheduled time -> SILENT stage (index 0)
+        // 10 min before scheduled time -> VIBRATE stage (index 0)
         assertEquals(0, chain.stageDueAt(startedAtMs = 0L, nowMs = -10 * 60_000L))
-        // Right before TELEGRAM (still SILENT)
-        assertEquals(0, chain.stageDueAt(startedAtMs = 0L, nowMs = -1L))
+        // 6 min before -> still VIBRATE (TELEGRAM is at -5 min)
+        assertEquals(0, chain.stageDueAt(startedAtMs = 0L, nowMs = -6 * 60_000L))
     }
 
-    @Test fun stageDueAt_picks_telegram_at_plus_5() {
+    @Test fun stageDueAt_picks_telegram_at_minus_5() {
         val chain = DefaultChain.CHAIN
-        assertEquals(1, chain.stageDueAt(startedAtMs = 0L, nowMs = 5 * 60_000L))
+        // 5 min before scheduled time -> TELEGRAM stage (index 1)
+        assertEquals(1, chain.stageDueAt(startedAtMs = 0L, nowMs = -5 * 60_000L))
     }
 
-    @Test fun stageDueAt_picks_alarm_vibrate_at_plus_8() {
+    @Test fun stageDueAt_picks_alarm_vibrate_at_minus_2() {
         val chain = DefaultChain.CHAIN
-        assertEquals(2, chain.stageDueAt(startedAtMs = 0L, nowMs = 8 * 60_000L))
+        // 2 min before scheduled time -> ALARM_VIBRATE stage (index 2)
+        assertEquals(2, chain.stageDueAt(startedAtMs = 0L, nowMs = -2 * 60_000L))
     }
 
-    @Test fun stageDueAt_picks_alarm_at_plus_10() {
+    @Test fun stageDueAt_picks_alarm_at_scheduled_time() {
         val chain = DefaultChain.CHAIN
-        assertEquals(3, chain.stageDueAt(startedAtMs = 0L, nowMs = 10 * 60_000L))
+        // The ALARM rings exactly at the scheduled time (offset 0) -> last stage.
+        assertEquals(3, chain.stageDueAt(startedAtMs = 0L, nowMs = 0L))
     }
 
     @Test fun stageDueAt_jumps_to_last_stage_when_very_late() {
-        // The exact scenario from the user's report: scheduled 09:50, now 10:06.
-        // Elapsed = 16 min, well past ALARM (+10 min).
+        // Scheduled 09:50, now 10:06: elapsed = 16 min, well past ALARM (0 min).
         val chain = DefaultChain.CHAIN
         val scheduled = 0L
         val now = 16 * 60_000L
@@ -86,27 +88,28 @@ class ChainTest {
         assertEquals(chain.lastIndex, chain.stageDueAt(0L, 24 * 60 * 60_000L))
     }
 
-    @Test fun firstPendingStage_far_future_starts_at_silent() {
+    @Test fun firstPendingStage_far_future_starts_at_vibrate() {
         val chain = DefaultChain.CHAIN
-        // Reminder a full day out: even the -10min SILENT pre-stage is still in
+        // Reminder a full day out: even the -10min VIBRATE pre-stage is still in
         // the future, so we start at stage 0 as normal.
         val now = 0L
         val scheduled = 24 * 60 * 60_000L
         assertEquals(0, chain.firstPendingStage(scheduled, now))
     }
 
-    @Test fun firstPendingStage_skips_past_pre_stage_when_due_soon() {
-        // The bug: reminder due in 2min, SILENT pre-stage at -10min is already
-        // 8min in the past. It must NOT fire immediately (which would mirror a
-        // Telegram); we start at the first stage that hasn't passed (TELEGRAM).
+    @Test fun firstPendingStage_skips_past_pre_stages_when_due_soon() {
+        // Reminder due in 2min: the VIBRATE (-10) and TELEGRAM (-5) pre-stages
+        // are already in the past. They must NOT all fire immediately (which
+        // would mirror a Telegram); we start at the first stage that hasn't
+        // passed (ALARM_VIBRATE at -2 min, due exactly now).
         val chain = DefaultChain.CHAIN
         val now = 0L
         val scheduled = 2 * 60_000L
-        assertEquals(1, chain.firstPendingStage(scheduled, now))
+        assertEquals(2, chain.firstPendingStage(scheduled, now))
     }
 
     @Test fun firstPendingStage_at_trigger_keeps_pre_stage_when_lead_time_fits() {
-        // Reminder 15min out: the -10min SILENT pre-stage is still 5min away,
+        // Reminder 15min out: the -10min VIBRATE pre-stage is still 5min away,
         // so it is genuinely pending and we keep it.
         val chain = DefaultChain.CHAIN
         val now = 0L

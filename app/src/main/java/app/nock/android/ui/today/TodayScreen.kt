@@ -436,6 +436,7 @@ private fun StageProgress(
 private fun stageDisplayName(ctx: android.content.Context, type: app.nock.android.domain.model.StageType): String {
     val res = when (type) {
         app.nock.android.domain.model.StageType.SILENT -> R.string.stage_type_silent
+        app.nock.android.domain.model.StageType.VIBRATE -> R.string.stage_type_vibrate
         app.nock.android.domain.model.StageType.TELEGRAM -> R.string.stage_type_telegram
         app.nock.android.domain.model.StageType.ALARM_VIBRATE -> R.string.stage_type_alarm_vibrate
         app.nock.android.domain.model.StageType.ALARM -> R.string.stage_type_alarm

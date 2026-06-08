@@ -21,6 +21,10 @@
     <!-- Notification channels -->
     <string name="channel_silent_name">Stille Erinnerungen</string>
     <string name="channel_silent_desc">Leise Hinweise ohne Ton.</string>
+    <string name="channel_vibrate_name">Vibrierende Erinnerungen</string>
+    <string name="channel_vibrate_desc">Lautlose Hinweise, die vibrieren, ohne Ton.</string>
+    <string name="channel_prealarm_name">Ton vor dem Alarm</string>
+    <string name="channel_prealarm_desc">Hörbarer Hinweis, bevor der Alarm klingelt.</string>
     <string name="channel_alarm_name">Laute Alarme</string>
     <string name="channel_alarm_desc">Wichtige Alarme, die „Nicht stören“ durchbrechen.</string>
     <string name="channel_service_name">Alarmdienst</string>
@@ -193,9 +197,19 @@
 
     <!-- Stage types (StageType enum) -->
     <string name="stage_type_silent">Leise</string>
+    <string name="stage_type_vibrate">Vibration</string>
     <string name="stage_type_alarm">Alarm</string>
     <string name="stage_type_alarm_vibrate">Alarm (nur Vibration)</string>
     <string name="stage_type_telegram">Telegram</string>
+
+    <!-- Ton-Auswahl vor dem Alarm -->
+    <string name="settings_prealarm_sound_title">Ton vor dem Alarm</string>
+    <string name="settings_prealarm_sound_desc">Ton der Benachrichtigung vor dem Alarm (die Telegram-Stufe), zusätzlich zur Telegram-Nachricht.</string>
+    <string name="settings_prealarm_sound_current">Aktuell: %1$s</string>
+    <string name="settings_prealarm_sound_choose">Ton wählen</string>
+    <string name="settings_prealarm_sound_default">Standard-Benachrichtigungston</string>
+    <string name="settings_prealarm_sound_silent">Lautlos</string>
+    <string name="settings_prealarm_sound_custom">Eigener Ton</string>
 
     <string name="default_reminder_name">Erinnerung</string>
 

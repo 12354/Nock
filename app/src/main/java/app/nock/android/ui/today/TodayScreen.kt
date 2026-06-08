@@ -13,6 +13,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -64,6 +65,7 @@ private data class TodaySection(val titleRes: Int, val items: List<TodayItem>)
 fun TodayScreen(
     onAddReminder: () -> Unit,
     onEditReminder: (Long) -> Unit,
+    scrollToTopSignal: Int = 0,
     vm: TodayViewModel = hiltViewModel()
 ) {
     val items by vm.items.collectAsState()
@@ -78,6 +80,14 @@ fun TodayScreen(
 
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+
+    // Reset the list to the top whenever the app is brought to the foreground
+    // (the signal increments on every resume) and whenever this screen is freshly
+    // entered, so "Heute" always opens at the top instead of a stale scroll spot.
+    val listState = rememberLazyListState()
+    LaunchedEffect(scrollToTopSignal) {
+        listState.scrollToItem(0)
+    }
     val undoMessage = stringResource(R.string.today_done_undo_message)
     val undoAction = stringResource(R.string.today_done_undo_action)
 
@@ -129,6 +139,7 @@ fun TodayScreen(
             return@Scaffold
         }
         LazyColumn(
+            state = listState,
             modifier = Modifier.fillMaxSize().padding(padding),
             contentPadding = PaddingValues(top = 8.dp, bottom = 96.dp)
         ) {

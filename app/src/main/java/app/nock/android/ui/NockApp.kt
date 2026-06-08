@@ -51,6 +51,7 @@ fun NockApp(
     initialTab: String = Tab.Today.route,
     requestedTab: String? = null,
     onTabConsumed: () -> Unit = {},
+    homeScrollToken: Int = 0,
 ) {
     val nav = rememberNavController()
     LaunchedEffect(requestedTab) {
@@ -97,7 +98,8 @@ fun NockApp(
             composable(Tab.Today.route) {
                 TodayScreen(
                     onAddReminder = { nav.navigate("edit?id=0") },
-                    onEditReminder = { id -> nav.navigate("edit?id=$id") }
+                    onEditReminder = { id -> nav.navigate("edit?id=$id") },
+                    scrollToTopSignal = homeScrollToken
                 )
             }
             composable(Tab.Reminders.route) {

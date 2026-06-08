@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.provider.CalendarContract
 import androidx.core.content.ContextCompat
+import app.nock.android.R
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -51,7 +52,7 @@ class CalendarRepository @Inject constructor(
             while (c.moveToNext()) {
                 out += CalendarInfo(
                     id = c.getLong(0),
-                    displayName = c.getString(1) ?: "(unnamed)",
+                    displayName = c.getString(1) ?: ctx.getString(R.string.trips_calendar_unnamed),
                     accountName = c.getString(2) ?: "",
                 )
             }
@@ -60,13 +61,14 @@ class CalendarRepository @Inject constructor(
     }
 
     /**
-     * Located, timed (non all-day) event instances beginning in [nowMs, untilMs],
-     * restricted to the calendars the user chose. Only events from [calendarIds]
-     * are returned; an empty set yields nothing (the user hasn't opted any in).
-     * Recurring events are expanded into individual instances via the Instances
-     * table.
+     * Timed (non all-day) event instances beginning in [nowMs, untilMs], restricted
+     * to the calendars the user chose. Both located and location-less events are
+     * returned: located ones get a traffic-aware leave-by time, the rest alert at
+     * their start. Only events from [calendarIds] are returned; an empty set yields
+     * nothing (the user hasn't opted any in). Recurring events are expanded into
+     * individual instances via the Instances table.
      */
-    fun upcomingLocatedEvents(
+    fun upcomingEvents(
         nowMs: Long,
         untilMs: Long,
         calendarIds: Set<Long>,
@@ -94,14 +96,14 @@ class CalendarRepository @Inject constructor(
         )?.use { c ->
             while (c.moveToNext()) {
                 val location = c.getString(3)?.trim().orEmpty()
-                if (location.isEmpty()) continue
                 val calId = c.getLong(4)
                 if (calId !in calendarIds) continue
                 out += CalendarEvent(
                     calendarId = calId,
                     eventId = c.getLong(0),
                     beginMs = c.getLong(1),
-                    title = c.getString(2)?.takeIf { it.isNotBlank() } ?: "(event)",
+                    title = c.getString(2)?.takeIf { it.isNotBlank() }
+                        ?: ctx.getString(R.string.trips_event_untitled),
                     location = location,
                 )
             }

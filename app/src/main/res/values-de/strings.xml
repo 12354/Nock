@@ -103,6 +103,7 @@
     <string name="edit_day_label">Tag</string>
     <string name="edit_at_time">um %1$s</string>
     <string name="edit_interval_label">Intervall nach letztem „Erledigt“</string>
+    <string name="edit_interval_start_label">Startdatum und -uhrzeit festlegen</string>
     <string name="edit_hours_label">Stunden</string>
     <string name="edit_escalation_section">Eskalation</string>
     <string name="edit_using_group_chain">Kette der Gruppe %1$s wird verwendet</string>
@@ -272,6 +273,28 @@
     <string name="settings_deepseek_context_help">Optionale Notizen, die die KI bei jeder Sprach-Erinnerung berücksichtigt, um Namen und Details zu verstehen, die du nennst. Wird mit jeder Anfrage gesendet.</string>
     <string name="settings_deepseek_context_placeholder">z. B. Mein Hund heißt Xyz. Ich arbeite Nachtschicht. Meine Frau heißt Anna.</string>
 
+    <!-- Settings: Kalender-Alarme -->
+    <string name="trips_title">Kalender-Alarme</string>
+    <string name="trips_help">Wandelt deine Kalendertermine in Wecker um. Termine mit Ort erhalten eine verkehrsabhängige Abfahrtszeit (über TomTom ermittelt und aktualisiert, je näher der Termin rückt) und eskalieren genau im Moment der nötigen Abfahrt zu einem lauten Signal; Termine ohne Ort melden sich zu ihrer Startzeit.</string>
+    <string name="trips_enable">Kalender-Alarme aktivieren</string>
+    <string name="trips_tomtom_key">TomTom-API-Schlüssel</string>
+    <string name="trips_home_address">Heimatadresse (Startpunkt)</string>
+    <string name="trips_buffer_minutes">Vorlauf vor der Abfahrt (Minuten)</string>
+    <string name="trips_test_route">Route testen</string>
+    <string name="trips_calendar_permission_help">Kalender-Alarme lesen deinen Gerätekalender (inkl. Google Kalender), um deine bevorstehenden Termine zu finden. Außer den an TomTom gesendeten Adressen für die Routenberechnung verlassen keine Daten dein Telefon.</string>
+    <string name="trips_grant_calendar">Kalenderzugriff erlauben</string>
+    <string name="trips_calendars_title">Zu überwachende Kalender</string>
+    <string name="trips_calendars_help">Nur Termine aus den hier markierten Kalendern werden zu Weckern.</string>
+    <string name="trips_status_ok">Routing OK – TomTom-Schlüssel und Heimatadresse sehen gut aus.</string>
+    <string name="trips_status_error">Routing-Dienst nicht erreichbar. Prüfe TomTom-Schlüssel und Heimatadresse.</string>
+    <string name="trips_status_no_key">Gib zuerst deinen TomTom-API-Schlüssel ein.</string>
+    <string name="trips_status_no_home">Gib zuerst eine Heimatadresse ein.</string>
+    <!-- Namen für die Kalendergruppe und ihre Erinnerungen -->
+    <string name="trips_group_name">Termine</string>
+    <string name="trips_reminder_name">Losfahren zu %1$s</string>
+    <string name="trips_calendar_unnamed">(ohne Namen)</string>
+    <string name="trips_event_untitled">(ohne Titel)</string>
+
     <!-- Settings: Alarm history -->
     <string name="settings_alarm_history_title">Wecker-Verlauf</string>
     <string name="settings_alarm_history_help">Alles, was deine Wecker getan haben — erstellt, geändert, ausgelöst, erledigt, verschoben und verspätete Nachholungen nach einem Neustart. Kopiere dies und füge es ein, wenn du einen Wecker zur falschen Zeit oder einen verpassten Wecker meldest.</string>
@@ -315,6 +338,7 @@
     <string name="parsed_summary_weekly">%1$s um %2$s</string>
     <string name="parsed_summary_monthly">monatlich am %1$d. um %2$s</string>
     <string name="parsed_summary_interval">alle %1$s Std. nach Erledigt</string>
+    <string name="parsed_summary_interval_with_start">alle %1$s Std. nach Erledigt, ab %2$s um %3$s</string>
     <string name="parsed_summary_once">einmalig am %1$s um %2$s</string>
     <string name="parsed_summary_on_unlock">beim nächsten Entsperren</string>
     <string name="parsed_summary_wrapped">%1$s, Gruppe %2$s</string>

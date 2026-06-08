@@ -1,7 +1,9 @@
 package app.nock.android.trip
 
+import android.content.Context
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import app.nock.android.R
 import app.nock.android.data.NockRepository
 import app.nock.android.data.SettingsRepository
 import app.nock.android.data.dao.CalendarTripDao
@@ -13,6 +15,7 @@ import app.nock.android.domain.time.TimeSource
 import app.nock.android.domain.trip.TripChain
 import app.nock.android.domain.trip.TripDefaults
 import app.nock.android.domain.trip.TripMath
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
@@ -34,6 +37,7 @@ import javax.inject.Singleton
  */
 @Singleton
 class TripSyncManager @Inject constructor(
+    @ApplicationContext private val ctx: Context,
     private val settings: SettingsRepository,
     private val calendar: CalendarRepository,
     private val tomtom: TomTomClient,
@@ -77,7 +81,7 @@ class TripSyncManager @Inject constructor(
         val mode = travelMode()
         val tripsGroupId = ensureTripsGroup(buffer)
 
-        val events = calendar.upcomingLocatedEvents(now, now + TripDefaults.LOOKAHEAD_MS, watchedCalendarIds())
+        val events = calendar.upcomingEvents(now, now + TripDefaults.LOOKAHEAD_MS, watchedCalendarIds())
         val seen = HashSet<Long>()
         for (e in events) {
             seen += instanceKey(e.eventId, e.beginMs)
@@ -122,12 +126,15 @@ class TripSyncManager @Inject constructor(
         // upcoming. Don't resurrect it.
         if (existing != null && repo.getReminder(existing.reminderId) == null) return
 
-        val origin = homeCoords(existing)
-        val dest = destCoords(existing, e.location)
-        val travel = resolveTravelMs(origin, dest, e.beginMs, mode, existing?.lastTravelMs)
+        // Located events get a traffic-aware leave-by; location-less events simply
+        // fire at their start time (travel = 0, no routing or recompute).
+        val hasLocation = e.location.isNotBlank()
+        val origin = if (hasLocation) homeCoords(existing) else null
+        val dest = if (hasLocation) destCoords(existing, e.location) else null
+        val travel = if (hasLocation) resolveTravelMs(origin, dest, e.beginMs, mode, existing?.lastTravelMs) else 0L
         val leaveBy = TripMath.leaveBy(e.beginMs, travel)
 
-        val name = reminderName(e.title)
+        val name = reminderName(e.title, hasLocation)
         val existingReminder = existing?.let { repo.getReminder(it.reminderId) }
         val reminderId = repo.saveReminder(
             id = existing?.reminderId ?: 0L,
@@ -169,7 +176,9 @@ class TripSyncManager @Inject constructor(
         tripDao.upsert(row)
 
         engine.startEscalationAt(repo.getReminder(reminderId)!!, leaveBy)
-        armNextRecompute(reminderId, leaveBy, now)
+        // Only located events have a travel time worth refreshing as traffic firms up.
+        if (hasLocation) armNextRecompute(reminderId, leaveBy, now)
+        else scheduler.cancelRecompute(reminderId)
     }
 
     /** Re-save reminder + row + escalation for a recomputed travel estimate. */
@@ -300,7 +309,7 @@ class TripSyncManager @Inject constructor(
         return repo.upsertGroup(
             Group(
                 id = 0,
-                name = "Trips",
+                name = ctx.getString(R.string.trips_group_name),
                 color = Color(0xFF7FB069).toArgb(),
                 icon = "DirectionsCar",
                 overrideChain = desiredChain,
@@ -312,5 +321,6 @@ class TripSyncManager @Inject constructor(
         )
     }
 
-    private fun reminderName(title: String): String = "Leave for $title"
+    private fun reminderName(title: String, hasLocation: Boolean): String =
+        if (hasLocation) ctx.getString(R.string.trips_reminder_name, title) else title
 }

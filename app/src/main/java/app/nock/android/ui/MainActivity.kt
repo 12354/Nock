@@ -39,6 +39,9 @@ class MainActivity : ComponentActivity() {
 
     private var requestedTab by mutableStateOf<String?>(null)
 
+    // Bumped on every foreground so the Today screen resets its scroll to the top.
+    private var homeScrollToken by mutableStateOf(0)
+
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleHelper.wrap(newBase))
     }
@@ -53,7 +56,8 @@ class MainActivity : ComponentActivity() {
                 NockApp(
                     initialTab = initialTab,
                     requestedTab = requestedTab,
-                    onTabConsumed = { requestedTab = null }
+                    onTabConsumed = { requestedTab = null },
+                    homeScrollToken = homeScrollToken
                 )
             }
         }
@@ -80,6 +84,15 @@ class MainActivity : ComponentActivity() {
             }
             runCatching { startActivity(intent) }
         }
+
+        // Every time the app is brought to the foreground (open or resume) snap
+        // back to the "Heute" (Today) tab and scroll its list to the top. A
+        // pending deep-link tab request (e.g. from a notification) takes
+        // precedence, so we only default to Today when nothing else is queued.
+        if (requestedTab == null) {
+            requestedTab = Tab.Today.route
+        }
+        homeScrollToken++
 
         // Import/refresh calendar trip reminders on every foreground. No-ops
         // quickly when the feature is off or calendar permission isn't granted.

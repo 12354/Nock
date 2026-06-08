@@ -319,6 +319,14 @@
     <string name="settings_update_retry">Retry</string>
     <string name="settings_update_download_failed">Download failed</string>
 
+    <!-- Today: slim update-ready banner -->
+    <string name="today_update_ready">Update ready</string>
+    <string name="today_update_updating">Updating…</string>
+    <string name="today_update_version">Version %1$d</string>
+    <string name="today_update_applying">Will apply on restart</string>
+    <string name="today_update_dismiss">Dismiss</string>
+    <string name="today_update_action">Update</string>
+
     <!-- Quick-add parsed summary (Edit reminder) -->
     <string name="parsed_summary_daily">daily at %1$s</string>
     <string name="parsed_summary_weekly">%1$s at %2$s</string>

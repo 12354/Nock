@@ -183,9 +183,12 @@ class PendingVoiceProcessor @Inject constructor(
     ): String {
         val name = spec.name?.takeIf { it.isNotBlank() }
             ?: ctx.getString(R.string.default_reminder_name)
+        // Never route a voice reminder into the calendar-import group (seedKey "trips",
+        // shown as Appointments / Termine); it is populated from the device calendar.
+        val assignable = groups.filter { it.seedKey != "trips" }.ifEmpty { groups }
         val groupId = spec.groupHint?.let { hint ->
-            groups.firstOrNull { it.name.equals(hint, ignoreCase = true) }?.id
-        } ?: groups.first().id
+            assignable.firstOrNull { it.name.equals(hint, ignoreCase = true) }?.id
+        } ?: assignable.first().id
 
         val nowMs = System.currentTimeMillis()
         val nextFire = spec.schedule.nextFireFrom(nowMs, null)

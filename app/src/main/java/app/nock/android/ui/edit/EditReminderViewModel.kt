@@ -146,8 +146,10 @@ class EditReminderViewModel @Inject constructor(
 
     private fun applyDeepSeek(r: DeepSeekParseResult.Ok) {
         _state.update { st ->
+            // Never route a voice reminder into the calendar-import group (seedKey "trips",
+            // shown as Appointments / Termine); it is populated from the device calendar.
             val newGroupId = r.groupHint?.let { hint ->
-                st.groups.firstOrNull { it.name.equals(hint, ignoreCase = true) }?.id
+                st.groups.firstOrNull { it.name.equals(hint, ignoreCase = true) && it.seedKey != "trips" }?.id
             } ?: st.groupId
             val st2 = st.copy(
                 groupId = newGroupId,

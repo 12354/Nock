@@ -628,6 +628,9 @@ private fun groupByBucket(items: List<TodayItem>): List<TodaySection> {
     val now = System.currentTimeMillis()
     val today = LocalDate.now()
     val nextHourCutoff = now + 60 * 60_000L
+    // The Today view is a near-term agenda, so cap it at the next 7 days. Anything
+    // firing further out is hidden here (it still lives in the reminder list).
+    val horizonCutoff = now + 7 * 24 * 60 * 60_000L
 
     val nextHour = mutableListOf<TodayItem>()
     val later = mutableListOf<TodayItem>()
@@ -635,7 +638,7 @@ private fun groupByBucket(items: List<TodayItem>): List<TodaySection> {
     val laterDays = mutableListOf<TodayItem>()
 
     items
-        .filter { !it.isActive && it.reminder.nextFireAt != null }
+        .filter { !it.isActive && it.reminder.nextFireAt != null && it.reminder.nextFireAt <= horizonCutoff }
         .sortedBy { it.reminder.nextFireAt }
         .forEach { item ->
             val ms = item.reminder.nextFireAt ?: return@forEach

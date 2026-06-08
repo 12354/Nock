@@ -280,6 +280,8 @@
     <string name="trips_home_address">Home address (trip start)</string>
     <string name="trips_buffer_minutes">Heads-up before leaving (minutes)</string>
     <string name="trips_test_route">Test route</string>
+    <string name="trips_sync_now">Sync now</string>
+    <string name="trips_status_synced">Calendar synced.</string>
     <string name="trips_calendar_permission_help">Calendar alarms read your device calendar (including Google Calendar) to find your upcoming events. No data leaves your phone except the addresses sent to TomTom for routing.</string>
     <string name="trips_grant_calendar">Grant calendar access</string>
     <string name="trips_calendars_title">Calendars to watch</string>

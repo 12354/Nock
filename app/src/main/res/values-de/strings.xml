@@ -281,6 +281,8 @@
     <string name="trips_home_address">Heimatadresse (Startpunkt)</string>
     <string name="trips_buffer_minutes">Vorlauf vor der Abfahrt (Minuten)</string>
     <string name="trips_test_route">Route testen</string>
+    <string name="trips_sync_now">Jetzt synchronisieren</string>
+    <string name="trips_status_synced">Kalender synchronisiert.</string>
     <string name="trips_calendar_permission_help">Kalender-Alarme lesen deinen Gerätekalender (inkl. Google Kalender), um deine bevorstehenden Termine zu finden. Außer den an TomTom gesendeten Adressen für die Routenberechnung verlassen keine Daten dein Telefon.</string>
     <string name="trips_grant_calendar">Kalenderzugriff erlauben</string>
     <string name="trips_calendars_title">Zu überwachende Kalender</string>

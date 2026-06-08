@@ -275,6 +275,14 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    /** Manually re-import calendar events now, reporting the result in the trip status line. */
+    fun syncTripsNow() {
+        appScope.launch {
+            runCatching { trips.syncNow() }
+            tripStatusFlow.value = ctx.getString(R.string.trips_status_synced)
+        }
+    }
+
     /** Called after the calendar permission is granted so trips import immediately. */
     fun onCalendarPermissionResult() {
         appScope.launch { runCatching { trips.syncNow() } }

@@ -210,3 +210,16 @@ would be a premature abstraction.
   - `setTripBufferMin` re-arms locally (no TomTom call) since only the chain
     offsets depend on the buffer; the cached travel estimate and leave-by are
     reused.
+- **Editable location on manual import.** The manual-import preview now shows the
+  same Location field as the reminder editor (an `OutlinedTextField` with a Place
+  icon), alongside the buffer slider. Unlike the buffer (a local re-frame), the
+  location drives the destination, so editing it re-routes the preview — the
+  travel time and leave-by update live after a 1-second debounce
+  (`LOCATION_DEBOUNCE_MS`) past the last keystroke, so we geocode/route once the
+  user pauses rather than per keystroke. The existing preview card stays on
+  screen with its prior travel time while the new route is fetched, so editing
+  stays smooth. `ManualImportViewModel` carries the edited location in state and
+  passes `selectedEvent.copy(location = …)` to both `previewEvent` and
+  `importEvent`, so the imported reminder is created with the edited destination
+  (and adding a location to a previously location-less event turns on the buffer
+  slider once it routes).

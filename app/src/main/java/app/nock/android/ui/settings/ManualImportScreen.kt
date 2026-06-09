@@ -21,6 +21,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.LocationOff
 import androidx.compose.material.icons.outlined.Search
@@ -286,10 +287,16 @@ private fun PreviewStep(
             else -> {
                 PreviewCard(preview, state.selectedCalendar?.displayName)
 
-                // Buffer slider: only meaningful before import, and only when the
-                // event has a travel leg to budget a heads-up against.
-                if (!state.imported && preview.showLeaveFor) {
-                    BufferSlider(state.bufferMin, onChange = vm::setBufferMin)
+                // Editable location + buffer, shown before import (same controls as
+                // the reminder editor). Editing the location re-routes the preview;
+                // adding one to a location-less event turns on the buffer slider.
+                if (!state.imported) {
+                    LocationField(state.location, onChange = vm::setLocation)
+                    // Buffer is only meaningful when the event has a travel leg to
+                    // budget a heads-up against.
+                    if (preview.showLeaveFor) {
+                        BufferSlider(state.bufferMin, onChange = vm::setBufferMin)
+                    }
                 }
 
                 if (state.imported && closeAfterImport) {
@@ -430,6 +437,23 @@ private fun PreviewCard(preview: TripPreview, calendarName: String?) {
             }
         }
     }
+}
+
+/**
+ * Editable destination for this import — the same Location control as the reminder
+ * editor. Editing it re-routes the preview (fresh travel time + leave-by); leaving
+ * it blank keeps the appointment location-less (alerts at its start time).
+ */
+@Composable
+private fun LocationField(location: String, onChange: (String) -> Unit) {
+    OutlinedTextField(
+        value = location,
+        onValueChange = onChange,
+        label = { Text(stringResource(R.string.edit_location_label)) },
+        leadingIcon = { Icon(Icons.Filled.Place, contentDescription = null) },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+    )
 }
 
 /**

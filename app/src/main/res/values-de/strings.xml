@@ -86,6 +86,7 @@
     <string name="edit_ai_thinking">KI denkt nach…</string>
     <string name="edit_ai_error_prefix">KI-Fehler: %1$s</string>
     <string name="edit_name_label">Name</string>
+    <string name="edit_location_label">Ort</string>
     <string name="edit_group_label">Gruppe</string>
     <string name="edit_schedule_label">Zeitplan</string>
     <string name="schedule_kind_once">Einmalig</string>

@@ -313,6 +313,31 @@ class TripSyncManager @Inject constructor(
         return reminderId
     }
 
+    // --- Editing an imported trip's location ---
+
+    /**
+     * The location stored for the trip behind [reminderId], or null when the
+     * reminder isn't a calendar-imported trip. A blank string is a real value
+     * (an imported event with no location), distinct from null (not a trip), so
+     * the edit screen can decide whether to surface the location field at all.
+     */
+    suspend fun tripLocation(reminderId: Long): String? =
+        tripDao.getByReminderId(reminderId)?.location
+
+    /**
+     * Persist a user-edited [location] for the trip behind [reminderId],
+     * invalidating the cached destination geocode so the next [recompute]
+     * re-routes from the new address. Returns true when the value actually
+     * changed (so the caller can skip a needless recompute). No-op for a
+     * reminder that has no trip row.
+     */
+    suspend fun setTripLocation(reminderId: Long, location: String): Boolean = mutex.withLock {
+        val trip = tripDao.getByReminderId(reminderId) ?: return@withLock false
+        if (trip.location == location) return@withLock false
+        tripDao.upsert(trip.copy(location = location, destLat = null, destLon = null))
+        true
+    }
+
     // --- Manual single-appointment import ---
 
     /**

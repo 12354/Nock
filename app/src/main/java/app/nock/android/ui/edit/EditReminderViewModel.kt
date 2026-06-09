@@ -10,6 +10,7 @@ import app.nock.android.domain.escalation.EscalationEngine
 import app.nock.android.domain.model.Group
 import app.nock.android.domain.model.Schedule
 import app.nock.android.history.AlarmHistoryLogger
+import app.nock.android.trip.TripSyncManager
 import app.nock.android.voice.DeepSeekParseResult
 import app.nock.android.voice.DeepSeekReminderParser
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -38,6 +39,10 @@ data class EditState(
     val intervalHours: Int = 8,
     val intervalStartMs: Long? = null,
     val groups: List<Group> = emptyList(),
+    // Location is only meaningful — and only shown — for reminders imported from
+    // the calendar; isCalendarReminder gates the field's visibility.
+    val isCalendarReminder: Boolean = false,
+    val location: String = "",
     val nlInput: String = "",
     val nlThinking: Boolean = false,
     val nlError: String? = null,
@@ -52,6 +57,7 @@ class EditReminderViewModel @Inject constructor(
     private val engine: EscalationEngine,
     private val deepSeekParser: DeepSeekReminderParser,
     private val history: AlarmHistoryLogger,
+    private val tripSync: TripSyncManager,
     savedState: SavedStateHandle
 ) : ViewModel() {
 
@@ -72,6 +78,9 @@ class EditReminderViewModel @Inject constructor(
         viewModelScope.launch {
             val r = repo.getReminder(reminderId) ?: return@launch
             val groups = repo.getGroups()
+            // A non-null location means this reminder was imported from the calendar;
+            // null means it's an ordinary reminder with no editable location.
+            val tripLocation = tripSync.tripLocation(reminderId)
             val kind = when (r.schedule) {
                 is Schedule.OneShot -> ScheduleKind.ONESHOT
                 is Schedule.Daily -> ScheduleKind.DAILY
@@ -94,6 +103,8 @@ class EditReminderViewModel @Inject constructor(
                     monthlyTimeMinutes = (r.schedule as? Schedule.Monthly)?.timeOfDayMinutes ?: it.monthlyTimeMinutes,
                     intervalHours = ((r.schedule as? Schedule.IntervalFromLast)?.intervalMs ?: (it.intervalHours * 3_600_000L)).let { (it / 3_600_000L).toInt().coerceAtLeast(1) },
                     intervalStartMs = (r.schedule as? Schedule.IntervalFromLast)?.startAtMs,
+                    isCalendarReminder = tripLocation != null,
+                    location = tripLocation.orEmpty(),
                     groups = groups
                 )
             }
@@ -101,6 +112,7 @@ class EditReminderViewModel @Inject constructor(
     }
 
     fun updateName(s: String) = _state.update { it.copy(name = s) }
+    fun updateLocation(s: String) = _state.update { it.copy(location = s) }
     fun updateGroup(id: Long) = _state.update { it.copy(groupId = id) }
     fun updateKind(k: ScheduleKind) = _state.update { it.copy(scheduleType = k) }
     fun updateOneShot(ms: Long) = _state.update { it.copy(oneShotMs = ms) }
@@ -220,6 +232,13 @@ class EditReminderViewModel @Inject constructor(
             createdAt = existing?.createdAt ?: now,
         )
         recordHistory(existing, name, schedule, nextFire, s.groupId, s.groups)
+        // For a calendar-imported reminder, persist an edited location and refresh
+        // its traffic-aware leave-by time. The recompute does network work, so run
+        // it off the save path rather than blocking the screen from closing.
+        if (s.isCalendarReminder && s.reminderId != 0L) {
+            val changed = tripSync.setTripLocation(s.reminderId, s.location.trim())
+            if (changed) viewModelScope.launch { tripSync.recompute(s.reminderId) }
+        }
     }
 
     private fun recordHistory(

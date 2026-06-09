@@ -40,6 +40,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -70,11 +71,20 @@ import java.util.Locale
 @Composable
 fun ManualImportScreen(
     onBack: () -> Unit,
+    closeAfterImport: Boolean = false,
+    onImported: () -> Unit = {},
     vm: ManualImportViewModel = hiltViewModel(),
 ) {
     val state by vm.state.collectAsState()
     // Back walks the step machine; only exits the importer at the first step.
     BackHandler { if (!vm.back()) onBack() }
+
+    // When launched from the new-reminder view, a successful import is the end of
+    // the flow: dismiss the importer (and the reminder view beneath it) rather than
+    // offering to import another.
+    LaunchedEffect(state.imported) {
+        if (closeAfterImport && state.imported) onImported()
+    }
 
     val title = when (state.stage) {
         ManualImportStage.PICK_CALENDAR -> stringResource(R.string.trips_manual_step_calendar)
@@ -100,7 +110,7 @@ fun ManualImportScreen(
         when (state.stage) {
             ManualImportStage.PICK_CALENDAR -> CalendarPicker(state, vm, padding)
             ManualImportStage.PICK_EVENT -> EventPicker(state, vm, padding)
-            ManualImportStage.PREVIEW -> PreviewStep(state, vm, padding)
+            ManualImportStage.PREVIEW -> PreviewStep(state, vm, padding, closeAfterImport)
         }
     }
 }
@@ -254,7 +264,12 @@ private fun EventRow(event: CalendarEvent, onClick: () -> Unit) {
 }
 
 @Composable
-private fun PreviewStep(state: ManualImportUiState, vm: ManualImportViewModel, padding: PaddingValues) {
+private fun PreviewStep(
+    state: ManualImportUiState,
+    vm: ManualImportViewModel,
+    padding: PaddingValues,
+    closeAfterImport: Boolean = false,
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -270,7 +285,10 @@ private fun PreviewStep(state: ManualImportUiState, vm: ManualImportViewModel, p
             else -> {
                 PreviewCard(preview, state.selectedCalendar?.displayName)
 
-                if (state.imported) {
+                if (state.imported && closeAfterImport) {
+                    // Launched from the new-reminder view: the importer is closing
+                    // itself, so don't offer "import another".
+                } else if (state.imported) {
                     Text(
                         stringResource(R.string.trips_manual_imported),
                         style = MaterialTheme.typography.bodyMedium,

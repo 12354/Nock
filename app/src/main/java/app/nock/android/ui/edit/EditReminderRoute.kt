@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.rememberCoroutineScope
@@ -65,6 +66,7 @@ fun EditReminderRoute(
     reminderId: Long,
     onDone: () -> Unit,
     onDeleted: (app.nock.android.domain.model.Reminder) -> Unit = {},
+    onImportFromCalendar: () -> Unit = {},
     vm: EditReminderViewModel = hiltViewModel()
 ) {
     val state by vm.state.collectAsState()
@@ -81,6 +83,14 @@ fun EditReminderRoute(
                     }
                 },
                 actions = {
+                    if (reminderId == 0L) {
+                        IconButton(onClick = onImportFromCalendar) {
+                            Icon(
+                                Icons.Outlined.CalendarMonth,
+                                contentDescription = stringResource(R.string.edit_import_from_calendar)
+                            )
+                        }
+                    }
                     if (reminderId != 0L) {
                         IconButton(onClick = {
                             scope.launch {

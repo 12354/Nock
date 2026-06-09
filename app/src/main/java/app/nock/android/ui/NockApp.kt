@@ -26,8 +26,10 @@ import androidx.annotation.StringRes
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.navArgument
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import app.nock.android.R
@@ -168,8 +170,24 @@ fun NockApp(
                     }
                 )
             }
-            composable("settings/${SettingsCategory.INTEGRATIONS}/${IntegrationCategory.CALENDAR}/import") {
-                ManualImportScreen(onBack = { nav.popBackStack() })
+            composable(
+                "settings/${SettingsCategory.INTEGRATIONS}/${IntegrationCategory.CALENDAR}/import?fromEdit={fromEdit}",
+                arguments = listOf(navArgument("fromEdit") {
+                    type = NavType.BoolType
+                    defaultValue = false
+                })
+            ) { entry ->
+                val fromEdit = entry.arguments?.getBoolean("fromEdit") ?: false
+                ManualImportScreen(
+                    onBack = { nav.popBackStack() },
+                    closeAfterImport = fromEdit,
+                    // Launched from the new-reminder view: close the importer *and*
+                    // the (empty) reminder view beneath it, landing back on the list.
+                    onImported = {
+                        nav.popBackStack()
+                        nav.popBackStack()
+                    },
+                )
             }
             composable("settings/${SettingsCategory.INTEGRATIONS}/${IntegrationCategory.DEEPSEEK}") {
                 DeepSeekSettingsScreen(onBack = { nav.popBackStack() })
@@ -188,6 +206,9 @@ fun NockApp(
                 EditReminderRoute(
                     reminderId = id,
                     onDone = { nav.popBackStack() },
+                    onImportFromCalendar = {
+                        nav.navigate("settings/${SettingsCategory.INTEGRATIONS}/${IntegrationCategory.CALENDAR}/import?fromEdit=true")
+                    },
                     onDeleted = { deleted ->
                         scope.launch {
                             // The delete is already committed; the countdown bar in

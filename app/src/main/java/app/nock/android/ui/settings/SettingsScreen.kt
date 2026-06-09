@@ -869,6 +869,9 @@ private fun TripsSection(state: SettingsState, vm: SettingsViewModel) {
                 Text(it, style = MaterialTheme.typography.bodySmall)
             }
 
+            Spacer(Modifier.height(20.dp))
+            TripSyncLogSection(vm)
+
             Spacer(Modifier.height(16.dp))
             if (!state.tripHasCalendarPermission) {
                 Text(
@@ -918,6 +921,67 @@ private fun TripsSection(state: SettingsState, vm: SettingsViewModel) {
             }
         }
     }
+}
+
+/**
+ * A copyable diagnostic of the most recent calendar sync, shown right under the
+ * Sync button. When an event that should have become an alarm doesn't, the user
+ * taps Sync now, then copies this — it lists every event found and why each was
+ * or wasn't turned into an alarm.
+ */
+@Composable
+private fun TripSyncLogSection(vm: SettingsViewModel) {
+    val clipboard = LocalClipboardManager.current
+    val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
+    val logText by vm.tripSyncLogText.collectAsState()
+    val copiedMsg = stringResource(R.string.trips_synclog_copied)
+
+    Text(
+        stringResource(R.string.trips_synclog_title),
+        style = MaterialTheme.typography.bodyMedium,
+        fontWeight = FontWeight.SemiBold
+    )
+    Text(
+        stringResource(R.string.trips_synclog_help),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.outline
+    )
+    Spacer(Modifier.height(8.dp))
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Button(
+            onClick = {
+                clipboard.setText(AnnotatedString(logText))
+                scope.launch { snackbarHostState.showSnackbar(copiedMsg) }
+            },
+            enabled = logText.isNotBlank()
+        ) {
+            Text(stringResource(R.string.trips_synclog_copy))
+        }
+        OutlinedButton(onClick = { vm.clearTripSyncLog() }, enabled = logText.isNotBlank()) {
+            Text(stringResource(R.string.trips_synclog_clear))
+        }
+    }
+    Spacer(Modifier.height(8.dp))
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        shape = MaterialTheme.shapes.small,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Box(
+            modifier = Modifier
+                .heightIn(max = 320.dp)
+                .verticalScroll(rememberScrollState())
+                .padding(8.dp)
+        ) {
+            Text(
+                text = logText.ifBlank { stringResource(R.string.trips_synclog_empty) },
+                style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+    SnackbarHost(hostState = snackbarHostState, modifier = Modifier.fillMaxWidth())
 }
 
 @Composable

@@ -301,6 +301,13 @@
     <string name="trips_reminder_name">Losfahren zu %1$s</string>
     <string name="trips_calendar_unnamed">(ohne Namen)</string>
     <string name="trips_event_untitled">(ohne Titel)</string>
+    <!-- Einstellungen: Diagnoseprotokoll der Kalendersynchronisierung, unter dem Synchronisieren-Button -->
+    <string name="trips_synclog_title">Synchronisierungsprotokoll</string>
+    <string name="trips_synclog_help">Wird bei jeder Kalendersynchronisierung gefüllt. Wenn aus einem Termin kein Wecker wird, tippe auf „Jetzt synchronisieren“ und kopiere dies — es listet jeden gefundenen Termin auf und warum er übernommen wurde oder nicht.</string>
+    <string name="trips_synclog_copy">Kopieren</string>
+    <string name="trips_synclog_clear">Leeren</string>
+    <string name="trips_synclog_empty">(tippe auf „Jetzt synchronisieren“, um dieses Protokoll zu füllen)</string>
+    <string name="trips_synclog_copied">Synchronisierungsprotokoll in die Zwischenablage kopiert</string>
 
     <!-- Settings: Alarm history -->
     <string name="settings_alarm_history_title">Wecker-Verlauf</string>

@@ -46,6 +46,7 @@ class TripSyncManager @Inject constructor(
     private val engine: EscalationEngine,
     private val scheduler: TripScheduler,
     private val time: TimeSource,
+    private val syncLog: TripSyncLog,
 ) {
     // Serializes sync passes so an app-open sync and a recompute alarm can't
     // race into duplicate reminders for the same event.
@@ -72,23 +73,72 @@ class TripSyncManager @Inject constructor(
     /** Full sync: import upcoming located events, prune stale trips, re-arm the daily sync. */
     suspend fun syncNow() = mutex.withLock {
         val now = time.nowMs()
-        if (!enabled() || !calendar.hasPermission()) {
+        syncLog.start(now)
+        val enabled = enabled()
+        val hasPermission = calendar.hasPermission()
+        if (!enabled || !hasPermission) {
+            if (!enabled) syncLog.line("Calendar alarms are turned off — nothing synced.")
+            if (!hasPermission) syncLog.line("No calendar permission granted — nothing synced.")
+            syncLog.publish()
             tearDownAll()
             scheduler.cancelDailySync()
             return
         }
         val buffer = bufferMs()
         val mode = travelMode()
+        val watched = watchedCalendarIds()
         val tripsGroupId = ensureTripsGroup(buffer)
+        val calNames = calendar.listCalendars().associate { it.id to it.displayName }
 
-        val events = calendar.upcomingEvents(now, now + TripDefaults.LOOKAHEAD_MS, watchedCalendarIds())
+        val scan = calendar.scanWindow(now, now + TripDefaults.LOOKAHEAD_MS)
+        syncLog.line(
+            "window: ${syncLog.clock(now)} → ${syncLog.clock(now + TripDefaults.LOOKAHEAD_MS)}" +
+                " (next ${TripDefaults.LOOKAHEAD_MS / (24 * 60 * 60_000L)} days)"
+        )
+        syncLog.line("home: ${homeDescription()}")
+        syncLog.line("buffer: ${syncLog.dur(buffer)} · mode: $mode")
+        syncLog.line(
+            if (watched.isEmpty()) "watched calendars: NONE SELECTED — no event can sync until you check a calendar below"
+            else "watched calendars: " + watched.joinToString(", ") { "${calNames[it] ?: "?"} (#$it)" }
+        )
+        syncLog.line("events found in window: ${scan.size}")
+        syncLog.line("")
+
         val seen = HashSet<Long>()
-        for (e in events) {
-            seen += instanceKey(e.eventId, e.beginMs)
-            upsertTrip(e, tripsGroupId, buffer, mode, now)
+        for (s in scan) {
+            val calName = calNames[s.calendarId] ?: "calendar #${s.calendarId}"
+            val head = "\"${s.title}\" [$calName] ${syncLog.clock(s.beginMs)}"
+            when {
+                s.allDay -> {
+                    syncLog.line(head)
+                    syncLog.line("    skipped — all-day event (no arrival time to plan a trip for)")
+                }
+                s.calendarId !in watched -> {
+                    syncLog.line(head)
+                    syncLog.line("    skipped — calendar not in your watched selection")
+                }
+                else -> {
+                    val e = CalendarEvent(s.calendarId, s.eventId, s.beginMs, s.title, s.location)
+                    seen += instanceKey(e.eventId, e.beginMs)
+                    syncLog.line(head)
+                    upsertTrip(e, tripsGroupId, buffer, mode, now)
+                }
+            }
         }
-        pruneUnseen(seen)
+        val pruned = pruneUnseen(seen)
+        syncLog.line("")
+        syncLog.line("pruned $pruned trip(s) no longer in the window.")
+        syncLog.publish()
         scheduler.scheduleDailySync(now + 24 * 60 * 60_000L)
+    }
+
+    /** One-line description of where trips start from, for the sync log. */
+    private suspend fun homeDescription(): String {
+        val override = settings.get(SettingsRepository.KEY_TRIP_HOME_ADDRESS)?.takeIf { it.isNotBlank() }
+            ?: return "not set (located events fall back to a fixed travel time)"
+        val lat = settings.get(SettingsRepository.KEY_TRIP_HOME_LAT)?.toDoubleOrNull()
+        val lon = settings.get(SettingsRepository.KEY_TRIP_HOME_LON)?.toDoubleOrNull()
+        return if (lat != null && lon != null) "\"$override\" (geocoded)" else "\"$override\" (not yet geocoded)"
     }
 
     /** Recompute a single trip's travel time and re-arm it (fired by an alarm). */
@@ -124,7 +174,10 @@ class TripSyncManager @Inject constructor(
 
         // Tombstone: the reminder was dismissed (Done) but the event is still
         // upcoming. Don't resurrect it.
-        if (existing != null && repo.getReminder(existing.reminderId) == null) return
+        if (existing != null && repo.getReminder(existing.reminderId) == null) {
+            syncLog.line("    skipped — you dismissed this reminder; it won't be recreated")
+            return
+        }
 
         // Located events get a traffic-aware leave-by; location-less events simply
         // fire at their start time (travel = 0, no routing or recompute).
@@ -135,6 +188,7 @@ class TripSyncManager @Inject constructor(
         val leaveBy = TripMath.leaveBy(e.beginMs, travel)
 
         val name = reminderName(e.title, showLeaveFor(hasLocation, travel))
+        logSyncedEvent(e, hasLocation, origin, dest, travel, leaveBy)
         // Save the reminder, persist the trip row, and arm the escalation as ONE
         // engine-locked step. Doing these as bare repo/tripDao calls let a Drive
         // snapshot import (which wipes reminders + calendar_trips) interleave and
@@ -230,6 +284,32 @@ class TripSyncManager @Inject constructor(
         armNextRecompute(reminderId, leaveBy, now)
     }
 
+    /** Record why/how an event became (or fell short of) a trip reminder in the sync log. */
+    private fun logSyncedEvent(
+        e: CalendarEvent,
+        hasLocation: Boolean,
+        origin: LatLng?,
+        dest: LatLng?,
+        travelMs: Long,
+        leaveByMs: Long,
+    ) {
+        if (!hasLocation) {
+            syncLog.line("    synced — no location → alerts at start ${syncLog.clock(leaveByMs)}")
+            return
+        }
+        val notes = buildList {
+            if (origin == null) add("home address not set/geocodable")
+            if (dest == null) add("location \"${e.location}\" couldn't be geocoded")
+            if (origin == null || dest == null) add("using fallback travel time")
+        }
+        val frame = if (showLeaveFor(true, travelMs)) "leave-for alarm" else "travel under threshold → plain alert"
+        syncLog.line(
+            "    synced — \"${e.location}\" → leave ${syncLog.clock(leaveByMs)}" +
+                " (travel ${syncLog.dur(travelMs)}, $frame)"
+        )
+        if (notes.isNotEmpty()) syncLog.line("      note: " + notes.joinToString("; "))
+    }
+
     private fun armNextRecompute(reminderId: Long, leaveByMs: Long, now: Long) {
         val at = TripMath.nextRecomputeAt(leaveByMs, now)
         if (at != null) scheduler.scheduleRecompute(reminderId, at)
@@ -290,13 +370,16 @@ class TripSyncManager @Inject constructor(
         return tomtom.geocode(location)
     }
 
-    /** Remove trips whose event instance is no longer upcoming/located. */
-    private suspend fun pruneUnseen(seen: Set<Long>) {
+    /** Remove trips whose event instance is no longer upcoming/located; returns how many were removed. */
+    private suspend fun pruneUnseen(seen: Set<Long>): Int {
+        var pruned = 0
         tripDao.getAll().forEach { trip ->
             if (instanceKey(trip.eventId, trip.eventStartMs) !in seen) {
                 tearDown(trip)
+                pruned++
             }
         }
+        return pruned
     }
 
     private suspend fun tearDownAll() {

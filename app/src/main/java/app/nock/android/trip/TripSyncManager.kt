@@ -466,7 +466,13 @@ class TripSyncManager @Inject constructor(
     ): TravelEstimate {
         if (origin != null && dest != null) {
             when (val r = tomtom.travelTime(origin, dest, arriveByMs, mode)) {
-                is RoutingResult.Ok -> if (r.travelMs > 0) return TravelEstimate(r.travelMs, live = true)
+                // A travel time of exactly 0 is a real answer, not a failure: when an
+                // event's location is the user's own home (e.g. taking out the trash),
+                // origin == destination and TomTom returns a 200 route with
+                // travelTimeInSeconds = 0. parseTravelMs returns null (not 0) when there
+                // is genuinely no route, so any non-negative value here is live — accept
+                // it instead of falling through to the fixed default travel time.
+                is RoutingResult.Ok -> if (r.travelMs >= 0) return TravelEstimate(r.travelMs, live = true)
                 is RoutingResult.Error -> Unit // fall through to fallback
             }
         }

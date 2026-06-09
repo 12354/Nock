@@ -93,6 +93,9 @@ class TripSyncManager @Inject constructor(
         (settings.get(SettingsRepository.KEY_TRIP_BUFFER_MIN)?.toLongOrNull()?.times(60_000L))
             ?: TripDefaults.BUFFER_MS
 
+    /** The configured trip buffer in whole minutes — seeds the manual-import slider. */
+    suspend fun configuredBufferMin(): Int = (bufferMs() / 60_000L).toInt()
+
     private suspend fun travelMode(): String =
         settings.get(SettingsRepository.KEY_TRIP_TRAVEL_MODE)?.takeIf { it.isNotBlank() }
             ?: TripDefaults.TRAVEL_MODE
@@ -358,8 +361,8 @@ class TripSyncManager @Inject constructor(
      * escalation steps and a reminder-name preview, plus whether it's already
      * imported or was previously dismissed. Writes nothing.
      */
-    suspend fun previewEvent(event: CalendarEvent): TripPreview {
-        val buffer = bufferMs()
+    suspend fun previewEvent(event: CalendarEvent, bufferMsOverride: Long? = null): TripPreview {
+        val buffer = bufferMsOverride ?: bufferMs()
         val mode = travelMode()
         val existing = tripDao.getByEvent(event.eventId, event.beginMs)
         val comp = computeTrip(event, existing, mode)
@@ -385,15 +388,35 @@ class TripSyncManager @Inject constructor(
     }
 
     /**
+     * Re-frame a preview for a user-chosen buffer without re-routing. Only the
+     * escalation step offsets (and the stored buffer) depend on it — the
+     * traffic-aware travel time and leave-by are independent — so the slider can
+     * update the preview live without another geocode/routing round-trip.
+     */
+    fun reframeWithBuffer(preview: TripPreview, bufferMs: Long): TripPreview {
+        val chain = TripChain.build(bufferMs, TripDefaults.REPEAT_INTERVAL_MS)
+        val steps = chain.stages.map { TripPreviewStep(it.type, preview.leaveByMs + it.offsetMs) }
+        return preview.copy(bufferMs = bufferMs, steps = steps)
+    }
+
+    /**
      * Import a single chosen event as a trip reminder, on demand. Unlike [syncNow]
      * this bypasses the dismissed-tombstone guard — re-importing is exactly how the
      * user deliberately brings back a reminder they dismissed — and it prunes
      * nothing. Recomputes the estimate fresh so the import reflects current traffic.
+     *
+     * A [bufferMsOverride] (from the importer's buffer slider) is persisted as the
+     * trip buffer: trip escalation lives on the shared Trips-group chain, which the
+     * daily sync rebuilds from the stored setting, so persisting is what keeps the
+     * user's chosen heads-up lead from being reverted on the next sync.
      * Returns the new/updated reminder id.
      */
-    suspend fun importEvent(event: CalendarEvent): Long = mutex.withLock {
+    suspend fun importEvent(event: CalendarEvent, bufferMsOverride: Long? = null): Long = mutex.withLock {
         val now = time.nowMs()
-        val buffer = bufferMs()
+        if (bufferMsOverride != null) {
+            settings.set(SettingsRepository.KEY_TRIP_BUFFER_MIN, (bufferMsOverride / 60_000L).toString())
+        }
+        val buffer = bufferMsOverride ?: bufferMs()
         val mode = travelMode()
         val tripsGroupId = ensureTripsGroup(buffer)
         val existing = tripDao.getByEvent(event.eventId, event.beginMs)

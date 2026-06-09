@@ -187,3 +187,15 @@ would be a premature abstraction.
   reorder, remove, re-add, and change the offset of each stage. Per-group
   override surface is the "Custom chain" toggle inside each group's
   editor.
+- Manual calendar import has a buffer slider (progress bar) on the preview
+  step: it sets how long before departure the first heads-up fires, so the
+  reminder starts at `appointment − travel − buffer`. Default 30 min,
+  range 5–120 in 5-min steps, seeded from the configured trip buffer.
+  Because trip escalation lives on the *shared* Trips-group chain (v1 has no
+  per-reminder override — see §11 of plan.md), the chosen buffer is also
+  persisted to `KEY_TRIP_BUFFER_MIN` on import; otherwise the next daily sync
+  would rebuild the group chain from the stored setting and revert it. So the
+  slider and the Settings "Heads-up before leaving" field are two views of the
+  same trip buffer. Moving the slider only re-frames the preview's escalation
+  step offsets locally (`TripSyncManager.reframeWithBuffer`) — no extra
+  routing call, since travel time and leave-by don't depend on the buffer.

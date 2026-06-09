@@ -32,6 +32,12 @@ data class ManualImportUiState(
     val previewLoading: Boolean = false,
     val importing: Boolean = false,
     val imported: Boolean = false,
+    /**
+     * Buffer (in whole minutes) chosen on the preview's slider: how long before
+     * departure the first heads-up fires, so the reminder starts at
+     * `appointment − travel − buffer`. Seeded from the configured trip default.
+     */
+    val bufferMin: Int = ManualImportViewModel.DEFAULT_BUFFER_MIN,
 )
 
 /**
@@ -51,12 +57,23 @@ class ManualImportViewModel @Inject constructor(
 
     init {
         loadCalendars()
+        loadDefaultBuffer()
     }
 
     private fun loadCalendars() {
         viewModelScope.launch {
             val cals = withContext(Dispatchers.IO) { calendar.listCalendars() }
             _state.update { it.copy(calendars = cals) }
+        }
+    }
+
+    /** Seed the buffer slider from the configured trip default (defaults to 30 min). */
+    private fun loadDefaultBuffer() {
+        viewModelScope.launch {
+            val min = withContext(Dispatchers.IO) { trips.configuredBufferMin() }
+                .coerceIn(MIN_BUFFER_MIN, MAX_BUFFER_MIN)
+            // Don't clobber a value the user has already nudged on the slider.
+            _state.update { if (it.preview == null && !it.imported) it.copy(bufferMin = min) else it }
         }
     }
 
@@ -96,8 +113,9 @@ class ManualImportViewModel @Inject constructor(
     }
 
     private fun refreshPreview(event: CalendarEvent) {
+        val bufferMs = _state.value.bufferMin * 60_000L
         viewModelScope.launch {
-            val preview = withContext(Dispatchers.IO) { trips.previewEvent(event) }
+            val preview = withContext(Dispatchers.IO) { trips.previewEvent(event, bufferMs) }
             _state.update {
                 if (it.selectedEvent != event) it
                 else it.copy(preview = preview, previewLoading = false)
@@ -105,12 +123,27 @@ class ManualImportViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Slider handler: re-frame the on-screen preview for the new buffer. Only the
+     * escalation step offsets depend on it, so this is a cheap local recompute — no
+     * re-routing — that updates the "start time = appointment − travel − buffer".
+     */
+    fun setBufferMin(min: Int) {
+        val clamped = min.coerceIn(MIN_BUFFER_MIN, MAX_BUFFER_MIN)
+        _state.update { st ->
+            if (st.bufferMin == clamped) return@update st
+            val reframed = st.preview?.let { trips.reframeWithBuffer(it, clamped * 60_000L) }
+            st.copy(bufferMin = clamped, preview = reframed ?: st.preview)
+        }
+    }
+
     fun importSelected() {
         val event = _state.value.selectedEvent ?: return
         if (_state.value.importing) return
+        val bufferMs = _state.value.bufferMin * 60_000L
         _state.update { it.copy(importing = true) }
         viewModelScope.launch {
-            withContext(Dispatchers.IO) { trips.importEvent(event) }
+            withContext(Dispatchers.IO) { trips.importEvent(event, bufferMs) }
             _state.update { it.copy(importing = false, imported = true) }
         }
     }
@@ -163,5 +196,12 @@ class ManualImportViewModel @Inject constructor(
             }
             ManualImportStage.PICK_CALENDAR -> false
         }
+    }
+
+    companion object {
+        /** Slider bounds for the heads-up buffer, in minutes. */
+        const val MIN_BUFFER_MIN = 5
+        const val MAX_BUFFER_MIN = 120
+        const val DEFAULT_BUFFER_MIN = 30
     }
 }

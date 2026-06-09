@@ -350,6 +350,8 @@
     <string name="trips_manual_import_another">Weiteren importieren</string>
     <string name="trips_manual_duration_min">%1$d Min.</string>
     <string name="trips_manual_duration_h_min">%1$d Std. %2$d Min.</string>
+    <string name="trips_manual_buffer_title">Vorlauf vor der Abfahrt</string>
+    <string name="trips_manual_buffer_help">Der erste Hinweis erscheint so lange, bevor du losmusst — die Erinnerung startet bei Termin − Fahrzeit − Vorlauf.</string>
 
     <!-- Settings: Alarm history -->
     <string name="settings_alarm_history_title">Wecker-Verlauf</string>

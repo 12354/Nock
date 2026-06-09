@@ -350,6 +350,8 @@
     <string name="trips_manual_import_another">Import another</string>
     <string name="trips_manual_duration_min">%1$d min</string>
     <string name="trips_manual_duration_h_min">%1$d h %2$d min</string>
+    <string name="trips_manual_buffer_title">Buffer before leaving</string>
+    <string name="trips_manual_buffer_help">The first heads-up fires this long before you need to leave — the reminder starts at appointment − travel − buffer.</string>
 
     <!-- Settings: Alarm history -->
     <string name="settings_alarm_history_title">Alarm history</string>

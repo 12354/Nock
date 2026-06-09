@@ -36,6 +36,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -285,6 +286,12 @@ private fun PreviewStep(
             else -> {
                 PreviewCard(preview, state.selectedCalendar?.displayName)
 
+                // Buffer slider: only meaningful before import, and only when the
+                // event has a travel leg to budget a heads-up against.
+                if (!state.imported && preview.showLeaveFor) {
+                    BufferSlider(state.bufferMin, onChange = vm::setBufferMin)
+                }
+
                 if (state.imported && closeAfterImport) {
                     // Launched from the new-reminder view: the importer is closing
                     // itself, so don't offer "import another".
@@ -421,6 +428,49 @@ private fun PreviewCard(preview: TripPreview, calendarName: String?) {
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * Lets the user dial the heads-up buffer for this import. The first alarm step
+ * fires `buffer` before departure, so the reminder starts at
+ * `appointment − travel − buffer`; the preview card's steps update live as it moves.
+ */
+@Composable
+private fun BufferSlider(bufferMin: Int, onChange: (Int) -> Unit) {
+    val min = ManualImportViewModel.MIN_BUFFER_MIN
+    val max = ManualImportViewModel.MAX_BUFFER_MIN
+    val step = 5
+    // Snap to whole 5-minute increments; one mark per increment between the ends.
+    val steps = ((max - min) / step) - 1
+    ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    stringResource(R.string.trips_manual_buffer_title),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    stringResource(R.string.trips_manual_duration_min, bufferMin),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+            Slider(
+                value = bufferMin.toFloat(),
+                onValueChange = { onChange((it / step).toInt() * step) },
+                valueRange = min.toFloat()..max.toFloat(),
+                steps = steps,
+            )
+            Text(
+                stringResource(R.string.trips_manual_buffer_help),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.outline,
+            )
         }
     }
 }

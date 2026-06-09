@@ -205,6 +205,21 @@ class EscalationEngineFuzzTest {
                 reminders[id]?.let { reminders[id] = it.copy(nextFireAt = next, lastCompletedAt = last) }
             }
             coEvery { repo.deleteReminder(any()) } answers { reminders.remove(firstArg<Reminder>().id) }
+            // Mirrors ReminderDao.insert (REPLACE): id 0 → assign, else keep, and
+            // write the row back to the in-memory store. Lets the engine's
+            // saveReminderAndArm path run end-to-end in the concurrent fuzzer.
+            coEvery { repo.saveReminder(any(), any(), any(), any(), any(), any(), any()) } answers {
+                val rid = firstArg<Long>().let { if (it == 0L) nextReminderId++ else it }
+                reminders[rid] = reminder(
+                    id = rid,
+                    groupId = secondArg<Long>(),
+                    schedule = arg<Schedule>(3),
+                    nextFireAt = arg<Long?>(4),
+                    lastCompletedAt = arg<Long?>(5),
+                    createdAt = arg<Long>(6),
+                )
+                rid
+            }
 
             // --- Settings ---
             coEvery { settings.getStageChain() } returns TEST_CHAIN
@@ -382,6 +397,17 @@ class EscalationEngineFuzzTest {
             // Sometimes re-arm the entire store mid-flight (ACTION_TIME_CHANGED /
             // boot), so it races all the per-row mutations above.
             if (rnd.nextInt(5) == 0) ops += ConcurrentOp(run = { engine.rescheduleAll() })
+            // Sometimes a snapshot-import-style whole-store re-arm: the engine drops
+            // the live OS alarms under its lock and rebuilds them from the surviving
+            // rows. Models Drive import (Snapshot.importMerge) racing live fires —
+            // the bijection must survive. mutateDb runs under the engine lock, so
+            // clearing the fake alarm table here is serialized with every other op.
+            // (We clear `pending`, not `dao.rows`, so we don't strand the Telegram
+            // ids the rows hold — that would trip the conservation oracle; the
+            // wipe-and-repopulate of the data itself is covered single-threaded.)
+            if (rnd.nextInt(6) == 0) ops += ConcurrentOp(run = {
+                engine.replaceAllAndRearm { pending.clear() }
+            })
             return ops.shuffled(rnd)
         }
 
@@ -396,7 +422,7 @@ class EscalationEngineFuzzTest {
         private fun collideOp(row: ActiveEscalationEntity): ConcurrentOp {
             val escId = row.id
             val rid = row.reminderId
-            return when (rnd.nextInt(7)) {
+            return when (rnd.nextInt(12)) {
                 0, 1 -> ConcurrentOp(run = { engine.done(escId) })
                 2 -> ConcurrentOp(run = { engine.snooze(escId) })
                 3 -> ConcurrentOp(run = { engine.cancelActive(rid) })
@@ -407,7 +433,7 @@ class EscalationEngineFuzzTest {
                         run = { engine.scheduleNextFireForReminder(rid) },
                     )
                 }
-                else -> {
+                6 -> {
                     // Low-level move: re-arm in place from a freshly computed trigger
                     // (the path with no pre-cancel). Falls back to a dismiss when the
                     // schedule has no next occurrence.
@@ -422,6 +448,32 @@ class EscalationEngineFuzzTest {
                         )
                     }
                 }
+                7 -> ConcurrentOp(run = { engine.completeReminder(rid) })   // Today "Done"
+                8 -> ConcurrentOp(run = { engine.deleteReminderAndCancel(rid) }) // delete
+                9, 10 -> {
+                    // The editor's Save: persist a swapped schedule + (re-)arm as one
+                    // engine-locked step (saveReminderAndArm). Falls back to complete
+                    // when the reminder is gone.
+                    val rem = reminders[rid]
+                    if (rem == null) {
+                        ConcurrentOp(run = { engine.completeReminder(rid) })
+                    } else {
+                        val newSchedule = retime(rem.schedule)
+                        val nextFire = newSchedule.nextFireFrom(clock.now, rem.lastCompletedAt)
+                        ConcurrentOp(run = {
+                            engine.saveReminderAndArm(
+                                id = rid,
+                                groupId = rem.groupId,
+                                name = rem.name,
+                                schedule = newSchedule,
+                                nextFireAt = nextFire,
+                                lastCompletedAt = rem.lastCompletedAt,
+                                createdAt = rem.createdAt,
+                            )
+                        })
+                    }
+                }
+                else -> ConcurrentOp(run = { engine.completeReminder(rid) })
             }
         }
 

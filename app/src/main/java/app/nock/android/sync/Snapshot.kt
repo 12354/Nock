@@ -105,9 +105,15 @@ class SnapshotService @Inject constructor(
         val remoteSettings = snap.settings
         val syncStart = System.currentTimeMillis()
 
-        // Wipe-and-replace must be atomic: a crash or kill partway through would
-        // otherwise leave the user with a half-cleared database and no rollback.
-        db.withTransaction {
+        // Run the wipe-and-replace AND the alarm re-arm under the engine lock, so a
+        // concurrent alarm fire can't read a row here, have its backing data wiped,
+        // and then arm an orphan alarm for the now-deleted escalation id (the exact
+        // ghost-alarm hazard the engine's mutex protects against). The DB write
+        // itself stays transactional: a crash mid-import can't leave a half-cleared
+        // store. rescheduleAll runs inside replaceAllAndRearm, after the transaction
+        // commits but still under the lock, rebuilding the row↔alarm bijection.
+        engine.replaceAllAndRearm {
+            db.withTransaction {
             activeDao.clear()
             reminderDao.clear()
             groupDao.clear()
@@ -146,11 +152,8 @@ class SnapshotService @Inject constructor(
             settingsDao.upsertAll(remoteSettings.map { (k, v) -> SettingsEntity(k, v) })
             settings.set(SettingsRepository.KEY_DRIVE_LAST_REMOTE_MS, snap.savedAtMs.toString())
             settings.set(SettingsRepository.KEY_DRIVE_LAST_SYNC_MS, syncStart.toString())
+            }
         }
-
-        // Re-arm alarms outside the transaction: it does network/IO (Telegram
-        // flush) and must not run while holding the DB transaction lock.
-        engine.rescheduleAll()
         return true
     }
 

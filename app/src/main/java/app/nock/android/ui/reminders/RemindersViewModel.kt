@@ -41,10 +41,9 @@ class RemindersViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun deleteReminder(r: Reminder) {
-        viewModelScope.launch {
-            engine.cancelActive(r.id)
-            repo.deleteReminder(r)
-        }
+        // Cancel + delete atomically so a concurrent alarm fire can't re-arm the
+        // reminder between the two steps.
+        viewModelScope.launch { engine.deleteReminderAndCancel(r.id) }
     }
 
     fun retryPending(p: PendingVoiceReminderEntity) {

@@ -187,9 +187,9 @@ class EditReminderViewModel @Inject constructor(
     suspend fun delete() {
         val id = _state.value.reminderId
         if (id == 0L) return
-        val r = repo.getReminder(id) ?: return
-        engine.cancelActive(id)
-        repo.deleteReminder(r)
+        // Cancel-then-delete as one mutex-guarded step so a concurrent alarm fire
+        // can't re-arm the reminder between the cancel and the delete.
+        engine.deleteReminderAndCancel(id)
     }
 
     suspend fun save() {
@@ -199,23 +199,20 @@ class EditReminderViewModel @Inject constructor(
         val nextFire = schedule.nextFireFrom(now, null)
         val existing = if (s.reminderId != 0L) repo.getReminder(s.reminderId) else null
         val name = s.name.ifBlank { ctx.getString(R.string.default_reminder_name) }
-        val id = repo.saveReminder(
+        // Persist + (re-)arm as one mutex-guarded step. Doing saveReminder outside
+        // the engine lock (as before) let a concurrent alarm fire observe the new
+        // trigger against the old escalation row, or slip between the cancel and the
+        // re-arm. saveReminderAndArm closes that window.
+        engine.saveReminderAndArm(
             id = s.reminderId,
             groupId = s.groupId,
             name = name,
             schedule = schedule,
             nextFireAt = nextFire,
             lastCompletedAt = existing?.lastCompletedAt,
-            createdAt = existing?.createdAt ?: now
+            createdAt = existing?.createdAt ?: now,
         )
         recordHistory(existing, name, schedule, nextFire, s.groupId, s.groups)
-        engine.cancelActive(id)
-        val r = repo.getReminder(id) ?: return
-        // OnUnlock reminders are armed in the DB; the actual fire happens
-        // when UnlockReceiver observes ACTION_USER_PRESENT, not on save.
-        if (nextFire != null && schedule !is Schedule.OnUnlock) {
-            engine.startEscalationAt(r, nextFire)
-        }
     }
 
     private fun recordHistory(

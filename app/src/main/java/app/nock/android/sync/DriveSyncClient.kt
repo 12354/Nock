@@ -12,6 +12,8 @@ import com.google.api.services.drive.Drive
 import com.google.api.services.drive.DriveScopes
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import javax.inject.Inject
@@ -25,6 +27,13 @@ class DriveSyncClient @Inject constructor(
 ) {
     private val driveScopes = listOf(DriveScopes.DRIVE_APPDATA)
     private val snapshotName = "nock-snapshot.json"
+
+    // Serializes all Drive operations. Without it, two concurrent pulls (a
+    // double-tapped "Pull now", or a pull racing a foreground sync) both pass the
+    // savedAt freshness check and both run the full clear+repopulate import; two
+    // first-ever pushes both take the create branch and duplicate the snapshot
+    // file in appDataFolder. One in-flight op at a time removes both windows.
+    private val syncMutex = Mutex()
 
     fun isConfigured(): Boolean = GoogleSignIn.getLastSignedInAccount(ctx) != null
 
@@ -41,7 +50,8 @@ class DriveSyncClient @Inject constructor(
         ).setApplicationName("Nock").build()
     }
 
-    suspend fun pushSnapshot(): SyncOutcome = withContext(Dispatchers.IO) {
+    suspend fun pushSnapshot(): SyncOutcome = syncMutex.withLock {
+        withContext(Dispatchers.IO) {
         val service = driveService() ?: return@withContext SyncOutcome.NotSignedIn
         try {
             val json = snapshots.export()
@@ -61,9 +71,11 @@ class DriveSyncClient @Inject constructor(
         } catch (t: Throwable) {
             SyncOutcome.Error(t.message ?: t::class.simpleName ?: "error")
         }
+        }
     }
 
-    suspend fun pullIfNewer(): SyncOutcome = withContext(Dispatchers.IO) {
+    suspend fun pullIfNewer(): SyncOutcome = syncMutex.withLock {
+        withContext(Dispatchers.IO) {
         val service = driveService() ?: return@withContext SyncOutcome.NotSignedIn
         try {
             val fileId = findSnapshotFileId(service) ?: return@withContext SyncOutcome.Ok
@@ -74,6 +86,7 @@ class DriveSyncClient @Inject constructor(
             if (merged) SyncOutcome.Ok else SyncOutcome.Ok
         } catch (t: Throwable) {
             SyncOutcome.Error(t.message ?: t::class.simpleName ?: "error")
+        }
         }
     }
 

@@ -135,47 +135,55 @@ class TripSyncManager @Inject constructor(
         val leaveBy = TripMath.leaveBy(e.beginMs, travel)
 
         val name = reminderName(e.title, showLeaveFor(hasLocation, travel))
-        val existingReminder = existing?.let { repo.getReminder(it.reminderId) }
-        val reminderId = repo.saveReminder(
-            id = existing?.reminderId ?: 0L,
-            groupId = tripsGroupId,
-            name = name,
-            schedule = Schedule.OneShot(leaveBy),
-            nextFireAt = leaveBy,
-            lastCompletedAt = existingReminder?.lastCompletedAt,
-            createdAt = existingReminder?.createdAt ?: now,
-        )
-
-        val row = (existing ?: CalendarTripEntity(
-            reminderId = reminderId,
-            calendarId = e.calendarId,
-            eventId = e.eventId,
-            eventStartMs = e.beginMs,
-            title = e.title,
-            location = e.location,
-            originAddress = null,
-            travelMode = mode,
-            bufferMs = buffer,
-            originLat = null, originLon = null,
-            destLat = null, destLon = null,
-            lastTravelMs = null, lastComputedAtMs = null,
-        )).copy(
-            reminderId = reminderId,
-            calendarId = e.calendarId,
-            eventId = e.eventId,
-            eventStartMs = e.beginMs,
-            title = e.title,
-            location = e.location,
-            travelMode = mode,
-            bufferMs = buffer,
-            originLat = origin?.lat, originLon = origin?.lon,
-            destLat = dest?.lat, destLon = dest?.lon,
-            lastTravelMs = travel,
-            lastComputedAtMs = now,
-        )
-        tripDao.upsert(row)
-
-        engine.startEscalationAt(repo.getReminder(reminderId)!!, leaveBy)
+        // Save the reminder, persist the trip row, and arm the escalation as ONE
+        // engine-locked step. Doing these as bare repo/tripDao calls let a Drive
+        // snapshot import (which wipes reminders + calendar_trips) interleave and
+        // either NPE the old `getReminder(reminderId)!!` or strand a half-written
+        // trip. runExclusive serializes it against the engine and import.
+        val reminderId = engine.runExclusive {
+            val existingReminder = existing?.let { repo.getReminder(it.reminderId) }
+            val rid = repo.saveReminder(
+                id = existing?.reminderId ?: 0L,
+                groupId = tripsGroupId,
+                name = name,
+                schedule = Schedule.OneShot(leaveBy),
+                nextFireAt = leaveBy,
+                lastCompletedAt = existingReminder?.lastCompletedAt,
+                createdAt = existingReminder?.createdAt ?: now,
+            )
+            val row = (existing ?: CalendarTripEntity(
+                reminderId = rid,
+                calendarId = e.calendarId,
+                eventId = e.eventId,
+                eventStartMs = e.beginMs,
+                title = e.title,
+                location = e.location,
+                originAddress = null,
+                travelMode = mode,
+                bufferMs = buffer,
+                originLat = null, originLon = null,
+                destLat = null, destLon = null,
+                lastTravelMs = null, lastComputedAtMs = null,
+            )).copy(
+                reminderId = rid,
+                calendarId = e.calendarId,
+                eventId = e.eventId,
+                eventStartMs = e.beginMs,
+                title = e.title,
+                location = e.location,
+                travelMode = mode,
+                bufferMs = buffer,
+                originLat = origin?.lat, originLon = origin?.lon,
+                destLat = dest?.lat, destLon = dest?.lon,
+                lastTravelMs = travel,
+                lastComputedAtMs = now,
+            )
+            tripDao.upsert(row)
+            // If the row was wiped out from under us mid-step, skip arming rather
+            // than crash; the next sync pass rebuilds it.
+            repo.getReminder(rid)?.let { arm(it, leaveBy) }
+            rid
+        }
         // Only located events have a travel time worth refreshing as traffic firms up.
         if (hasLocation) armNextRecompute(reminderId, leaveBy, now)
         else scheduler.cancelRecompute(reminderId)
@@ -196,25 +204,29 @@ class TripSyncManager @Inject constructor(
         // A recompute can push travel above/below the trip threshold, so refresh
         // the name to keep the "Leave for …" framing in sync with the estimate.
         val name = reminderName(trip.title, showLeaveFor(trip.location.isNotBlank(), travelMs))
-        repo.saveReminder(
-            id = reminderId,
-            groupId = reminder.groupId,
-            name = name,
-            schedule = Schedule.OneShot(leaveBy),
-            nextFireAt = leaveBy,
-            lastCompletedAt = reminder.lastCompletedAt,
-            createdAt = reminder.createdAt,
-        )
-        tripDao.upsert(
-            trip.copy(
-                bufferMs = buffer,
-                originLat = origin?.lat, originLon = origin?.lon,
-                destLat = dest?.lat, destLon = dest?.lon,
-                lastTravelMs = travelMs,
-                lastComputedAtMs = now,
+        // Re-save + re-arm atomically (see upsertTrip) so a concurrent import can't
+        // wipe the reminder between the save and the re-arm.
+        engine.runExclusive {
+            repo.saveReminder(
+                id = reminderId,
+                groupId = reminder.groupId,
+                name = name,
+                schedule = Schedule.OneShot(leaveBy),
+                nextFireAt = leaveBy,
+                lastCompletedAt = reminder.lastCompletedAt,
+                createdAt = reminder.createdAt,
             )
-        )
-        engine.startEscalationAt(repo.getReminder(reminderId)!!, leaveBy)
+            tripDao.upsert(
+                trip.copy(
+                    bufferMs = buffer,
+                    originLat = origin?.lat, originLon = origin?.lon,
+                    destLat = dest?.lat, destLon = dest?.lon,
+                    lastTravelMs = travelMs,
+                    lastComputedAtMs = now,
+                )
+            )
+            repo.getReminder(reminderId)?.let { arm(it, leaveBy) }
+        }
         armNextRecompute(reminderId, leaveBy, now)
     }
 
@@ -293,9 +305,13 @@ class TripSyncManager @Inject constructor(
 
     private suspend fun tearDown(trip: CalendarTripEntity) {
         scheduler.cancelRecompute(trip.reminderId)
-        engine.cancelActive(trip.reminderId)
-        repo.getReminder(trip.reminderId)?.let { repo.deleteReminder(it) }
-        tripDao.delete(trip)
+        // Cancel the escalation, delete the reminder, and drop the trip row as one
+        // engine-locked step so a concurrent fire/import can't see a torn state.
+        engine.runExclusive {
+            cancel(trip.reminderId)
+            repo.getReminder(trip.reminderId)?.let { repo.deleteReminder(it) }
+            tripDao.delete(trip)
+        }
     }
 
     /** Find the Trips group (creating/repairing it), keeping its chain matched to the buffer. */

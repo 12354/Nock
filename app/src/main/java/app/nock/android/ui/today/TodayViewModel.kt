@@ -139,27 +139,12 @@ class TodayViewModel @Inject constructor(
     }
 
     private suspend fun commitDone(reminderId: Long) {
-        val active = activeDao.getByReminderId(reminderId)
-        if (active != null) engine.done(active.id)
-        else {
-            val r = repo.getReminder(reminderId) ?: return
-            engine.cancelActive(reminderId)
-            if (r.schedule.isOneTime) {
-                repo.deleteReminder(r)
-                return
-            }
-            val now = System.currentTimeMillis()
-            // Skip the occurrence just completed (mirrors EscalationEngine.done):
-            // when a reminder is completed at or before its scheduled trigger, search
-            // from the trigger so we advance to the next occurrence instead of
-            // re-arming this one and ringing it again.
-            val searchFrom = maxOf(now, r.nextFireAt ?: now)
-            val next = r.schedule.nextFireFrom(searchFrom, now)
-            repo.updateFireState(reminderId, next, now)
-            if (next != null) {
-                engine.startEscalationAt(r.copy(lastCompletedAt = now, nextFireAt = next), next)
-            }
-        }
+        // Whether or not an escalation is live, completion runs as one
+        // mutex-guarded step inside the engine. The old inline version did the
+        // "no active escalation" advance (getReminder -> updateFireState ->
+        // startEscalationAt) as separate calls outside the lock, which could race
+        // a concurrent edit/delete of the same reminder during the 5s undo window.
+        engine.completeReminder(reminderId)
     }
 
     fun snooze(reminderId: Long) {

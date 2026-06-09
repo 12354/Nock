@@ -568,7 +568,10 @@ class EscalationEngine @Inject constructor(
         // Boot / time-change is also a good moment to retry any deletions that
         // never completed before the device restarted.
         flushPendingTelegramDeletions()
-        mutex.withLock {
+        mutex.withLock { rescheduleAllLocked() }
+    }
+
+    private suspend fun rescheduleAllLocked() {
             activeDao.getAll().forEach { esc ->
                 val chain = runCatching { ChainJson.decode(esc.chainSnapshotJson) }.getOrNull() ?: return@forEach
                 val type = chain.stage(esc.nextStageIndex.coerceAtMost(chain.lastIndex)).type
@@ -590,8 +593,125 @@ class EscalationEngine @Inject constructor(
                     startEscalationAtLocked(reminder.copy(nextFireAt = nextFromSchedule), nextFromSchedule)
                 }
             }
-        }
     }
+
+    // ---- Compound operations for callers OUTSIDE the engine ----------------
+    // These run under the same [mutex] as the engine's own fire/dismiss paths so
+    // that code which mutates the reminders/escalations tables from elsewhere
+    // (snapshot import, calendar-trip sync, the edit/done/delete ViewModels) can
+    // no longer interleave with onAlarmFired/done/snooze and orphan an alarm or
+    // tear the row↔alarm bijection. Each uses the lock-free *Locked cores and
+    // flushes the Telegram deletion queue afterwards, like the engine's own
+    // public entry points.
+
+    /**
+     * Atomically apply a wholesale data replacement (e.g. a Drive snapshot
+     * import's clear+repopulate transaction) and re-arm every surviving reminder.
+     * [mutateDb] runs under the engine lock so no concurrent fire can read a row,
+     * then have its backing data wiped, and then re-arm an alarm for the deleted
+     * id. rescheduleAllLocked rebuilds the bijection from whatever [mutateDb] left.
+     */
+    suspend fun replaceAllAndRearm(mutateDb: suspend () -> Unit) {
+        mutex.withLock {
+            mutateDb()
+            rescheduleAllLocked()
+        }
+        flushPendingTelegramDeletions()
+    }
+
+    /**
+     * Persist a reminder and (re-)arm its escalation as one atomic step — the
+     * editor's Save. Replaces the non-atomic saveReminder + cancelActive +
+     * startEscalationAt sequence the ViewModel used to do across the lock.
+     */
+    suspend fun saveReminderAndArm(
+        id: Long,
+        groupId: Long,
+        name: String,
+        schedule: Schedule,
+        nextFireAt: Long?,
+        lastCompletedAt: Long?,
+        createdAt: Long,
+    ): Long {
+        val savedId = mutex.withLock {
+            val sid = repo.saveReminder(id, groupId, name, schedule, nextFireAt, lastCompletedAt, createdAt)
+            // Tear down any escalation armed for the prior version of this reminder
+            // before arming the new one (REPLACE-on-reminderId would orphan its alarm).
+            cancelActiveLocked(sid)
+            // OnUnlock reminders are armed in the DB and fire on ACTION_USER_PRESENT,
+            // not on save, so they get no time-based escalation here.
+            if (nextFireAt != null && schedule !is Schedule.OnUnlock) {
+                repo.getReminder(sid)?.let { startEscalationAtLocked(it, nextFireAt) }
+            }
+            sid
+        }
+        flushPendingTelegramDeletions()
+        return savedId
+    }
+
+    /**
+     * Complete a reminder regardless of whether it is currently escalating — the
+     * Today screen's Done. If an escalation is live this is exactly [done];
+     * otherwise it advances/retires the reminder the same way done() does for a
+     * recurring/one-time schedule, all under the lock.
+     */
+    suspend fun completeReminder(reminderId: Long) {
+        mutex.withLock {
+            val active = activeDao.getByReminderId(reminderId)
+            if (active != null) {
+                doneLocked(active.id)
+                return@withLock
+            }
+            val reminder = repo.getReminder(reminderId) ?: return@withLock
+            history.done(reminder.name)
+            if (reminder.schedule.isOneTime) {
+                repo.deleteReminder(reminder)
+                return@withLock
+            }
+            val now = time.nowMs()
+            // Skip the occurrence just completed (mirrors done()): anchor the search
+            // at the occurrence's own scheduled time so we advance to the next one
+            // instead of re-arming this one when Done lands before the due time.
+            val searchFrom = max(now, reminder.nextFireAt ?: now)
+            val next = reminder.schedule.nextFireFrom(searchFrom, now)
+            repo.updateFireState(reminderId, next, now)
+            if (next != null) {
+                startEscalationAtLocked(reminder.copy(lastCompletedAt = now, nextFireAt = next), next)
+            }
+        }
+        flushPendingTelegramDeletions()
+    }
+
+    /** Cancel any escalation and delete the reminder as one atomic step. */
+    suspend fun deleteReminderAndCancel(reminderId: Long) {
+        mutex.withLock {
+            cancelActiveLocked(reminderId)
+            repo.getReminder(reminderId)?.let { repo.deleteReminder(it) }
+        }
+        flushPendingTelegramDeletions()
+    }
+
+    /**
+     * Run [block] under the engine lock with access to the lock-free arm/cancel
+     * cores. For callers (calendar-trip sync) that must interleave their own
+     * cross-table writes (the trip row) with a reminder save + (re-)arm and need
+     * the whole sequence atomic w.r.t. the engine and snapshot import.
+     */
+    suspend fun <T> runExclusive(block: suspend Exclusive.() -> T): T {
+        val result = mutex.withLock { exclusive.block() }
+        flushPendingTelegramDeletions()
+        return result
+    }
+
+    /** Lock-held facade exposing only the safe-to-call-under-lock primitives. */
+    inner class Exclusive internal constructor() {
+        suspend fun arm(reminder: Reminder, scheduledAtMs: Long) =
+            startEscalationAtLocked(reminder, scheduledAtMs)
+
+        suspend fun cancel(reminderId: Long) = cancelActiveLocked(reminderId)
+    }
+
+    private val exclusive = Exclusive()
 
     companion object {
         // Slack allowed between an alarm's delivery and the stage's due time

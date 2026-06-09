@@ -64,6 +64,7 @@ import java.util.Locale
 fun EditReminderRoute(
     reminderId: Long,
     onDone: () -> Unit,
+    onDeleted: (app.nock.android.domain.model.Reminder) -> Unit = {},
     vm: EditReminderViewModel = hiltViewModel()
 ) {
     val state by vm.state.collectAsState()
@@ -82,7 +83,11 @@ fun EditReminderRoute(
                 actions = {
                     if (reminderId != 0L) {
                         IconButton(onClick = {
-                            scope.launch { vm.delete(); onDone() }
+                            scope.launch {
+                                val deleted = vm.delete()
+                                onDone()
+                                if (deleted != null) onDeleted(deleted)
+                            }
                         }) {
                             Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.delete))
                         }

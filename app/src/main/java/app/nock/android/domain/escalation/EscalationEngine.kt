@@ -692,6 +692,23 @@ class EscalationEngine @Inject constructor(
     }
 
     /**
+     * Re-insert a previously deleted reminder and re-arm it — the undo for
+     * [deleteReminderAndCancel]. The captured row carries its original id, so the
+     * @Upsert restores it in place rather than minting a new one.
+     */
+    suspend fun restoreReminder(reminder: Reminder) {
+        saveReminderAndArm(
+            id = reminder.id,
+            groupId = reminder.groupId,
+            name = reminder.name,
+            schedule = reminder.schedule,
+            nextFireAt = reminder.nextFireAt,
+            lastCompletedAt = reminder.lastCompletedAt,
+            createdAt = reminder.createdAt,
+        )
+    }
+
+    /**
      * Run [block] under the engine lock with access to the lock-free arm/cancel
      * cores. For callers (calendar-trip sync) that must interleave their own
      * cross-table writes (the trip row) with a reminder save + (re-)arm and need

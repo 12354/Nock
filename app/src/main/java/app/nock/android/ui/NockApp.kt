@@ -9,14 +9,21 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.annotation.StringRes
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
@@ -24,6 +31,9 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import app.nock.android.R
+import app.nock.android.ui.components.UndoSnackbar
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import app.nock.android.ui.debug.DebugScreen
 import app.nock.android.ui.edit.EditReminderRoute
 import app.nock.android.ui.group.GroupEditorScreen
@@ -71,7 +81,18 @@ fun NockApp(
     val backStack by nav.currentBackStackEntryAsState()
     val currentRoute = backStack?.destination?.route
 
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    val undoVm: ReminderUndoViewModel = hiltViewModel()
+    val deletedMessage = stringResource(R.string.reminder_deleted_undo_message)
+    val undoAction = stringResource(R.string.today_done_undo_action)
+
     Scaffold(
+        snackbarHost = {
+            SnackbarHost(snackbarHostState) { data ->
+                UndoSnackbar(data = data, durationMs = ReminderUndoViewModel.UNDO_WINDOW_MS)
+            }
+        },
         bottomBar = {
             val showBottomBar = TABS.any { it.route == currentRoute } || currentRoute == null
             if (showBottomBar) {
@@ -157,7 +178,26 @@ fun NockApp(
                 val id = entry.arguments?.getString("id")?.toLongOrNull() ?: 0L
                 EditReminderRoute(
                     reminderId = id,
-                    onDone = { nav.popBackStack() }
+                    onDone = { nav.popBackStack() },
+                    onDeleted = { deleted ->
+                        scope.launch {
+                            // The delete is already committed; the countdown bar in
+                            // UndoSnackbar drains over UNDO_WINDOW_MS, so dismiss the
+                            // (otherwise indefinite) snackbar when it empties.
+                            launch {
+                                delay(ReminderUndoViewModel.UNDO_WINDOW_MS)
+                                snackbarHostState.currentSnackbarData?.dismiss()
+                            }
+                            val result = snackbarHostState.showSnackbar(
+                                message = deletedMessage,
+                                actionLabel = undoAction,
+                                duration = SnackbarDuration.Indefinite
+                            )
+                            if (result == SnackbarResult.ActionPerformed) {
+                                undoVm.restore(deleted)
+                            }
+                        }
+                    }
                 )
             }
             composable("group?id={id}") { entry ->

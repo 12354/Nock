@@ -1,9 +1,6 @@
 package app.nock.android.ui.today
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -47,6 +44,7 @@ import app.nock.android.domain.model.EscalationChain
 import app.nock.android.domain.model.Group
 import app.nock.android.ui.components.GroupAvatar
 import app.nock.android.ui.components.NockLogo
+import app.nock.android.ui.components.UndoSnackbar
 import app.nock.android.ui.components.stageIcon
 import app.nock.android.ui.voice.VoiceAlarmFab
 import kotlinx.coroutines.flow.first
@@ -394,33 +392,6 @@ private fun SectionHeader(text: String) {
         fontWeight = FontWeight.Medium,
         modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 20.dp, bottom = 8.dp)
     )
-}
-
-@Composable
-private fun UndoSnackbar(data: SnackbarData, durationMs: Long) {
-    val progress = remember(data) { Animatable(1f) }
-    LaunchedEffect(data) {
-        progress.animateTo(0f, tween(durationMs.toInt(), easing = LinearEasing))
-    }
-    Snackbar(
-        modifier = Modifier.padding(12.dp),
-        action = data.visuals.actionLabel?.let { label ->
-            {
-                TextButton(onClick = { data.performAction() }) {
-                    Text(label)
-                }
-            }
-        }
-    ) {
-        Column {
-            Text(data.visuals.message)
-            Spacer(Modifier.height(8.dp))
-            LinearProgressIndicator(
-                progress = { progress.value },
-                modifier = Modifier.fillMaxWidth().height(2.dp)
-            )
-        }
-    }
 }
 
 @Composable

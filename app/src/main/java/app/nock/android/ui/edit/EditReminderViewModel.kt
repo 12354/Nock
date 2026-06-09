@@ -183,13 +183,20 @@ class EditReminderViewModel @Inject constructor(
         is Schedule.OnUnlock -> st.copy(scheduleType = ScheduleKind.ON_UNLOCK)
     }
 
-    /** Deletes the reminder being edited (no-op for a new, unsaved one). */
-    suspend fun delete() {
+    /**
+     * Deletes the reminder being edited (no-op for a new, unsaved one). Returns
+     * the deleted row so the caller can offer an undo, or null when there was
+     * nothing to delete.
+     */
+    suspend fun delete(): app.nock.android.domain.model.Reminder? {
         val id = _state.value.reminderId
-        if (id == 0L) return
+        if (id == 0L) return null
+        // Snapshot before deleting so undo can re-insert the exact same row.
+        val snapshot = repo.getReminder(id)
         // Cancel-then-delete as one mutex-guarded step so a concurrent alarm fire
         // can't re-arm the reminder between the cancel and the delete.
         engine.deleteReminderAndCancel(id)
+        return snapshot
     }
 
     suspend fun save() {

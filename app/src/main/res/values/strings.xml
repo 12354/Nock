@@ -44,6 +44,7 @@
     <string name="today_active_repeats_at">Repeats at %1$s</string>
     <string name="today_done_undo_message">Marked done</string>
     <string name="today_done_undo_action">Undo</string>
+    <string name="reminder_deleted_undo_message">Reminder deleted</string>
     <string name="time_in_minutes">in %1$d min</string>
     <string name="time_in_hours">in %1$dh</string>
     <string name="time_in_hours_minutes">in %1$dh %2$dm</string>

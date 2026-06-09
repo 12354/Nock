@@ -1,10 +1,11 @@
 package app.nock.android.voice
 
-import android.app.NotificationManager
 import android.content.Context
-import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
+import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import androidx.hilt.work.HiltWorker
 import androidx.work.Constraints
@@ -19,7 +20,6 @@ import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import app.nock.android.R
 import app.nock.android.notif.Channels
-import app.nock.android.ui.MainActivity
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 
@@ -35,8 +35,8 @@ import dagger.assisted.AssistedInject
  * [PendingVoiceProcessor.kickAll] at next launch).
  *
  * Runs as expedited foreground work so it gets a process slot immediately and
- * isn't killed mid-parse, and surfaces the outcome as a notification rather than
- * a toast (the widget deliberately never opens the app on its own).
+ * isn't killed mid-parse, then surfaces the outcome as a toast (the widget
+ * deliberately never opens the app on its own).
  */
 @HiltWorker
 class VoiceTranscriptWorker @AssistedInject constructor(
@@ -60,7 +60,7 @@ class VoiceTranscriptWorker @AssistedInject constructor(
             is VoiceProcessOutcome.Added -> outcome.message
             is VoiceProcessOutcome.Failed -> outcome.message
         }
-        notifyResult(message)
+        toastResult(message)
         return Result.success()
     }
 
@@ -78,33 +78,19 @@ class VoiceTranscriptWorker @AssistedInject constructor(
         }
     }
 
-    private fun notifyResult(message: String) {
+    private fun toastResult(message: String) {
         if (message.isBlank()) return
-        val nm = applicationContext.getSystemService(NotificationManager::class.java) ?: return
-        val openApp = Intent(applicationContext, MainActivity::class.java)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        val contentPI = android.app.PendingIntent.getActivity(
-            applicationContext,
-            REQ_OPEN,
-            openApp,
-            android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
-        )
-        val notif = NotificationCompat.Builder(applicationContext, Channels.SERVICE)
-            .setSmallIcon(R.drawable.ic_widget_mic)
-            .setContentTitle(applicationContext.getString(R.string.widget_voice_result_title))
-            .setContentText(message)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(message))
-            .setContentIntent(contentPI)
-            .setAutoCancel(true)
-            .build()
-        nm.notify(RESULT_NOTIFICATION_ID, notif)
+        // doWork() runs on a worker thread; a Toast must be shown from a thread
+        // with a Looper, so hop to the main thread. Text toasts (unlike custom
+        // views) are still allowed from the background on Android 11+.
+        Handler(Looper.getMainLooper()).post {
+            Toast.makeText(applicationContext, message, Toast.LENGTH_LONG).show()
+        }
     }
 
     companion object {
         private const val KEY_PENDING_ID = "pending_id"
         private const val FOREGROUND_NOTIFICATION_ID = 0xC1C3
-        private const val RESULT_NOTIFICATION_ID = 0xC1C4
-        private const val REQ_OPEN = 2
         private const val WORK_NAME_PREFIX = "voice_transcript_"
 
         /**

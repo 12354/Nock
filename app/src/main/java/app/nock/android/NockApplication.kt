@@ -5,6 +5,8 @@ import android.content.Intent
 import android.content.IntentFilter
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.os.LocaleListCompat
+import androidx.hilt.work.HiltWorkerFactory
+import androidx.work.Configuration
 import app.nock.android.alarm.UnlockReceiver
 import app.nock.android.data.SeedData
 import app.nock.android.data.SeedGroupLocaleSync
@@ -20,8 +22,9 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltAndroidApp
-class NockApplication : Application() {
+class NockApplication : Application(), Configuration.Provider {
 
+    @Inject lateinit var workerFactory: HiltWorkerFactory
     @Inject lateinit var channels: NockNotificationChannels
     @Inject lateinit var seedData: SeedData
     @Inject lateinit var groupDao: GroupDao
@@ -29,6 +32,11 @@ class NockApplication : Application() {
     @Inject lateinit var pendingVoiceProcessor: PendingVoiceProcessor
     @Inject lateinit var engine: EscalationEngine
     @Inject @ApplicationScope lateinit var appScope: CoroutineScope
+
+    override val workManagerConfiguration: Configuration
+        get() = Configuration.Builder()
+            .setWorkerFactory(workerFactory)
+            .build()
 
     override fun onCreate() {
         super.onCreate()

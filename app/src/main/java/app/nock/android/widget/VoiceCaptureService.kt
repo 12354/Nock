@@ -1,14 +1,12 @@
 package app.nock.android.widget
 
 import android.app.Notification
-import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
-import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import app.nock.android.R
@@ -40,10 +38,11 @@ import javax.inject.Inject
  * accumulate text across sessions. The only way to actually finish recording
  * is a tap on the widget (or the notification's Stop action).
  *
- * The widget never opens the app. After recording stops we keep the microphone
- * foreground notification alive while DeepSeek parses the transcript — so
- * Android keeps our process around and the work can't be killed mid-flight —
- * then surface the outcome as a toast and stop.
+ * The widget never opens the app. When recording stops we persist the transcript
+ * durably and hand parsing to a background [app.nock.android.voice.VoiceTranscriptWorker],
+ * then return the widget to Idle and stop at once — so the next tap can start a
+ * fresh recording while the previous transcript is still being parsed. The worker
+ * surfaces the outcome (success or failure) as a notification.
  */
 @AndroidEntryPoint
 class VoiceCaptureService : Service() {
@@ -191,40 +190,29 @@ class VoiceCaptureService : Service() {
         sessionPartial = ""
         scope.launch {
             if (text.isNotEmpty()) {
-                // Stay foregrounded with a "saving" notification so the process
-                // survives while DeepSeek parses, and run the work in our own
-                // scope (awaited, not fire-and-forget) so it can't be killed the
-                // instant we'd otherwise stop. Then toast the real outcome — the
-                // widget deliberately never opens the app.
-                updateNotification(getString(R.string.widget_voice_notification_processing))
-                val message = try {
-                    creator.createAndAwait(text)
-                } catch (t: Throwable) {
-                    getString(R.string.voice_error_save_failed)
+                // Persist the transcript and hand parsing to a background worker
+                // that outlives this service; we don't wait on DeepSeek so the
+                // widget can be tapped again immediately. The worker reports the
+                // outcome via a notification — the widget never opens the app.
+                try {
+                    creator.enqueueForBackground(text)
+                } catch (_: Throwable) {
+                    // enqueue is a local DB write; on the rare failure the words
+                    // are lost but the service must still reset cleanly below.
                 }
-                showToast(message)
             }
-            VoiceWidgetState.write(applicationContext, VoiceWidgetState.Idle)
-            stopForegroundAndSelf()
+            // A tap during the brief hand-off may have already started a new
+            // session; don't clobber it by resetting to Idle / stopping.
+            if (!isRecording) {
+                VoiceWidgetState.write(applicationContext, VoiceWidgetState.Idle)
+                stopForegroundAndSelf()
+            }
         }
-    }
-
-    private fun showToast(message: String) {
-        if (message.isBlank()) return
-        // Runs on the service's main thread (scope is Dispatchers.Main.immediate);
-        // a text toast is handed to the system, so it still shows after we stop.
-        Toast.makeText(applicationContext, message, Toast.LENGTH_LONG).show()
     }
 
     private fun stopForegroundAndSelf() {
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
-    }
-
-    /** Pushes an updated foreground notification (e.g. "saving…") without leaving foreground. */
-    private fun updateNotification(title: String) {
-        val mgr = getSystemService(NotificationManager::class.java) ?: return
-        mgr.notify(NOTIFICATION_ID, buildNotification(title = title, showStop = false))
     }
 
     private fun buildNotification(

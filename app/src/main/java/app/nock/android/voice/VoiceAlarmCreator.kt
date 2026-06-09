@@ -46,24 +46,19 @@ class VoiceAlarmCreator @Inject constructor(
     }
 
     /**
-     * Captures [transcript] and runs it to completion, returning the user-facing
-     * message to surface (e.g. as a toast). Unlike [createFromTranscript], this
-     * suspends until DeepSeek parsing finishes so the caller — the widget's
-     * foreground service — keeps its process alive for the duration and can report
-     * the real outcome instead of opening the app.
+     * Persists [transcript] durably and hands parsing off to a background
+     * [VoiceTranscriptWorker], returning as soon as the row is saved. Used by the
+     * widget's foreground service so it can release the recording widget for the
+     * next tap without waiting on DeepSeek; the worker surfaces the outcome as a
+     * notification and survives the service's death. An empty transcript is a
+     * no-op; group/parse failures are handled (and reported) by the worker.
      */
-    suspend fun createAndAwait(transcript: String): String {
+    suspend fun enqueueForBackground(transcript: String) {
         val text = transcript.trim()
-        if (text.isEmpty()) {
-            return ctx.getString(R.string.voice_error_empty_transcript)
-        }
-        if (repo.getGroups().isEmpty()) {
-            return ctx.getString(R.string.voice_error_no_groups)
-        }
+        if (text.isEmpty()) return
+        // Save the words now so they can't be lost if the worker is delayed or
+        // killed; autoKick=false because the worker drives process() itself.
         val pendingId = processor.enqueue(text, autoKick = false)
-        return when (val outcome = processor.process(pendingId, emitAdded = false)) {
-            is VoiceProcessOutcome.Added -> outcome.message
-            is VoiceProcessOutcome.Failed -> outcome.message
-        }
+        VoiceTranscriptWorker.enqueue(ctx, pendingId)
     }
 }

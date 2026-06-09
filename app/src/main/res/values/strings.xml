@@ -261,6 +261,7 @@
     <string name="widget_voice_notification_title">Listening…</string>
     <string name="widget_voice_notification_processing">Saving your task…</string>
     <string name="widget_voice_notification_stop_action">Stop</string>
+    <string name="widget_voice_result_title">Voice reminder</string>
 
     <!-- Settings: DeepSeek -->
     <string name="settings_deepseek_title">Voice → AI alarm (DeepSeek)</string>

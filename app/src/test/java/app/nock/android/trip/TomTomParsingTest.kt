@@ -31,6 +31,19 @@ class TomTomParsingTest {
         assertEquals(1_800_000L, TomTomParsing.parseTravelMs(json)) // 30 min in ms
     }
 
+    @Test fun parseTravel_zeroSeconds_isZeroNotNull() {
+        // Same-location trips (event address == home, e.g. taking out the trash)
+        // come back as a real 200 route with travelTimeInSeconds = 0. That must
+        // parse to 0L — distinct from the null "no route" case — so the caller
+        // treats it as a live 0-minute trip instead of a fallback estimate.
+        val json = """
+            {"routes":[
+              {"summary":{"lengthInMeters":0,"travelTimeInSeconds":0,"trafficDelayInSeconds":0}}
+            ]}
+        """.trimIndent()
+        assertEquals(0L, TomTomParsing.parseTravelMs(json))
+    }
+
     @Test fun parseTravel_noRoutes_null() {
         assertNull(TomTomParsing.parseTravelMs("""{"routes":[]}"""))
         assertNull(TomTomParsing.parseTravelMs("""{"formatVersion":"0.0.12"}"""))

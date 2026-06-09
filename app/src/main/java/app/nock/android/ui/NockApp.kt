@@ -28,12 +28,17 @@ import app.nock.android.ui.debug.DebugScreen
 import app.nock.android.ui.edit.EditReminderRoute
 import app.nock.android.ui.group.GroupEditorScreen
 import app.nock.android.ui.reminders.RemindersScreen
+import app.nock.android.ui.settings.CalendarSettingsScreen
+import app.nock.android.ui.settings.DeepSeekSettingsScreen
 import app.nock.android.ui.settings.DiagnosticsSettingsScreen
+import app.nock.android.ui.settings.DriveSettingsScreen
 import app.nock.android.ui.settings.GeneralSettingsScreen
+import app.nock.android.ui.settings.IntegrationCategory
 import app.nock.android.ui.settings.IntegrationsSettingsScreen
 import app.nock.android.ui.settings.NotificationsSettingsScreen
 import app.nock.android.ui.settings.SettingsCategory
 import app.nock.android.ui.settings.SettingsScreen
+import app.nock.android.ui.settings.TelegramSettingsScreen
 import app.nock.android.ui.today.TodayScreen
 
 sealed class Tab(val route: String, @StringRes val labelRes: Int, val icon: ImageVector) {
@@ -125,7 +130,22 @@ fun NockApp(
                 )
             }
             composable("settings/${SettingsCategory.INTEGRATIONS}") {
-                IntegrationsSettingsScreen(onBack = { nav.popBackStack() })
+                IntegrationsSettingsScreen(
+                    onBack = { nav.popBackStack() },
+                    onOpenIntegration = { sub -> nav.navigate("settings/${SettingsCategory.INTEGRATIONS}/$sub") }
+                )
+            }
+            composable("settings/${SettingsCategory.INTEGRATIONS}/${IntegrationCategory.TELEGRAM}") {
+                TelegramSettingsScreen(onBack = { nav.popBackStack() })
+            }
+            composable("settings/${SettingsCategory.INTEGRATIONS}/${IntegrationCategory.CALENDAR}") {
+                CalendarSettingsScreen(onBack = { nav.popBackStack() })
+            }
+            composable("settings/${SettingsCategory.INTEGRATIONS}/${IntegrationCategory.DEEPSEEK}") {
+                DeepSeekSettingsScreen(onBack = { nav.popBackStack() })
+            }
+            composable("settings/${SettingsCategory.INTEGRATIONS}/${IntegrationCategory.DRIVE}") {
+                DriveSettingsScreen(onBack = { nav.popBackStack() })
             }
             composable("settings/${SettingsCategory.DIAGNOSTICS}") {
                 DiagnosticsSettingsScreen(onBack = { nav.popBackStack() })

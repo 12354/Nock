@@ -30,9 +30,13 @@ import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.outlined.BugReport
+import androidx.compose.material.icons.outlined.CalendarMonth
+import androidx.compose.material.icons.outlined.CloudSync
 import androidx.compose.material.icons.outlined.Hub
 import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.outlined.Psychology
 import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -81,6 +85,14 @@ object SettingsCategory {
     const val INTEGRATIONS = "integrations"
     const val DIAGNOSTICS = "diagnostics"
     const val DEBUG = "debug"
+}
+
+/** Per-integration routes, used by the Integrations landing list and navigation. */
+object IntegrationCategory {
+    const val TELEGRAM = "telegram"
+    const val CALENDAR = "calendar"
+    const val DEEPSEEK = "deepseek"
+    const val DRIVE = "drive"
 }
 
 /**
@@ -285,16 +297,88 @@ private fun PreAlarmSoundSection(soundUri: String?, vm: SettingsViewModel) {
     }
 }
 
+/**
+ * Integrations landing screen: each integration drills into its own sub-screen,
+ * mirroring the top-level settings landing pattern.
+ */
 @Composable
 fun IntegrationsSettingsScreen(
+    onBack: () -> Unit,
+    onOpenIntegration: (String) -> Unit = {},
+) {
+    CategoryScaffold(stringResource(R.string.settings_cat_integrations), onBack) {
+        ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+            CategoryRow(
+                icon = Icons.AutoMirrored.Filled.Send,
+                title = stringResource(R.string.settings_telegram_title),
+                subtitle = stringResource(R.string.settings_int_telegram_sub),
+                onClick = { onOpenIntegration(IntegrationCategory.TELEGRAM) }
+            )
+            HorizontalDivider()
+            CategoryRow(
+                icon = Icons.Outlined.CalendarMonth,
+                title = stringResource(R.string.trips_title),
+                subtitle = stringResource(R.string.settings_int_calendar_sub),
+                onClick = { onOpenIntegration(IntegrationCategory.CALENDAR) }
+            )
+            HorizontalDivider()
+            CategoryRow(
+                icon = Icons.Outlined.Psychology,
+                title = stringResource(R.string.settings_deepseek_title),
+                subtitle = stringResource(R.string.settings_int_deepseek_sub),
+                onClick = { onOpenIntegration(IntegrationCategory.DEEPSEEK) }
+            )
+            HorizontalDivider()
+            CategoryRow(
+                icon = Icons.Outlined.CloudSync,
+                title = stringResource(R.string.settings_drive_title),
+                subtitle = stringResource(R.string.settings_int_drive_sub),
+                onClick = { onOpenIntegration(IntegrationCategory.DRIVE) }
+            )
+        }
+    }
+}
+
+@Composable
+fun TelegramSettingsScreen(
     onBack: () -> Unit,
     vm: SettingsViewModel = hiltViewModel(),
 ) {
     val state by vm.state.collectAsState()
-    CategoryScaffold(stringResource(R.string.settings_cat_integrations), onBack) {
+    CategoryScaffold(stringResource(R.string.settings_telegram_title), onBack) {
         TelegramSection(state.telegramToken, state.telegramChat, state.telegramStatus, vm)
+    }
+}
+
+@Composable
+fun CalendarSettingsScreen(
+    onBack: () -> Unit,
+    vm: SettingsViewModel = hiltViewModel(),
+) {
+    val state by vm.state.collectAsState()
+    CategoryScaffold(stringResource(R.string.trips_title), onBack) {
         TripsSection(state, vm)
+    }
+}
+
+@Composable
+fun DeepSeekSettingsScreen(
+    onBack: () -> Unit,
+    vm: SettingsViewModel = hiltViewModel(),
+) {
+    val state by vm.state.collectAsState()
+    CategoryScaffold(stringResource(R.string.settings_deepseek_title), onBack) {
         DeepSeekSection(state.deepSeekApiKey, state.deepSeekModel, state.deepSeekBaseUrl, state.deepSeekContext, vm)
+    }
+}
+
+@Composable
+fun DriveSettingsScreen(
+    onBack: () -> Unit,
+    vm: SettingsViewModel = hiltViewModel(),
+) {
+    val state by vm.state.collectAsState()
+    CategoryScaffold(stringResource(R.string.settings_drive_title), onBack) {
         DriveSection(state.driveEmail, state.driveLastSyncMs, state.driveStatus, vm)
     }
 }

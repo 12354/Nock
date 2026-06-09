@@ -177,6 +177,10 @@
     <string name="settings_cat_notifications_sub">Eskalationskette, Gruppen</string>
     <string name="settings_cat_integrations">Integrationen</string>
     <string name="settings_cat_integrations_sub">Telegram, KI, Google Drive</string>
+    <string name="settings_int_telegram_sub">Bot-Token und Chat für Benachrichtigungen</string>
+    <string name="settings_int_calendar_sub">Kalender-Alarme mit Fahrzeit</string>
+    <string name="settings_int_deepseek_sub">Sprache → KI-Alarm</string>
+    <string name="settings_int_drive_sub">Daten sichern und synchronisieren</string>
     <string name="settings_cat_diagnostics">Diagnose</string>
     <string name="settings_cat_diagnostics_sub">Alarmverlauf</string>
     <string name="settings_cat_debug">Debug — Rohdaten</string>

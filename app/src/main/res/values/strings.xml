@@ -176,6 +176,10 @@
     <string name="settings_cat_notifications_sub">Escalation chain, groups</string>
     <string name="settings_cat_integrations">Integrations</string>
     <string name="settings_cat_integrations_sub">Telegram, AI, Google Drive</string>
+    <string name="settings_int_telegram_sub">Bot token and chat for alerts</string>
+    <string name="settings_int_calendar_sub">Calendar alarms with travel time</string>
+    <string name="settings_int_deepseek_sub">Voice → AI alarm parsing</string>
+    <string name="settings_int_drive_sub">Back up and sync your data</string>
     <string name="settings_cat_diagnostics">Diagnostics</string>
     <string name="settings_cat_diagnostics_sub">Alarm history</string>
     <string name="settings_cat_debug">Debug — raw data</string>

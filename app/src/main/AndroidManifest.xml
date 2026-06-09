@@ -137,6 +137,11 @@
             android:name=".alarm.TripReceiver"
             android:exported="false" />
 
+        <!-- Receives the PackageInstaller commit result for silent self-updates. -->
+        <receiver
+            android:name=".update.UpdateInstallReceiver"
+            android:exported="false" />
+
         <receiver
             android:name=".alarm.BootReceiver"
             android:exported="true">

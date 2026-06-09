@@ -330,7 +330,6 @@
     <string name="today_update_ready">Update ready</string>
     <string name="today_update_updating">Updating…</string>
     <string name="today_update_version">Version %1$d</string>
-    <string name="today_update_applying">Will apply on restart</string>
     <string name="today_update_dismiss">Dismiss</string>
     <string name="today_update_action">Update</string>
 

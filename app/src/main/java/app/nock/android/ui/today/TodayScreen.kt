@@ -264,6 +264,7 @@ private fun UpdateNowBar() {
     val state = updateState
     val isUpdating = state is UpdateState.Downloading || state is UpdateState.Installing
     val info = (state as? UpdateState.Available)?.info
+    val downloadProgress = (state as? UpdateState.Downloading)?.progress
 
     // Unobtrusive by design: show only while an update is in play, and let the
     // user dismiss it for the session.
@@ -305,26 +306,41 @@ private fun UpdateNowBar() {
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Medium
                 )
-                Text(
-                    text = if (isUpdating) {
-                        stringResource(R.string.today_update_applying)
-                    } else {
-                        stringResource(R.string.today_update_version, info!!.remoteVersionCode)
-                    },
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 11.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                if (downloadProgress != null) {
+                    Spacer(Modifier.height(6.dp))
+                    LinearProgressIndicator(
+                        progress = { downloadProgress },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(5.dp)
+                            .clip(RoundedCornerShape(3.dp)),
+                        color = accent,
+                        trackColor = accent.copy(alpha = 0.18f),
+                    )
+                } else {
+                    Text(
+                        text = if (isUpdating) {
+                            stringResource(R.string.settings_update_opening_installer)
+                        } else {
+                            stringResource(R.string.today_update_version, info!!.remoteVersionCode)
+                        },
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
             if (isUpdating) {
-                CircularProgressIndicator(
-                    modifier = Modifier
-                        .padding(end = 6.dp)
-                        .size(18.dp),
-                    strokeWidth = 2.dp,
-                    color = accent
-                )
+                if (downloadProgress == null) {
+                    CircularProgressIndicator(
+                        modifier = Modifier
+                            .padding(end = 6.dp)
+                            .size(18.dp),
+                        strokeWidth = 2.dp,
+                        color = accent
+                    )
+                }
             } else {
                 IconButton(onClick = { dismissed = true }, modifier = Modifier.size(32.dp)) {
                     Icon(

@@ -11,6 +11,7 @@ import app.nock.android.data.entity.CalendarTripEntity
 import app.nock.android.domain.escalation.EscalationEngine
 import app.nock.android.domain.model.Group
 import app.nock.android.domain.model.Schedule
+import app.nock.android.domain.model.StageType
 import app.nock.android.domain.time.TimeSource
 import app.nock.android.domain.trip.TripChain
 import app.nock.android.domain.trip.TripDefaults
@@ -20,6 +21,36 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
 import javax.inject.Singleton
+
+/** One escalation step in a manual-import preview: a stage type and its absolute fire time. */
+data class TripPreviewStep(
+    val type: StageType,
+    val atMs: Long,
+)
+
+/**
+ * A dry-run preview of what importing a single calendar event would create —
+ * surfaced by the manual single-appointment importer before the user commits.
+ */
+data class TripPreview(
+    val event: CalendarEvent,
+    val hasLocation: Boolean,
+    val homeAddress: String?,
+    val originResolved: Boolean,
+    val destResolved: Boolean,
+    val travelMs: Long,
+    /** False when TomTom couldn't be reached and the time is a fallback estimate. */
+    val travelLive: Boolean,
+    val leaveByMs: Long,
+    val reminderName: String,
+    val showLeaveFor: Boolean,
+    val bufferMs: Long,
+    val steps: List<TripPreviewStep>,
+    /** A live reminder for this exact event instance already exists. */
+    val alreadyImported: Boolean,
+    /** This event was imported before and the user dismissed it (a tombstone exists). */
+    val previouslyDismissed: Boolean,
+)
 
 /**
  * Turns located calendar events into traffic-aware "leave-by" trip reminders and
@@ -125,7 +156,7 @@ class TripSyncManager @Inject constructor(
                 }
             }
         }
-        val pruned = pruneUnseen(seen)
+        val pruned = pruneUnseen(seen, watched, now)
         syncLog.line("")
         syncLog.line("pruned $pruned trip(s) no longer in the window.")
         syncLog.publish()
@@ -173,35 +204,73 @@ class TripSyncManager @Inject constructor(
         val existing = tripDao.getByEvent(e.eventId, e.beginMs)
 
         // Tombstone: the reminder was dismissed (Done) but the event is still
-        // upcoming. Don't resurrect it.
+        // upcoming. Don't resurrect it automatically — the manual single-appointment
+        // importer ([importEvent]) is the deliberate way to bring it back.
         if (existing != null && repo.getReminder(existing.reminderId) == null) {
             syncLog.line("    skipped — you dismissed this reminder; it won't be recreated")
             return
         }
 
+        val comp = computeTrip(e, existing, mode)
+        logSyncedEvent(e, comp.hasLocation, comp.origin, comp.dest, comp.travelMs, comp.leaveByMs)
+        writeTrip(e, existing, comp, tripsGroupId, buffer, mode, now)
+    }
+
+    /**
+     * Resolve travel time, leave-by and trip framing for [e] without persisting
+     * anything. The network work (geocode + routing) happens here, off the engine
+     * lock, shared by the bulk sync and the manual-import preview.
+     */
+    private suspend fun computeTrip(
+        e: CalendarEvent,
+        existing: CalendarTripEntity?,
+        mode: String,
+    ): TripComputation {
         // Located events get a traffic-aware leave-by; location-less events simply
         // fire at their start time (travel = 0, no routing or recompute).
         val hasLocation = e.location.isNotBlank()
         val origin = if (hasLocation) homeCoords(existing) else null
         val dest = if (hasLocation) destCoords(existing, e.location) else null
-        val travel = if (hasLocation) resolveTravelMs(origin, dest, e.beginMs, mode, existing?.lastTravelMs) else 0L
-        val leaveBy = TripMath.leaveBy(e.beginMs, travel)
+        val travel = if (hasLocation) resolveTravel(origin, dest, e.beginMs, mode, existing?.lastTravelMs)
+            else TravelEstimate(0L, live = false)
+        val leaveBy = TripMath.leaveBy(e.beginMs, travel.travelMs)
+        val show = showLeaveFor(hasLocation, travel.travelMs)
+        return TripComputation(
+            hasLocation = hasLocation,
+            origin = origin,
+            dest = dest,
+            travelMs = travel.travelMs,
+            travelLive = travel.live,
+            leaveByMs = leaveBy,
+            showLeaveFor = show,
+            reminderName = reminderName(e.title, show),
+        )
+    }
 
-        val name = reminderName(e.title, showLeaveFor(hasLocation, travel))
-        logSyncedEvent(e, hasLocation, origin, dest, travel, leaveBy)
-        // Save the reminder, persist the trip row, and arm the escalation as ONE
-        // engine-locked step. Doing these as bare repo/tripDao calls let a Drive
-        // snapshot import (which wipes reminders + calendar_trips) interleave and
-        // either NPE the old `getReminder(reminderId)!!` or strand a half-written
-        // trip. runExclusive serializes it against the engine and import.
+    /**
+     * Persist (or refresh) the reminder + trip row + escalation for [e] from an
+     * already-resolved [comp], as ONE engine-locked step. Doing these as bare
+     * repo/tripDao calls let a Drive snapshot import (which wipes reminders +
+     * calendar_trips) interleave and either NPE or strand a half-written trip;
+     * runExclusive serializes it against the engine and import. Returns the id.
+     */
+    private suspend fun writeTrip(
+        e: CalendarEvent,
+        existing: CalendarTripEntity?,
+        comp: TripComputation,
+        tripsGroupId: Long,
+        buffer: Long,
+        mode: String,
+        now: Long,
+    ): Long {
         val reminderId = engine.runExclusive {
             val existingReminder = existing?.let { repo.getReminder(it.reminderId) }
             val rid = repo.saveReminder(
                 id = existing?.reminderId ?: 0L,
                 groupId = tripsGroupId,
-                name = name,
-                schedule = Schedule.OneShot(leaveBy),
-                nextFireAt = leaveBy,
+                name = comp.reminderName,
+                schedule = Schedule.OneShot(comp.leaveByMs),
+                nextFireAt = comp.leaveByMs,
                 lastCompletedAt = existingReminder?.lastCompletedAt,
                 createdAt = existingReminder?.createdAt ?: now,
             )
@@ -227,20 +296,84 @@ class TripSyncManager @Inject constructor(
                 location = e.location,
                 travelMode = mode,
                 bufferMs = buffer,
-                originLat = origin?.lat, originLon = origin?.lon,
-                destLat = dest?.lat, destLon = dest?.lon,
-                lastTravelMs = travel,
+                originLat = comp.origin?.lat, originLon = comp.origin?.lon,
+                destLat = comp.dest?.lat, destLon = comp.dest?.lon,
+                lastTravelMs = comp.travelMs,
                 lastComputedAtMs = now,
             )
             tripDao.upsert(row)
             // If the row was wiped out from under us mid-step, skip arming rather
             // than crash; the next sync pass rebuilds it.
-            repo.getReminder(rid)?.let { arm(it, leaveBy) }
+            repo.getReminder(rid)?.let { arm(it, comp.leaveByMs) }
             rid
         }
         // Only located events have a travel time worth refreshing as traffic firms up.
-        if (hasLocation) armNextRecompute(reminderId, leaveBy, now)
+        if (comp.hasLocation) armNextRecompute(reminderId, comp.leaveByMs, now)
         else scheduler.cancelRecompute(reminderId)
+        return reminderId
+    }
+
+    // --- Manual single-appointment import ---
+
+    /**
+     * Upcoming, non-all-day events from a single calendar for the manual importer,
+     * over a wider window than the bulk sync so the user can scroll/search further
+     * out. Ignores the watched-calendar filter on purpose: the user is explicitly
+     * choosing this calendar.
+     */
+    suspend fun eventsForCalendar(calendarId: Long): List<CalendarEvent> {
+        val now = time.nowMs()
+        return calendar.scanWindow(now, now + TripDefaults.MANUAL_LOOKAHEAD_MS)
+            .filter { !it.allDay && it.calendarId == calendarId }
+            .map { CalendarEvent(it.calendarId, it.eventId, it.beginMs, it.title, it.location) }
+    }
+
+    /**
+     * Dry-run the trip computation for a chosen event: travel time, leave-by, the
+     * escalation steps and a reminder-name preview, plus whether it's already
+     * imported or was previously dismissed. Writes nothing.
+     */
+    suspend fun previewEvent(event: CalendarEvent): TripPreview {
+        val buffer = bufferMs()
+        val mode = travelMode()
+        val existing = tripDao.getByEvent(event.eventId, event.beginMs)
+        val comp = computeTrip(event, existing, mode)
+        val chain = TripChain.build(buffer, TripDefaults.REPEAT_INTERVAL_MS)
+        val steps = chain.stages.map { TripPreviewStep(it.type, comp.leaveByMs + it.offsetMs) }
+        val liveReminder = existing?.let { repo.getReminder(it.reminderId) }
+        return TripPreview(
+            event = event,
+            hasLocation = comp.hasLocation,
+            homeAddress = settings.get(SettingsRepository.KEY_TRIP_HOME_ADDRESS)?.takeIf { it.isNotBlank() },
+            originResolved = comp.origin != null,
+            destResolved = comp.dest != null,
+            travelMs = comp.travelMs,
+            travelLive = comp.travelLive,
+            leaveByMs = comp.leaveByMs,
+            reminderName = comp.reminderName,
+            showLeaveFor = comp.showLeaveFor,
+            bufferMs = buffer,
+            steps = steps,
+            alreadyImported = liveReminder != null,
+            previouslyDismissed = existing != null && liveReminder == null,
+        )
+    }
+
+    /**
+     * Import a single chosen event as a trip reminder, on demand. Unlike [syncNow]
+     * this bypasses the dismissed-tombstone guard — re-importing is exactly how the
+     * user deliberately brings back a reminder they dismissed — and it prunes
+     * nothing. Recomputes the estimate fresh so the import reflects current traffic.
+     * Returns the new/updated reminder id.
+     */
+    suspend fun importEvent(event: CalendarEvent): Long = mutex.withLock {
+        val now = time.nowMs()
+        val buffer = bufferMs()
+        val mode = travelMode()
+        val tripsGroupId = ensureTripsGroup(buffer)
+        val existing = tripDao.getByEvent(event.eventId, event.beginMs)
+        val comp = computeTrip(event, existing, mode)
+        writeTrip(event, existing, comp, tripsGroupId, buffer, mode, now)
     }
 
     /** Re-save reminder + row + escalation for a recomputed travel estimate. */
@@ -316,22 +449,37 @@ class TripSyncManager @Inject constructor(
         else scheduler.cancelRecompute(reminderId)
     }
 
-    /** Resolve traffic-aware travel time, degrading gracefully so a warning always fires. */
+    /** A resolved travel time plus whether it came from a live TomTom call (vs. a fallback). */
+    private data class TravelEstimate(val travelMs: Long, val live: Boolean)
+
+    /**
+     * Resolve traffic-aware travel time, degrading gracefully so a warning always
+     * fires. [TravelEstimate.live] is false when TomTom couldn't be reached and the
+     * value fell back to the last good estimate or the fixed default.
+     */
+    private suspend fun resolveTravel(
+        origin: LatLng?,
+        dest: LatLng?,
+        arriveByMs: Long,
+        mode: String,
+        fallbackMs: Long?,
+    ): TravelEstimate {
+        if (origin != null && dest != null) {
+            when (val r = tomtom.travelTime(origin, dest, arriveByMs, mode)) {
+                is RoutingResult.Ok -> if (r.travelMs > 0) return TravelEstimate(r.travelMs, live = true)
+                is RoutingResult.Error -> Unit // fall through to fallback
+            }
+        }
+        return TravelEstimate(fallbackMs ?: defaultFallbackTravelMs, live = false)
+    }
+
     private suspend fun resolveTravelMs(
         origin: LatLng?,
         dest: LatLng?,
         arriveByMs: Long,
         mode: String,
         fallbackMs: Long?,
-    ): Long {
-        if (origin != null && dest != null) {
-            when (val r = tomtom.travelTime(origin, dest, arriveByMs, mode)) {
-                is RoutingResult.Ok -> if (r.travelMs > 0) return r.travelMs
-                is RoutingResult.Error -> Unit // fall through to fallback
-            }
-        }
-        return fallbackMs ?: defaultFallbackTravelMs
-    }
+    ): Long = resolveTravel(origin, dest, arriveByMs, mode, fallbackMs).travelMs
 
     /**
      * Origin coordinates for a trip. A per-trip [CalendarTripEntity.originAddress]
@@ -370,11 +518,23 @@ class TripSyncManager @Inject constructor(
         return tomtom.geocode(location)
     }
 
-    /** Remove trips whose event instance is no longer upcoming/located; returns how many were removed. */
-    private suspend fun pruneUnseen(seen: Set<Long>): Int {
+    /**
+     * Remove trips this scan can prove are gone: any whose event already started,
+     * and any in a *watched* calendar within the lookahead window that the scan
+     * didn't see (deleted or moved). Trips outside this scan's authority — a
+     * manually imported appointment from an unwatched calendar, or one further out
+     * than the lookahead — are left alone until their start passes, so the manual
+     * single-appointment importer isn't undone by the next daily sync. Returns how
+     * many were removed.
+     */
+    private suspend fun pruneUnseen(seen: Set<Long>, watched: Set<Long>, now: Long): Int {
         var pruned = 0
+        val windowEnd = now + TripDefaults.LOOKAHEAD_MS
         tripDao.getAll().forEach { trip ->
-            if (instanceKey(trip.eventId, trip.eventStartMs) !in seen) {
+            val inScanScope = trip.calendarId in watched && trip.eventStartMs <= windowEnd
+            val gone = trip.eventStartMs < now ||
+                (inScanScope && instanceKey(trip.eventId, trip.eventStartMs) !in seen)
+            if (gone) {
                 tearDown(trip)
                 pruned++
             }
@@ -434,4 +594,16 @@ class TripSyncManager @Inject constructor(
 
     private fun reminderName(title: String, showLeaveFor: Boolean): String =
         if (showLeaveFor) ctx.getString(R.string.trips_reminder_name, title) else title
+
+    /** Resolved (but not yet persisted) trip details, shared by sync, preview and import. */
+    private data class TripComputation(
+        val hasLocation: Boolean,
+        val origin: LatLng?,
+        val dest: LatLng?,
+        val travelMs: Long,
+        val travelLive: Boolean,
+        val leaveByMs: Long,
+        val showLeaveFor: Boolean,
+        val reminderName: String,
+    )
 }

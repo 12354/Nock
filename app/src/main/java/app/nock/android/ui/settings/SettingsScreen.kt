@@ -353,11 +353,12 @@ fun TelegramSettingsScreen(
 @Composable
 fun CalendarSettingsScreen(
     onBack: () -> Unit,
+    onOpenManualImport: () -> Unit = {},
     vm: SettingsViewModel = hiltViewModel(),
 ) {
     val state by vm.state.collectAsState()
     CategoryScaffold(stringResource(R.string.trips_title), onBack) {
-        TripsSection(state, vm)
+        TripsSection(state, vm, onOpenManualImport)
     }
 }
 
@@ -793,7 +794,7 @@ private fun DriveSection(email: String?, lastSyncMs: Long?, status: String?, vm:
 }
 
 @Composable
-private fun TripsSection(state: SettingsState, vm: SettingsViewModel) {
+private fun TripsSection(state: SettingsState, vm: SettingsViewModel, onOpenManualImport: () -> Unit = {}) {
     var enabled by remember(state.tripsEnabled) { mutableStateOf(state.tripsEnabled) }
     var key by remember(state.tomtomKey) { mutableStateOf(state.tomtomKey) }
     var home by remember(state.tripHomeAddress) { mutableStateOf(state.tripHomeAddress) }
@@ -917,6 +918,24 @@ private fun TripsSection(state: SettingsState, vm: SettingsViewModel) {
                             }
                         }
                     }
+                }
+
+                Spacer(Modifier.height(16.dp))
+                HorizontalDivider()
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    stringResource(R.string.trips_manual_import_title),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    stringResource(R.string.trips_manual_import_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.outline
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(onClick = onOpenManualImport) {
+                    Text(stringResource(R.string.trips_manual_import_open))
                 }
             }
         }

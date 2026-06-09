@@ -309,6 +309,47 @@
     <string name="trips_synclog_empty">(tippe auf „Jetzt synchronisieren“, um dieses Protokoll zu füllen)</string>
     <string name="trips_synclog_copied">Synchronisierungsprotokoll in die Zwischenablage kopiert</string>
 
+    <!-- Einstellungen: manueller Import eines einzelnen Termins -->
+    <string name="trips_manual_import_title">Einzelnen Termin importieren</string>
+    <string name="trips_manual_import_desc">Wähle einen einzelnen Kalendertermin und importiere ihn als Wecker — praktisch, um einen verworfenen Termin zurückzuholen, da verworfene Wecker nicht automatisch neu erstellt werden.</string>
+    <string name="trips_manual_import_open">Einzelnen Termin importieren</string>
+    <string name="trips_manual_step_calendar">Schritt 1 von 3 · Kalender</string>
+    <string name="trips_manual_step_event">Schritt 2 von 3 · Termin</string>
+    <string name="trips_manual_step_preview">Schritt 3 von 3 · Vorschau</string>
+    <string name="trips_manual_pick_calendar">Kalender wählen</string>
+    <string name="trips_manual_pick_calendar_help">Wähle den Kalender, in dem der Termin steht.</string>
+    <string name="trips_manual_no_calendars">Auf diesem Gerät wurden keine Kalender gefunden.</string>
+    <string name="trips_manual_pick_event">Termin wählen</string>
+    <string name="trips_manual_pick_event_help">Suche nach Name oder Datum oder scrolle einfach.</string>
+    <string name="trips_manual_search_hint">Nach Name oder Datum suchen</string>
+    <string name="trips_manual_loading_events">Termine werden geladen…</string>
+    <string name="trips_manual_no_events">Keine bevorstehenden Termine in diesem Kalender.</string>
+    <string name="trips_manual_no_matches">Keine Termine passen zu deiner Suche.</string>
+    <string name="trips_manual_event_no_location">Kein Ort</string>
+    <string name="trips_manual_computing">Fahrtzeit wird berechnet…</string>
+    <string name="trips_manual_preview_reminder">Wecker-Vorschau</string>
+    <string name="trips_manual_field_appointment">Termin</string>
+    <string name="trips_manual_field_calendar">Kalender</string>
+    <string name="trips_manual_field_starts">Beginnt</string>
+    <string name="trips_manual_field_location">Ort</string>
+    <string name="trips_manual_field_from">Von (Zuhause)</string>
+    <string name="trips_manual_field_travel">Fahrtzeit (TomTom)</string>
+    <string name="trips_manual_field_leave_by">Losfahren bis</string>
+    <string name="trips_manual_field_alerts_at">Meldet sich um</string>
+    <string name="trips_manual_field_steps">Wecker-Stufen</string>
+    <string name="trips_manual_no_location_note">Kein Ort — dieser Wecker meldet sich zur Startzeit des Termins.</string>
+    <string name="trips_manual_travel_fallback">Schätzwert — TomTom nicht erreichbar; Standard-Fahrtzeit wird verwendet.</string>
+    <string name="trips_manual_home_missing">Keine Heimatadresse festgelegt — Standard-Fahrtzeit wird verwendet. Lege oben eine fest, um eine genaue Abfahrtszeit zu erhalten.</string>
+    <string name="trips_manual_dest_unresolved">Dieser Ort konnte nicht gefunden werden — Standard-Fahrtzeit wird verwendet.</string>
+    <string name="trips_manual_already_imported">Dieser Termin ist bereits ein Wecker. Erneutes Importieren aktualisiert ihn.</string>
+    <string name="trips_manual_previously_dismissed">Du hast den Wecker dieses Termins zuvor verworfen. Der Import holt ihn zurück.</string>
+    <string name="trips_manual_import_button">Diesen Wecker importieren</string>
+    <string name="trips_manual_importing">Wird importiert…</string>
+    <string name="trips_manual_imported">Wecker importiert.</string>
+    <string name="trips_manual_import_another">Weiteren importieren</string>
+    <string name="trips_manual_duration_min">%1$d Min.</string>
+    <string name="trips_manual_duration_h_min">%1$d Std. %2$d Min.</string>
+
     <!-- Settings: Alarm history -->
     <string name="settings_alarm_history_title">Wecker-Verlauf</string>
     <string name="settings_alarm_history_help">Alles, was deine Wecker getan haben — erstellt, geändert, ausgelöst, erledigt, verschoben und verspätete Nachholungen nach einem Neustart. Kopiere dies und füge es ein, wenn du einen Wecker zur falschen Zeit oder einen verpassten Wecker meldest.</string>

@@ -50,6 +50,14 @@ object TripDefaults {
      * itself as each trip nears via the scheduled recomputes.
      */
     const val LOOKAHEAD_MS: Long = 7L * 24 * 60 * 60_000L
+
+    /**
+     * How far ahead the manual single-appointment importer lists events. Much
+     * wider than [LOOKAHEAD_MS] so the user can scroll or search to an appointment
+     * weeks or months out, not just the auto-synced week.
+     */
+    const val MANUAL_LOOKAHEAD_MS: Long = 365L * 24 * 60 * 60_000L
+
     const val TRAVEL_MODE: String = "car"
 
     /**

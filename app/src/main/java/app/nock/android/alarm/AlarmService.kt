@@ -98,6 +98,15 @@ class AlarmService : Service() {
                 stopAndDie()
                 return@launch
             }
+            // A repeat re-fire (the loud stage re-arms itself every interval) or a
+            // stage change (ALARM_VIBRATE → ALARM) delivers a fresh onStartCommand
+            // to this same already-running service. Tear down the sound/vibration/
+            // wakelocks from the previous start BEFORE re-acquiring: otherwise
+            // startSound() would overwrite `player` with a second looping
+            // MediaPlayer while the first keeps playing untracked, and stopAndDie()
+            // (Done/Snooze) would only stop the latest one — leaving the orphan
+            // ringing on after the reminder was dismissed.
+            releasePlayback()
             acquireWakeLock()
             if (vibrationOnly) startVibration() else startSound()
         }
@@ -201,9 +210,10 @@ class AlarmService : Service() {
         }
     }
 
-    private fun stopAndDie() {
-        ringingEscalationId = null
-        ringingReminderId = null
+    // Stop and release sound, vibration and wakelocks without tearing down the
+    // foreground service. Safe to call repeatedly (idempotent) — used both when a
+    // re-fire restarts playback and when the alarm is dismissed.
+    private fun releasePlayback() {
         try { player?.stop() } catch (_: Throwable) {}
         player?.release()
         player = null
@@ -213,6 +223,12 @@ class AlarmService : Service() {
         wakeLock = null
         screenWakeLock?.takeIf { it.isHeld }?.release()
         screenWakeLock = null
+    }
+
+    private fun stopAndDie() {
+        ringingEscalationId = null
+        ringingReminderId = null
+        releasePlayback()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             stopForeground(STOP_FOREGROUND_REMOVE)
         } else {
@@ -225,12 +241,7 @@ class AlarmService : Service() {
     override fun onDestroy() {
         ringingEscalationId = null
         ringingReminderId = null
-        try { player?.stop() } catch (_: Throwable) {}
-        player?.release()
-        try { vibrator?.cancel() } catch (_: Throwable) {}
-        vibrator = null
-        wakeLock?.takeIf { it.isHeld }?.release()
-        screenWakeLock?.takeIf { it.isHeld }?.release()
+        releasePlayback()
         scope.cancel()
         super.onDestroy()
     }

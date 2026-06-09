@@ -28,10 +28,16 @@ class BootReceiver : BroadcastReceiver() {
             )
         ) return
 
+        // A timezone or manual clock change moves the wall-clock meaning of every
+        // stored fire time; tell the engine to re-anchor time-of-day schedules. A
+        // plain boot / package replace keeps the stored absolute times.
+        val recomputeWallClock =
+            action == Intent.ACTION_TIME_CHANGED || action == Intent.ACTION_TIMEZONE_CHANGED
+
         val pending = goAsync()
         scope.launch {
             try {
-                engine.rescheduleAll()
+                engine.rescheduleAll(recomputeWallClock = recomputeWallClock)
                 // Re-import upcoming events and re-arm the daily sync + recompute
                 // alarms (AlarmManager drops everything on reboot).
                 runCatching { trips.syncNow() }

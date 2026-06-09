@@ -6,6 +6,7 @@ import androidx.compose.ui.graphics.toArgb
 import app.nock.android.R
 import app.nock.android.data.NockRepository
 import app.nock.android.data.SettingsRepository
+import app.nock.android.data.dao.ActiveEscalationDao
 import app.nock.android.data.dao.CalendarTripDao
 import app.nock.android.data.entity.CalendarTripEntity
 import app.nock.android.domain.escalation.EscalationEngine
@@ -73,6 +74,7 @@ class TripSyncManager @Inject constructor(
     private val calendar: CalendarRepository,
     private val tomtom: TomTomClient,
     private val tripDao: CalendarTripDao,
+    private val activeDao: ActiveEscalationDao,
     private val repo: NockRepository,
     private val engine: EscalationEngine,
     private val scheduler: TripScheduler,
@@ -273,6 +275,11 @@ class TripSyncManager @Inject constructor(
     ): Long {
         val reminderId = engine.runExclusive {
             val existingReminder = existing?.let { repo.getReminder(it.reminderId) }
+            // Whether departure actually moved. A plain travel-estimate refresh
+            // that lands on the same leave-by must NOT tear down a live escalation
+            // (which would wipe a snooze the user set on the "leave now" alarm and
+            // re-ring it) — and a full sync runs on every app open / boot / daily.
+            val leaveByUnchanged = existingReminder?.nextFireAt == comp.leaveByMs
             val rid = repo.saveReminder(
                 id = existing?.reminderId ?: 0L,
                 groupId = tripsGroupId,
@@ -311,8 +318,14 @@ class TripSyncManager @Inject constructor(
             )
             tripDao.upsert(row)
             // If the row was wiped out from under us mid-step, skip arming rather
-            // than crash; the next sync pass rebuilds it.
-            repo.getReminder(rid)?.let { arm(it, comp.leaveByMs) }
+            // than crash; the next sync pass rebuilds it. Re-arm only when the
+            // departure time moved or no escalation is currently armed (self-heal);
+            // an unchanged leave-by leaves a live/snoozed escalation untouched.
+            repo.getReminder(rid)?.let { r ->
+                if (!leaveByUnchanged || activeDao.getByReminderId(rid) == null) {
+                    arm(r, comp.leaveByMs)
+                }
+            }
             rid
         }
         // Only located events have a travel time worth refreshing as traffic firms up.
@@ -472,6 +485,10 @@ class TripSyncManager @Inject constructor(
         // A recompute can push travel above/below the trip threshold, so refresh
         // the name to keep the "Leave for …" framing in sync with the estimate.
         val name = reminderName(trip.title, showLeaveFor(trip.location.isNotBlank(), travelMs))
+        // Whether departure actually moved this recompute. When traffic is steady
+        // leave-by is unchanged, and re-arming would needlessly wipe a snooze the
+        // user set on the live "leave now" alarm and re-ring it.
+        val leaveByUnchanged = reminder.nextFireAt == leaveBy
         // Re-save + re-arm atomically (see upsertTrip) so a concurrent import can't
         // wipe the reminder between the save and the re-arm.
         engine.runExclusive {
@@ -493,7 +510,13 @@ class TripSyncManager @Inject constructor(
                     lastComputedAtMs = now,
                 )
             )
-            repo.getReminder(reminderId)?.let { arm(it, leaveBy) }
+            // Re-arm only when departure moved or no escalation is currently armed
+            // (self-heal); an unchanged leave-by preserves a live/snoozed chain.
+            repo.getReminder(reminderId)?.let { r ->
+                if (!leaveByUnchanged || activeDao.getByReminderId(reminderId) == null) {
+                    arm(r, leaveBy)
+                }
+            }
         }
         armNextRecompute(reminderId, leaveBy, now)
     }

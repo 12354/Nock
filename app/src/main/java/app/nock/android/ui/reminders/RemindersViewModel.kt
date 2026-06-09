@@ -63,6 +63,12 @@ class RemindersViewModel @Inject constructor(
     fun unpauseGroup(g: Group) {
         viewModelScope.launch {
             repo.setGroupPause(g.id, null)
+            // Re-arm the group's reminders immediately. While paused, an armed
+            // escalation pushes its next fire out to the pause end; lifting the
+            // pause early must restore each reminder's real (earlier) schedule
+            // rather than wait for that deferred time. Also revives any reminder
+            // saved/completed during the pause, which got no escalation then.
+            engine.rearmGroup(g.id)
         }
     }
 

@@ -36,6 +36,7 @@ import app.nock.android.ui.LocaleHelper
 import app.nock.android.ui.components.groupIconFor
 import app.nock.android.ui.theme.NockTheme
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import java.time.LocalDateTime
@@ -182,9 +183,16 @@ private fun AlarmTakeoverScreen(
                 }
 
                 Spacer(Modifier.height(36.dp))
-                // Big clock — alarm-clock style. Update once per minute is good enough.
-                val clock by remember { mutableStateOf(currentClock()) }
+                // Big clock — alarm-clock style. Re-read periodically so the minute
+                // actually advances while the takeover is on screen.
+                var clock by remember { mutableStateOf(currentClock()) }
                 val date = remember { currentDate() }
+                LaunchedEffect(Unit) {
+                    while (true) {
+                        delay(10_000L)
+                        clock = currentClock()
+                    }
+                }
                 Text(
                     text = clock,
                     fontSize = 84.sp,

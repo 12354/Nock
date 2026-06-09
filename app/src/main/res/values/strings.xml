@@ -86,6 +86,7 @@
     <string name="edit_ai_thinking">AI is thinking…</string>
     <string name="edit_ai_error_prefix">AI error: %1$s</string>
     <string name="edit_name_label">Name</string>
+    <string name="edit_location_label">Location</string>
     <string name="edit_group_label">Group</string>
     <string name="edit_schedule_label">Schedule</string>
     <string name="schedule_kind_once">Once</string>

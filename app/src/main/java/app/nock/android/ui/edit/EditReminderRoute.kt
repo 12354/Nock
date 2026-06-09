@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -130,6 +131,23 @@ fun EditReminderRoute(
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp)
             )
+
+            // Location is editable only for reminders imported from the calendar;
+            // it drives the traffic-aware leave-by time, so changing it re-routes.
+            if (state.isCalendarReminder) {
+                OutlinedTextField(
+                    value = state.location,
+                    onValueChange = vm::updateLocation,
+                    label = { Text(stringResource(R.string.edit_location_label)) },
+                    leadingIcon = {
+                        Icon(Icons.Filled.Place, contentDescription = null)
+                    },
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp)
+                )
+            }
 
             GroupSelector(
                 groups = state.groups,

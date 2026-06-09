@@ -18,6 +18,10 @@ import app.nock.android.telegram.TelegramSender
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -103,6 +107,33 @@ class EscalationEngineFuzzTest {
         // number of alarms must actually have fired (typically several thousand);
         // a low count means the harness silently did almost nothing.
         assertTrue("fuzzer delivered suspiciously few alarms ($totalFired)", totalFired > 500)
+    }
+
+    /**
+     * Concurrency fuzzer. The engine is driven by independent BroadcastReceivers
+     * (alarm delivery, Done/Snooze actions, unlock, boot) whose coroutines share a
+     * multi-threaded Dispatchers.Default scope, so in production its operations run
+     * in parallel. The single-threaded fuzzer above can never interleave them.
+     *
+     * This driver dispatches BATCHES of engine operations on real threads and only
+     * asserts at a barrier once each batch is quiescent — deliberately racing
+     * MULTIPLE operations against the SAME escalation (fire + done, fire + snooze,
+     * done + snooze). That is exactly the hazard that motivated the engine's mutex:
+     * a loud stage re-arms its repeat at the TAIL of onAlarmFired (update row +
+     * scheduleStage) while a concurrent Done cancels the alarm and deletes the row.
+     * Unserialized, the tail arms a fresh loud alarm for a row that no longer
+     * exists — an orphan that later fires and pops the full-screen takeover for an
+     * already-completed reminder. The bijection oracle (rows ↔ pending alarms) is
+     * what catches that orphan; with the mutex in place every batch stays
+     * consistent. (Removing the mutex makes this fail — orphaned pending alarm, or
+     * a ConcurrentModificationException from the now-unguarded in-memory tables.)
+     */
+    @Test fun fuzz_concurrent_operations_preserve_invariants() = runTest {
+        var totalFired = 0
+        for (seed in listOf(1L, 5L, 17L, 42L, 256L, 4096L, 65_537L)) {
+            totalFired += World(seed).runConcurrent(rounds = 120)
+        }
+        assertTrue("concurrent fuzzer delivered suspiciously few alarms ($totalFired)", totalFired > 100)
     }
 
     /** One isolated simulated device + engine for a single random seed. */
@@ -204,7 +235,13 @@ class EscalationEngineFuzzTest {
                 TelegramResult(ok = true, messageId = id)
             }
             coEvery { telegram.deleteMessage(any()) } answers {
-                deletedTelegrams += firstArg<Long>()
+                // The flush that calls this runs lock-free and is hit by several
+                // threads at once in the concurrent fuzzer; guard the record so the
+                // set itself can't corrupt (the engine's own state stays consistent
+                // through its mutex). Oracle reads happen single-threaded between
+                // barriers, after a happens-before via awaitAll.
+                val id = firstArg<Long>()
+                synchronized(deletedTelegrams) { deletedTelegrams += id }
                 true
             }
         }
@@ -239,6 +276,95 @@ class EscalationEngineFuzzTest {
 
             verifyTimeline()
             return log.size
+        }
+
+        /**
+         * Concurrent variant of [run]. Each round builds a batch of engine
+         * operations — including several aimed at the SAME escalation id — launches
+         * them all on real threads (Dispatchers.Default) and awaits them before any
+         * assertion. Engine ops touch the shared in-memory tables only under the
+         * engine's mutex, so they serialize among themselves; the lone lock-free
+         * path (the Telegram deletion flush) hits only the thread-safe fakes. All
+         * harness bookkeeping and oracle checks run single-threaded between
+         * barriers, after the awaitAll happens-before.
+         */
+        suspend fun runConcurrent(rounds: Int): Int {
+            repeat(5) { addReminder() }
+            advanceToLoudStages()
+            assertConsistent("after concurrent seeding")
+
+            for (s in 0 until rounds) {
+                step = s
+                val batch = buildConcurrentBatch()
+                // Real parallelism: async on Dispatchers.Default escapes runTest's
+                // single virtual thread so the operations genuinely overlap. None of
+                // them call delay(), so virtual time is irrelevant here.
+                coroutineScope {
+                    batch.map { op -> async(Dispatchers.Default) { op() } }.awaitAll()
+                }
+                assertConsistent("after concurrent round $s")
+
+                // Keep the surviving chains at their loud, self-repeating stage and
+                // top the pool back up so later rounds keep racing the repeat re-arm.
+                clock.advanceBy(rnd.nextLong(1, 4) * MIN)
+                drainDueAlarms(react = false)
+                while (dao.rows.size < 3) addReminder()
+                advanceToLoudStages()
+            }
+
+            clock.advanceBy(3L * 24 * 60 * MIN)
+            drainDueAlarms(react = false)
+            assertConsistent("after concurrent final flush")
+
+            verifyTimeline()
+            return log.size
+        }
+
+        /**
+         * Fire every armed chain forward until it reaches its loud, last stage —
+         * the one onAlarmFired re-arms every repeat interval. That trailing
+         * "update row + scheduleStage" is the write the concurrent batch races
+         * against Done/Snooze, so the batch is only interesting once chains are
+         * parked there. react=false so chains advance instead of being dismissed.
+         */
+        private suspend fun advanceToLoudStages() {
+            repeat(6) {
+                if (pending.isEmpty()) return
+                val next = pending.values.maxOfOrNull { it.atMs } ?: return
+                if (next > clock.now) clock.set(next)
+                drainDueAlarms(react = false)
+            }
+        }
+
+        /**
+         * A batch of independent engine operations to run concurrently. Picks a few
+         * live escalations and, for some of them, queues TWO operations on the same
+         * id (e.g. onAlarmFired + done) so the loud-repeat re-arm collides head-on
+         * with the dismissal — the exact production race. Returns thunks; the caller
+         * dispatches each on its own thread.
+         */
+        private fun buildConcurrentBatch(): List<suspend () -> Unit> {
+            val ids = dao.rows.keys.toList()
+            if (ids.isEmpty()) return emptyList()
+            val ops = ArrayList<suspend () -> Unit>()
+            val targets = ids.shuffled(rnd).take(rnd.nextInt(1, minOf(ids.size, 4) + 1))
+            for (id in targets) {
+                // First op: usually a fire (the side that re-arms the repeat).
+                ops += opFor(id, fireBiased = true)
+                // Sometimes a second, racing op on the SAME id — this is the collision.
+                if (rnd.nextBoolean()) ops += opFor(id, fireBiased = false)
+            }
+            return ops.shuffled(rnd)
+        }
+
+        private fun opFor(id: Long, fireBiased: Boolean): suspend () -> Unit {
+            if (fireBiased) {
+                // Mostly the loud-repeat re-arm (the side that schedules a fresh
+                // alarm); occasionally a snooze, which also re-arms.
+                return if (rnd.nextInt(10) < 8) ({ engine.onAlarmFired(id) }) else ({ engine.snooze(id) })
+            }
+            // The colliding dismissal that cancels + deletes the row.
+            return if (rnd.nextBoolean()) ({ engine.done(id) }) else ({ engine.snooze(id) })
         }
 
         // ----- Actions ---------------------------------------------------------

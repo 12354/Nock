@@ -18,6 +18,8 @@ import app.nock.android.domain.time.TimeSource
 import app.nock.android.history.AlarmHistoryLogger
 import app.nock.android.notif.NotificationPresenter
 import app.nock.android.telegram.TelegramSender
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.math.max
@@ -34,18 +36,49 @@ class EscalationEngine @Inject constructor(
     private val history: AlarmHistoryLogger,
     private val pendingDeletionDao: PendingTelegramDeletionDao,
 ) {
+    // All escalation-state mutations are serialized through this mutex. The
+    // engine is driven by independent BroadcastReceivers (alarm delivery, Done/
+    // Snooze actions, unlock, boot/time-change) whose coroutines run on a shared
+    // multi-threaded Dispatchers.Default scope, so without this they interleave.
+    // The race that motivated it: a loud stage re-arms itself every repeat
+    // interval at the TAIL of onAlarmFired (update row + scheduleStage). If Done
+    // ran concurrently — cancelling the alarm and deleting the row in the window
+    // between onAlarmFired's getById guard and that tail — the tail would arm a
+    // fresh loud setAlarmClock alarm for a row that no longer exists. That orphan
+    // fires one interval later and EscalationReceiver eagerly launches the
+    // full-screen takeover for it, ringing an already-completed reminder. Holding
+    // this across each operation restores the row↔alarm bijection under
+    // concurrency: onAlarmFired either runs fully before Done (Done then tears the
+    // re-armed repeat down) or fully after it (finds the row gone, self-heals,
+    // schedules nothing).
+    //
+    // The best-effort Telegram deletion flush (a network call that can block for
+    // tens of seconds) is deliberately kept OUTSIDE the lock so a slow flush can
+    // never delay a Done/Snooze. The deletion ids are enqueued durably under the
+    // lock; draining that queue afterwards is order-independent.
+    private val mutex = Mutex()
+
     suspend fun scheduleNextFireForReminder(reminderId: Long): Long? {
-        val reminder = repo.getReminder(reminderId) ?: return null
-        val next = reminder.schedule.nextFireFrom(time.nowMs(), reminder.lastCompletedAt)
-        repo.updateFireState(reminderId, next, reminder.lastCompletedAt)
-        cancelActive(reminderId)
-        if (next != null) {
-            startEscalationAt(reminder.copy(nextFireAt = next), next)
+        val next = mutex.withLock {
+            val reminder = repo.getReminder(reminderId) ?: return@withLock null
+            val n = reminder.schedule.nextFireFrom(time.nowMs(), reminder.lastCompletedAt)
+            repo.updateFireState(reminderId, n, reminder.lastCompletedAt)
+            cancelActiveLocked(reminderId)
+            if (n != null) {
+                startEscalationAtLocked(reminder.copy(nextFireAt = n), n)
+            }
+            n
         }
+        flushPendingTelegramDeletions()
         return next
     }
 
     suspend fun startEscalationAt(reminder: Reminder, scheduledAtMs: Long) {
+        mutex.withLock { startEscalationAtLocked(reminder, scheduledAtMs) }
+        flushPendingTelegramDeletions()
+    }
+
+    private suspend fun startEscalationAtLocked(reminder: Reminder, scheduledAtMs: Long) {
         // Re-arming for this reminder (e.g. it was moved to a new time) must
         // first tear down any escalation already armed for it. upsert() below
         // REPLACEs the row on the unique reminderId index, but AlarmManager keys
@@ -58,8 +91,9 @@ class EscalationEngine @Inject constructor(
         // already produced — chiefly the Telegram messages it sent — exactly as
         // snooze()/cancelActive()/done() do. Otherwise a reminder moved after its
         // TELEGRAM stage fired would strand those messages in the chat. Queue them
-        // for deletion (durably, before the row holding the ids is dropped) and
-        // flush, so the new occurrence starts clean.
+        // for deletion (durably, before the row holding the ids is dropped); the
+        // caller flushes the queue after releasing the lock so the new occurrence
+        // starts clean.
         activeDao.getByReminderId(reminder.id)?.let { existing ->
             scheduler.cancel(existing.id)
             if (AlarmService.ringingEscalationId == existing.id) {
@@ -67,7 +101,6 @@ class EscalationEngine @Inject constructor(
             }
             enqueueTelegramDeletions(existing.sentTelegramMessageIdsCsv)
             activeDao.delete(existing)
-            flushPendingTelegramDeletions()
         }
         val group = repo.getGroup(reminder.groupId) ?: return
         val chain = repo.effectiveChain(group)
@@ -115,6 +148,10 @@ class EscalationEngine @Inject constructor(
     }
 
     suspend fun startEscalationFromBoot(reminder: Reminder) {
+        mutex.withLock { startEscalationFromBootLocked(reminder) }
+    }
+
+    private suspend fun startEscalationFromBootLocked(reminder: Reminder) {
         val group = repo.getGroup(reminder.groupId) ?: return
         if (group.isPaused(time.nowMs())) return
         val chain = repo.effectiveChain(group)
@@ -141,8 +178,15 @@ class EscalationEngine @Inject constructor(
         // Every alarm tick is a chance to retry any Telegram deletions that a
         // previous Done/Snooze/Cancel couldn't complete (transient network error
         // or the receiver process dying mid-call). Run it first so it happens even
-        // when this escalation has since been removed.
+        // when this escalation has since been removed — and outside the lock so it
+        // can't block a concurrent Done/Snooze.
         flushPendingTelegramDeletions()
+        mutex.withLock { onAlarmFiredLocked(escalationId) }
+        // Drain anything the fire just enqueued (orphan/drift teardown).
+        flushPendingTelegramDeletions()
+    }
+
+    private suspend fun onAlarmFiredLocked(escalationId: Long) {
         val esc = activeDao.getById(escalationId) ?: run {
             // No backing row, yet the OS still delivered this alarm. That means it
             // was orphaned in AlarmManager — e.g. a group deleted before the
@@ -164,10 +208,9 @@ class EscalationEngine @Inject constructor(
             // orphan row, but first clean up the Telegram messages it already
             // sent, exactly as every other teardown path does; otherwise those
             // messages are stranded in the chat forever. Queue durably, delete
-            // the row, then flush the best-effort network deletes last.
+            // the row, then the caller flushes the best-effort network deletes.
             enqueueTelegramDeletions(esc.sentTelegramMessageIdsCsv)
             activeDao.delete(esc)
-            flushPendingTelegramDeletions()
             return
         }
         val group = repo.getGroup(reminder.groupId) ?: return
@@ -200,10 +243,10 @@ class EscalationEngine @Inject constructor(
         if (trigger != null && trigger > now &&
             kotlin.math.abs(trigger - esc.startedAtMs) > SANITY_TOLERANCE_MS
         ) {
-            // startEscalationAt tears this stale escalation down first — cancelling
-            // its alarm and deleting any Telegram it already sent — then arms the
-            // chain for the reminder's current trigger.
-            startEscalationAt(reminder, trigger)
+            // startEscalationAtLocked tears this stale escalation down first —
+            // cancelling its alarm and queuing any Telegram it already sent for
+            // deletion — then arms the chain for the reminder's current trigger.
+            startEscalationAtLocked(reminder, trigger)
             return
         }
 
@@ -286,6 +329,11 @@ class EscalationEngine @Inject constructor(
     }
 
     suspend fun done(escalationId: Long) {
+        mutex.withLock { doneLocked(escalationId) }
+        flushPendingTelegramDeletions()
+    }
+
+    private suspend fun doneLocked(escalationId: Long) {
         val esc = activeDao.getById(escalationId) ?: return
         scheduler.cancel(esc.id)
         notifier.cancel(esc.id)
@@ -293,22 +341,24 @@ class EscalationEngine @Inject constructor(
 
         // Durably queue the sent-message ids for deletion BEFORE we drop the row
         // that holds them, so the ids can't be lost if the delete network call
-        // fails or the process dies. The queue is drained below and retried on
-        // every later alarm tick / boot until Telegram confirms each deletion.
+        // fails or the process dies. The queue is drained by the public wrapper
+        // (outside the lock) and retried on every later alarm tick / boot until
+        // Telegram confirms each deletion.
         enqueueTelegramDeletions(esc.sentTelegramMessageIdsCsv)
 
         // Commit all durable state — drop the active row and arm the next
-        // occurrence — BEFORE the best-effort Telegram flush. This action is
-        // delivered to a BroadcastReceiver whose process is only kept alive by
-        // the alarm foreground service we just stopped (plus a short goAsync
-        // window). flushPendingTelegramDeletions is a network call that can block
-        // for tens of seconds on a bad connection (15s connect + 20s read,
-        // per message); if it ran first and the process was killed mid-call we
-        // would have already cancelled the alarm but never removed the row or
-        // re-armed the chain, leaving the reminder stuck at a past fire time
-        // that never rings again. Keep the network work last so it can't
-        // corrupt the escalation state — and the durable queue above means a
-        // killed flush merely defers the deletion rather than dropping it.
+        // occurrence — while still holding the lock, BEFORE the public wrapper's
+        // best-effort Telegram flush. This action is delivered to a
+        // BroadcastReceiver whose process is only kept alive by the alarm
+        // foreground service we just stopped (plus a short goAsync window).
+        // flushPendingTelegramDeletions is a network call that can block for tens
+        // of seconds on a bad connection (15s connect + 20s read, per message); if
+        // it ran first and the process was killed mid-call we would have already
+        // cancelled the alarm but never removed the row or re-armed the chain,
+        // leaving the reminder stuck at a past fire time that never rings again.
+        // Keeping the network work strictly after the durable state (and outside
+        // the lock) means it can't corrupt the escalation state — and the durable
+        // queue above means a killed flush merely defers the deletion.
         val reminder = repo.getReminder(esc.reminderId)
         activeDao.delete(esc)
         if (reminder != null) {
@@ -333,14 +383,18 @@ class EscalationEngine @Inject constructor(
                 val next = reminder.schedule.nextFireFrom(searchFrom, now)
                 repo.updateFireState(reminder.id, next, now)
                 if (next != null) {
-                    startEscalationAt(reminder.copy(lastCompletedAt = now, nextFireAt = next), next)
+                    startEscalationAtLocked(reminder.copy(lastCompletedAt = now, nextFireAt = next), next)
                 }
             }
         }
-        flushPendingTelegramDeletions()
     }
 
     suspend fun snooze(escalationId: Long) {
+        mutex.withLock { snoozeLocked(escalationId) }
+        flushPendingTelegramDeletions()
+    }
+
+    private suspend fun snoozeLocked(escalationId: Long) {
         val esc = activeDao.getById(escalationId) ?: return
         val chain = runCatching { ChainJson.decode(esc.chainSnapshotJson) }.getOrNull()
             ?: settings.getStageChain()
@@ -349,14 +403,15 @@ class EscalationEngine @Inject constructor(
 
         // Durably queue the sent-message ids BEFORE the row's csv is cleared
         // below, so a failed/interrupted delete can't lose them — the queue is
-        // drained at the end and retried on every later alarm tick / boot.
+        // drained by the public wrapper (outside the lock) and retried on every
+        // later alarm tick / boot.
         enqueueTelegramDeletions(esc.sentTelegramMessageIdsCsv)
 
-        // Persist the snooze (re-armed repeat / advanced cursor) BEFORE the
-        // best-effort Telegram flush, for the same reason as done(): the
-        // network delete can block past the receiver's lifetime once the alarm
-        // foreground service is gone, and we must not lose the snoozed state if
-        // the process is killed mid-call.
+        // Persist the snooze (re-armed repeat / advanced cursor) while holding the
+        // lock, BEFORE the best-effort Telegram flush, for the same reason as
+        // done(): the network delete can block past the receiver's lifetime once
+        // the alarm foreground service is gone, and we must not lose the snoozed
+        // state if the process is killed mid-call.
         val currentlyFiring = (esc.nextStageIndex).coerceAtMost(chain.lastIndex)
         val isLast = currentlyFiring == chain.lastIndex
         val now = time.nowMs()
@@ -376,7 +431,6 @@ class EscalationEngine @Inject constructor(
             activeDao.update(esc.copy(sentTelegramMessageIdsCsv = ""))
         }
         repo.getReminder(esc.reminderId)?.let { history.snoozed(it.name, nextAt) }
-        flushPendingTelegramDeletions()
     }
 
     // Deleting a group cascade-deletes its reminders and their active_escalations
@@ -388,9 +442,12 @@ class EscalationEngine @Inject constructor(
     // the single-reminder delete paths do. Must run BEFORE repo.deleteGroup: once
     // the cascade fires, the reminders are gone and these rows can't be found.
     suspend fun cancelActiveForGroup(groupId: Long) {
-        repo.getAllReminders()
-            .filter { it.groupId == groupId }
-            .forEach { cancelActive(it.id) }
+        mutex.withLock {
+            repo.getAllReminders()
+                .filter { it.groupId == groupId }
+                .forEach { cancelActiveLocked(it.id) }
+        }
+        flushPendingTelegramDeletions()
     }
 
     // Editing a group's chain/timing only writes the group row; the escalations
@@ -406,6 +463,11 @@ class EscalationEngine @Inject constructor(
     // Paused groups are left untouched — pause owns arming, and startEscalationAt
     // would tear the chain down without re-arming.
     suspend fun rearmGroup(groupId: Long) {
+        mutex.withLock { rearmGroupLocked(groupId) }
+        flushPendingTelegramDeletions()
+    }
+
+    private suspend fun rearmGroupLocked(groupId: Long) {
         val group = repo.getGroup(groupId) ?: return
         if (group.isPaused(time.nowMs())) return
         repo.getAllReminders()
@@ -414,7 +476,7 @@ class EscalationEngine @Inject constructor(
                 // OnUnlock reminders are event-triggered, not time-armed.
                 if (reminder.schedule is Schedule.OnUnlock) return@forEach
                 val trigger = reminder.nextFireAt ?: return@forEach
-                startEscalationAt(reminder, trigger)
+                startEscalationAtLocked(reminder, trigger)
             }
     }
 
@@ -423,12 +485,20 @@ class EscalationEngine @Inject constructor(
     // editing a group's own chain does. Groups carrying an override are unaffected
     // by a global change and are left alone.
     suspend fun rearmDefaultChainGroups() {
-        repo.getGroups()
-            .filter { it.overrideChain == null }
-            .forEach { rearmGroup(it.id) }
+        mutex.withLock {
+            repo.getGroups()
+                .filter { it.overrideChain == null }
+                .forEach { rearmGroupLocked(it.id) }
+        }
+        flushPendingTelegramDeletions()
     }
 
     suspend fun cancelActive(reminderId: Long) {
+        mutex.withLock { cancelActiveLocked(reminderId) }
+        flushPendingTelegramDeletions()
+    }
+
+    private suspend fun cancelActiveLocked(reminderId: Long) {
         val esc = activeDao.getByReminderId(reminderId) ?: return
         scheduler.cancel(esc.id)
         notifier.cancel(esc.id)
@@ -441,10 +511,10 @@ class EscalationEngine @Inject constructor(
         if (AlarmService.ringingEscalationId == esc.id) {
             notifier.stopAlarm()
         }
-        // Queue durably before the row holding the ids is dropped, then flush.
+        // Queue durably before the row holding the ids is dropped; the caller
+        // flushes the queue after releasing the lock.
         enqueueTelegramDeletions(esc.sentTelegramMessageIdsCsv)
         activeDao.delete(esc)
-        flushPendingTelegramDeletions()
     }
 
     private fun appendMessageId(csv: String, messageId: Long): String =
@@ -463,6 +533,11 @@ class EscalationEngine @Inject constructor(
      * only once [TelegramSender.deleteMessage] reports the deletion is resolved
      * (succeeded, or permanently un-deletable); transient failures stay queued
      * and are retried on the next alarm tick / boot.
+     *
+     * Intentionally NOT guarded by [mutex]: it touches only the independent
+     * pending-deletion table (never escalation rows) and performs blocking
+     * network I/O, so holding the lock across it would let a slow flush delay an
+     * incoming Done/Snooze. Callers run it after releasing the lock.
      */
     private suspend fun flushPendingTelegramDeletions() {
         pendingDeletionDao.getAll().forEach { pending ->
@@ -477,38 +552,43 @@ class EscalationEngine @Inject constructor(
     // already actively escalating so a re-unlock during the escalation
     // window doesn't spawn a second chain for the same reminder.
     suspend fun fireUnlockReminders() {
-        val now = time.nowMs()
-        repo.getAllReminders().forEach { reminder ->
-            if (reminder.schedule !is Schedule.OnUnlock) return@forEach
-            if (reminder.nextFireAt == null) return@forEach
-            if (activeDao.getByReminderId(reminder.id) != null) return@forEach
-            startEscalationAt(reminder, now)
+        mutex.withLock {
+            val now = time.nowMs()
+            repo.getAllReminders().forEach { reminder ->
+                if (reminder.schedule !is Schedule.OnUnlock) return@forEach
+                if (reminder.nextFireAt == null) return@forEach
+                if (activeDao.getByReminderId(reminder.id) != null) return@forEach
+                startEscalationAtLocked(reminder, now)
+            }
         }
+        flushPendingTelegramDeletions()
     }
 
     suspend fun rescheduleAll() {
         // Boot / time-change is also a good moment to retry any deletions that
         // never completed before the device restarted.
         flushPendingTelegramDeletions()
-        activeDao.getAll().forEach { esc ->
-            val chain = runCatching { ChainJson.decode(esc.chainSnapshotJson) }.getOrNull() ?: return@forEach
-            val type = chain.stage(esc.nextStageIndex.coerceAtMost(chain.lastIndex)).type
-            scheduler.scheduleStage(esc.id, esc.nextFireAtMs, type)
-        }
-        repo.getAllReminders().forEach { reminder ->
-            // OnUnlock reminders are event-triggered, never time-triggered;
-            // boot/time changes must not fire them.
-            if (reminder.schedule is Schedule.OnUnlock) return@forEach
-            val active = activeDao.getByReminderId(reminder.id)
-            if (active != null) return@forEach
-            val now = time.nowMs()
-            val nextFromSchedule = reminder.schedule.nextFireFrom(now, reminder.lastCompletedAt) ?: return@forEach
-            val overdue = reminder.nextFireAt != null && reminder.nextFireAt < now
-            if (overdue) {
-                startEscalationFromBoot(reminder)
-            } else {
-                repo.updateFireState(reminder.id, nextFromSchedule, reminder.lastCompletedAt)
-                startEscalationAt(reminder.copy(nextFireAt = nextFromSchedule), nextFromSchedule)
+        mutex.withLock {
+            activeDao.getAll().forEach { esc ->
+                val chain = runCatching { ChainJson.decode(esc.chainSnapshotJson) }.getOrNull() ?: return@forEach
+                val type = chain.stage(esc.nextStageIndex.coerceAtMost(chain.lastIndex)).type
+                scheduler.scheduleStage(esc.id, esc.nextFireAtMs, type)
+            }
+            repo.getAllReminders().forEach { reminder ->
+                // OnUnlock reminders are event-triggered, never time-triggered;
+                // boot/time changes must not fire them.
+                if (reminder.schedule is Schedule.OnUnlock) return@forEach
+                val active = activeDao.getByReminderId(reminder.id)
+                if (active != null) return@forEach
+                val now = time.nowMs()
+                val nextFromSchedule = reminder.schedule.nextFireFrom(now, reminder.lastCompletedAt) ?: return@forEach
+                val overdue = reminder.nextFireAt != null && reminder.nextFireAt < now
+                if (overdue) {
+                    startEscalationFromBootLocked(reminder)
+                } else {
+                    repo.updateFireState(reminder.id, nextFromSchedule, reminder.lastCompletedAt)
+                    startEscalationAtLocked(reminder.copy(nextFireAt = nextFromSchedule), nextFromSchedule)
+                }
             }
         }
     }

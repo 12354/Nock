@@ -460,7 +460,7 @@ class TripSyncManager @Inject constructor(
             if (dest == null) add("location \"${e.location}\" couldn't be geocoded")
             if (origin == null || dest == null) add("using fallback travel time")
         }
-        val frame = if (showLeaveFor(true, travelMs)) "leave-for alarm" else "travel under threshold → plain alert"
+        val frame = if (showLeaveFor(true, travelMs)) "leave-for alarm" else "at-home (0 travel) → plain alert"
         syncLog.line(
             "    synced — \"${e.location}\" → leave ${syncLog.clock(leaveByMs)}" +
                 " (travel ${syncLog.dur(travelMs)}, $frame)"
@@ -615,13 +615,16 @@ class TripSyncManager @Inject constructor(
     }
 
     /**
-     * Whether to frame a reminder as a trip ("Leave for …"). A located event
-     * whose travel time is under [TripDefaults.MIN_TRIP_TRAVEL_MS] is close
-     * enough that a leave-by departure prompt is just noise, so it shows the
-     * plain event title like a location-less event.
+     * Whether to frame a reminder as a trip ("Leave for …") and give it the
+     * pre-departure buffer. Only a travel time of exactly 0 — TomTom's real
+     * answer when the event location is the user's own home (origin == dest,
+     * e.g. taking out the trash) — is treated as no trip: there is nowhere to
+     * travel, so a leave-by departure prompt and its buffer are just noise and
+     * it shows the plain event title like a location-less event. Any positive
+     * travel time, however small, still gets the full leave-for treatment.
      */
     private fun showLeaveFor(hasLocation: Boolean, travelMs: Long): Boolean =
-        hasLocation && travelMs >= TripDefaults.MIN_TRIP_TRAVEL_MS
+        hasLocation && travelMs > 0
 
     private fun reminderName(title: String, showLeaveFor: Boolean): String =
         if (showLeaveFor) ctx.getString(R.string.trips_reminder_name, title) else title

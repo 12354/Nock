@@ -59,10 +59,4 @@ object TripDefaults {
     const val MANUAL_LOOKAHEAD_MS: Long = 365L * 24 * 60 * 60_000L
 
     const val TRAVEL_MODE: String = "car"
-
-    /**
-     * Below this travel time a located event isn't worth framing as a trip:
-     * the reminder shows the plain event title instead of "Leave for …".
-     */
-    const val MIN_TRIP_TRAVEL_MS: Long = 5 * 60_000L
 }

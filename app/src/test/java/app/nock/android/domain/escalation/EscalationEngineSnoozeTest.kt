@@ -1,5 +1,6 @@
 package app.nock.android.domain.escalation
 
+import app.nock.android.alarm.AlarmService
 import app.nock.android.data.entity.ActiveEscalationEntity
 import app.nock.android.domain.model.StageType
 import io.mockk.coEvery
@@ -7,6 +8,7 @@ import io.mockk.coVerify
 import io.mockk.slot
 import io.mockk.verify
 import kotlinx.coroutines.test.runTest
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -17,10 +19,31 @@ import org.junit.Test
  */
 class EscalationEngineSnoozeTest {
 
+    // AlarmService.ringingEscalationId has a private setter; set it via reflection
+    // so we can exercise the "is this escalation the one currently ringing?" branch
+    // that gates stopAlarm().
+    private fun setRinging(id: Long?) {
+        val field = AlarmService::class.java.getDeclaredField("ringingEscalationId")
+        field.isAccessible = true
+        field.set(null, id)
+    }
+
+    @After fun resetRinging() = setRinging(null)
+
+    // The ALARM (last) stage fires at startedAt + its offset, so a row that is
+    // genuinely firing the last stage at NOW must have started one offset earlier.
+    // snooze() derives the firing stage from elapsed time, so the fixture has to be
+    // consistent with that or it would look like the pre-trigger stage is firing.
+    private val lastStageStartedAt = NOW - TEST_CHAIN.stages.last().offsetMs
+
     @Test fun snooze_on_last_stage_reschedules_one_repeat_interval_from_now() = runTest {
         val h = EngineHarness(now = NOW)
         // Currently firing the ALARM (last) stage.
-        val row = activeEntity(nextStageIndex = TEST_CHAIN.lastIndex, nextFireAtMs = NOW)
+        val row = activeEntity(
+            startedAtMs = lastStageStartedAt,
+            nextStageIndex = TEST_CHAIN.lastIndex,
+            nextFireAtMs = NOW,
+        )
         h.dao.upsert(row)
 
         h.engine.snooze(row.id)
@@ -39,7 +62,11 @@ class EscalationEngineSnoozeTest {
 
     @Test fun snooze_uses_current_clock_not_the_baseline() = runTest {
         val h = EngineHarness(now = NOW)
-        val row = activeEntity(nextStageIndex = TEST_CHAIN.lastIndex, nextFireAtMs = NOW)
+        val row = activeEntity(
+            startedAtMs = lastStageStartedAt,
+            nextStageIndex = TEST_CHAIN.lastIndex,
+            nextFireAtMs = NOW,
+        )
         h.dao.upsert(row)
 
         // Wall clock advances 3 minutes before the user taps snooze.
@@ -73,8 +100,14 @@ class EscalationEngineSnoozeTest {
 
     @Test fun snooze_always_tears_down_current_alarm_visuals() = runTest {
         val h = EngineHarness(now = NOW)
-        val row = activeEntity(nextStageIndex = TEST_CHAIN.lastIndex, nextFireAtMs = NOW)
+        val row = activeEntity(
+            startedAtMs = lastStageStartedAt,
+            nextStageIndex = TEST_CHAIN.lastIndex,
+            nextFireAtMs = NOW,
+        )
         h.dao.upsert(row)
+        // This escalation is the one currently ringing, so snooze must silence it.
+        setRinging(row.id)
 
         h.engine.snooze(row.id)
 
@@ -111,6 +144,7 @@ class EscalationEngineSnoozeTest {
     @Test fun snooze_persists_rearm_before_attempting_telegram_cleanup() = runTest {
         val h = EngineHarness(now = NOW)
         val row = activeEntity(
+            startedAtMs = lastStageStartedAt,
             nextStageIndex = TEST_CHAIN.lastIndex,
             nextFireAtMs = NOW,
             sentTelegramMessageIdsCsv = "10,20",
@@ -142,7 +176,7 @@ class EscalationEngineSnoozeTest {
         val row = ActiveEscalationEntity(
             id = 0,
             reminderId = REMINDER_ID,
-            startedAtMs = NOW,
+            startedAtMs = lastStageStartedAt,
             nextStageIndex = TEST_CHAIN.lastIndex,
             nextFireAtMs = NOW,
             chainSnapshotJson = "{not valid json",

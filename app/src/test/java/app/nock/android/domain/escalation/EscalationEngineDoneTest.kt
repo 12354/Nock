@@ -42,6 +42,8 @@ class EscalationEngineDoneTest {
             sentTelegramMessageIdsCsv = "1,2",
         )
         h.dao.upsert(row)
+        // This escalation is the one currently ringing, so Done must silence it.
+        setRinging(row.id)
 
         h.engine.done(row.id)
 

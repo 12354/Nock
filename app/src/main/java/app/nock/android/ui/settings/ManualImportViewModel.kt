@@ -9,6 +9,8 @@ import app.nock.android.trip.TripPreview
 import app.nock.android.trip.TripSyncManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -28,6 +30,12 @@ data class ManualImportUiState(
     val eventsLoading: Boolean = false,
     val query: String = "",
     val selectedEvent: CalendarEvent? = null,
+    /**
+     * Editable destination for the import, seeded from the chosen event's location.
+     * Changing it re-routes the preview (fresh travel time + leave-by) and is the
+     * location the imported reminder is created with.
+     */
+    val location: String = "",
     val preview: TripPreview? = null,
     val previewLoading: Boolean = false,
     val importing: Boolean = false,
@@ -54,6 +62,10 @@ class ManualImportViewModel @Inject constructor(
 
     private val _state = MutableStateFlow(ManualImportUiState())
     val state: StateFlow<ManualImportUiState> = _state.asStateFlow()
+
+    // Debounces re-routing while the user edits the location field, so we look up a
+    // fresh travel time once they pause typing rather than on every keystroke.
+    private var locationDebounceJob: Job? = null
 
     init {
         loadCalendars()
@@ -100,26 +112,52 @@ class ManualImportViewModel @Inject constructor(
     fun setQuery(q: String) = _state.update { it.copy(query = q) }
 
     fun selectEvent(event: CalendarEvent) {
+        locationDebounceJob?.cancel()
         _state.update {
             it.copy(
                 stage = ManualImportStage.PREVIEW,
                 selectedEvent = event,
+                location = event.location,
                 preview = null,
                 previewLoading = true,
                 imported = false,
             )
         }
-        refreshPreview(event)
+        refreshPreview()
     }
 
-    private fun refreshPreview(event: CalendarEvent) {
-        val bufferMs = _state.value.bufferMin * 60_000L
+    /**
+     * Recompute the preview for the current event, edited location and buffer. The
+     * location lookup (geocode + routing) runs off the main thread; a result is
+     * dropped if the user has since switched events or changed the location.
+     */
+    private fun refreshPreview() {
+        val st = _state.value
+        val event = st.selectedEvent ?: return
+        val location = st.location
+        val bufferMs = st.bufferMin * 60_000L
+        val effective = event.copy(location = location)
         viewModelScope.launch {
-            val preview = withContext(Dispatchers.IO) { trips.previewEvent(event, bufferMs) }
+            val preview = withContext(Dispatchers.IO) { trips.previewEvent(effective, bufferMs) }
             _state.update {
-                if (it.selectedEvent != event) it
+                if (it.selectedEvent != event || it.location != location) it
                 else it.copy(preview = preview, previewLoading = false)
             }
+        }
+    }
+
+    /**
+     * Location field handler: store the edited destination and re-route the preview
+     * after a short pause. The existing preview card stays on screen (with its prior
+     * travel time) while the new route is fetched, so editing stays smooth.
+     */
+    fun setLocation(location: String) {
+        _state.update { it.copy(location = location) }
+        locationDebounceJob?.cancel()
+        if (_state.value.selectedEvent == null) return
+        locationDebounceJob = viewModelScope.launch {
+            delay(LOCATION_DEBOUNCE_MS)
+            refreshPreview()
         }
     }
 
@@ -138,23 +176,29 @@ class ManualImportViewModel @Inject constructor(
     }
 
     fun importSelected() {
-        val event = _state.value.selectedEvent ?: return
-        if (_state.value.importing) return
-        val bufferMs = _state.value.bufferMin * 60_000L
+        val st = _state.value
+        val event = st.selectedEvent ?: return
+        if (st.importing) return
+        val bufferMs = st.bufferMin * 60_000L
+        // Import with the edited location so a destination the user fixed/added on
+        // the preview is what the reminder is created with.
+        val effective = event.copy(location = st.location)
         _state.update { it.copy(importing = true) }
         viewModelScope.launch {
-            withContext(Dispatchers.IO) { trips.importEvent(event, bufferMs) }
+            withContext(Dispatchers.IO) { trips.importEvent(effective, bufferMs) }
             _state.update { it.copy(importing = false, imported = true) }
         }
     }
 
     /** Restart the flow to import another appointment from the same calendar. */
     fun importAnother() {
+        locationDebounceJob?.cancel()
         val cal = _state.value.selectedCalendar
         _state.update {
             it.copy(
                 stage = if (cal != null) ManualImportStage.PICK_EVENT else ManualImportStage.PICK_CALENDAR,
                 selectedEvent = null,
+                location = "",
                 preview = null,
                 previewLoading = false,
                 imported = false,
@@ -171,10 +215,12 @@ class ManualImportViewModel @Inject constructor(
         val s = _state.value
         return when (s.stage) {
             ManualImportStage.PREVIEW -> {
+                locationDebounceJob?.cancel()
                 _state.update {
                     it.copy(
                         stage = ManualImportStage.PICK_EVENT,
                         selectedEvent = null,
+                        location = "",
                         preview = null,
                         previewLoading = false,
                         imported = false,
@@ -203,5 +249,8 @@ class ManualImportViewModel @Inject constructor(
         const val MIN_BUFFER_MIN = 5
         const val MAX_BUFFER_MIN = 120
         const val DEFAULT_BUFFER_MIN = 30
+
+        /** How long to wait after the last location keystroke before re-routing. */
+        private const val LOCATION_DEBOUNCE_MS = 1_000L
     }
 }

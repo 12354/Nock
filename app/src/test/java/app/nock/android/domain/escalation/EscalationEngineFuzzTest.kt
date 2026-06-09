@@ -172,7 +172,10 @@ class EscalationEngineFuzzTest {
         private val notifier: NotificationPresenter = mockk(relaxed = true)
         private val telegram: TelegramSender = mockk(relaxed = true)
         private val history: app.nock.android.history.AlarmHistoryLogger = mockk(relaxed = true)
-        private val engine = EscalationEngine(repo, dao, settings, scheduler, notifier, telegram, clock, history, pendingDeletionDao)
+        private val calendarTripDao: app.nock.android.data.dao.CalendarTripDao = mockk(relaxed = true) {
+            coEvery { getByReminderId(any()) } returns null
+        }
+        private val engine = EscalationEngine(repo, dao, settings, scheduler, notifier, telegram, clock, history, pendingDeletionDao, calendarTripDao)
 
         init {
             // A plain group, one that mirrors silent stages to Telegram, and one

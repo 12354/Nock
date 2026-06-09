@@ -39,10 +39,13 @@ data class EditState(
     val intervalHours: Int = 8,
     val intervalStartMs: Long? = null,
     val groups: List<Group> = emptyList(),
-    // Location is only meaningful — and only shown — for reminders imported from
-    // the calendar; isCalendarReminder gates the field's visibility.
+    // Location and buffer are only meaningful — and only shown — for reminders
+    // imported from the calendar; isCalendarReminder gates their visibility.
     val isCalendarReminder: Boolean = false,
     val location: String = "",
+    // Per-reminder heads-up buffer in whole minutes: the reminder starts at
+    // appointment − travel − buffer. Drives this trip's escalation chain alone.
+    val bufferMin: Int = EditReminderViewModel.DEFAULT_TRIP_BUFFER_MIN,
     val nlInput: String = "",
     val nlThinking: Boolean = false,
     val nlError: String? = null,
@@ -81,6 +84,7 @@ class EditReminderViewModel @Inject constructor(
             // A non-null location means this reminder was imported from the calendar;
             // null means it's an ordinary reminder with no editable location.
             val tripLocation = tripSync.tripLocation(reminderId)
+            val tripBuffer = tripSync.tripBufferMin(reminderId)
             val kind = when (r.schedule) {
                 is Schedule.OneShot -> ScheduleKind.ONESHOT
                 is Schedule.Daily -> ScheduleKind.DAILY
@@ -105,6 +109,7 @@ class EditReminderViewModel @Inject constructor(
                     intervalStartMs = (r.schedule as? Schedule.IntervalFromLast)?.startAtMs,
                     isCalendarReminder = tripLocation != null,
                     location = tripLocation.orEmpty(),
+                    bufferMin = tripBuffer ?: DEFAULT_TRIP_BUFFER_MIN,
                     groups = groups
                 )
             }
@@ -113,6 +118,8 @@ class EditReminderViewModel @Inject constructor(
 
     fun updateName(s: String) = _state.update { it.copy(name = s) }
     fun updateLocation(s: String) = _state.update { it.copy(location = s) }
+    fun updateBufferMin(min: Int) =
+        _state.update { it.copy(bufferMin = min.coerceIn(MIN_TRIP_BUFFER_MIN, MAX_TRIP_BUFFER_MIN)) }
     fun updateGroup(id: Long) = _state.update { it.copy(groupId = id) }
     fun updateKind(k: ScheduleKind) = _state.update { it.copy(scheduleType = k) }
     fun updateOneShot(ms: Long) = _state.update { it.copy(oneShotMs = ms) }
@@ -232,12 +239,14 @@ class EditReminderViewModel @Inject constructor(
             createdAt = existing?.createdAt ?: now,
         )
         recordHistory(existing, name, schedule, nextFire, s.groupId, s.groups)
-        // For a calendar-imported reminder, persist an edited location and refresh
-        // its traffic-aware leave-by time. The recompute does network work, so run
-        // it off the save path rather than blocking the screen from closing.
+        // For a calendar-imported reminder, persist an edited buffer and location.
+        // The buffer re-arms locally (no network). A changed location needs a fresh
+        // traffic-aware leave-by, so kick the recompute off the save path rather than
+        // blocking the screen from closing — it re-arms using the just-saved buffer.
         if (s.isCalendarReminder && s.reminderId != 0L) {
-            val changed = tripSync.setTripLocation(s.reminderId, s.location.trim())
-            if (changed) viewModelScope.launch { tripSync.recompute(s.reminderId) }
+            tripSync.setTripBufferMin(s.reminderId, s.bufferMin)
+            val locationChanged = tripSync.setTripLocation(s.reminderId, s.location.trim())
+            if (locationChanged) viewModelScope.launch { tripSync.recompute(s.reminderId) }
         }
     }
 
@@ -279,5 +288,10 @@ class EditReminderViewModel @Inject constructor(
 
     companion object {
         private const val AI_DEBOUNCE_MS = 800L
+
+        // Per-reminder trip buffer bounds (minutes), shared with the editor's slider.
+        const val MIN_TRIP_BUFFER_MIN = 5
+        const val MAX_TRIP_BUFFER_MIN = 120
+        const val DEFAULT_TRIP_BUFFER_MIN = 30
     }
 }

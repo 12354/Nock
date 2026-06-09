@@ -187,15 +187,26 @@ would be a premature abstraction.
   reorder, remove, re-add, and change the offset of each stage. Per-group
   override surface is the "Custom chain" toggle inside each group's
   editor.
-- Manual calendar import has a buffer slider (progress bar) on the preview
-  step: it sets how long before departure the first heads-up fires, so the
-  reminder starts at `appointment − travel − buffer`. Default 30 min,
-  range 5–120 in 5-min steps, seeded from the configured trip buffer.
-  Because trip escalation lives on the *shared* Trips-group chain (v1 has no
-  per-reminder override — see §11 of plan.md), the chosen buffer is also
-  persisted to `KEY_TRIP_BUFFER_MIN` on import; otherwise the next daily sync
-  would rebuild the group chain from the stored setting and revert it. So the
-  slider and the Settings "Heads-up before leaving" field are two views of the
-  same trip buffer. Moving the slider only re-frames the preview's escalation
-  step offsets locally (`TripSyncManager.reframeWithBuffer`) — no extra
-  routing call, since travel time and leave-by don't depend on the buffer.
+- **Per-reminder trip buffer.** Each calendar-imported trip carries its own
+  heads-up buffer (`CalendarTripEntity.bufferMs`), so the reminder starts at
+  `appointment − travel − buffer`. This is a genuine per-reminder escalation
+  override for trips, narrower than the general per-reminder override that
+  plan.md §11 still defers: the engine special-cases the on-demand "trips"
+  group — `EscalationEngine.effectiveChainFor` builds that reminder's chain
+  from its trip row's buffer (`TripChain.build(trip.bufferMs, …)`) instead of
+  the shared group chain. The chain is snapshotted at arm time as usual, so
+  recompute/boot re-arms preserve it.
+  - Edited in two places: the manual-import preview slider (sets the initial
+    buffer for that import) and the reminder editor (a slider shown for
+    calendar reminders, right under the editable location — `TripBufferField`).
+    Both default to 30 min, range 5–120 in 5-min steps.
+  - Durability: `recompute()` and the daily `syncNow()` preserve a trip's
+    stored buffer (`existing.bufferMs`) instead of resetting it to the global
+    default, so a per-reminder edit survives travel-time refreshes and
+    re-syncs. Only a brand-new trip takes the global `KEY_TRIP_BUFFER_MIN`
+    default. The Settings "Heads-up before leaving" field is therefore just
+    the default for newly imported trips; it no longer retroactively changes
+    existing ones.
+  - `setTripBufferMin` re-arms locally (no TomTom call) since only the chain
+    offsets depend on the buffer; the cached travel estimate and leave-by are
+    reused.

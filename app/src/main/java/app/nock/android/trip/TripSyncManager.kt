@@ -182,7 +182,10 @@ class TripSyncManager @Inject constructor(
         if (!enabled() || !calendar.hasPermission()) return
         // If the user dismissed the reminder, the row is a tombstone — leave it.
         repo.getReminder(reminderId) ?: return
-        val buffer = bufferMs()
+        // Preserve this trip's own (per-reminder) buffer — a recompute only refreshes
+        // the travel estimate; it must not reset a buffer the user edited back to the
+        // global default.
+        val buffer = trip.bufferMs
         val mode = travelMode()
         val origin = homeCoords(trip)
         val dest = destCoords(trip)
@@ -216,7 +219,9 @@ class TripSyncManager @Inject constructor(
 
         val comp = computeTrip(e, existing, mode)
         logSyncedEvent(e, comp.hasLocation, comp.origin, comp.dest, comp.travelMs, comp.leaveByMs)
-        writeTrip(e, existing, comp, tripsGroupId, buffer, mode, now)
+        // Keep an existing trip's per-reminder buffer across re-syncs; only a brand-new
+        // trip takes the global default.
+        writeTrip(e, existing, comp, tripsGroupId, existing?.bufferMs ?: buffer, mode, now)
     }
 
     /**
@@ -405,23 +410,51 @@ class TripSyncManager @Inject constructor(
      * user deliberately brings back a reminder they dismissed — and it prunes
      * nothing. Recomputes the estimate fresh so the import reflects current traffic.
      *
-     * A [bufferMsOverride] (from the importer's buffer slider) is persisted as the
-     * trip buffer: trip escalation lives on the shared Trips-group chain, which the
-     * daily sync rebuilds from the stored setting, so persisting is what keeps the
-     * user's chosen heads-up lead from being reverted on the next sync.
+     * A [bufferMsOverride] (from the importer's buffer slider) is stored as this
+     * reminder's own per-reminder buffer; the engine builds its escalation chain
+     * from it, so it never affects other trips. Absent an override, an existing
+     * trip keeps its buffer and a fresh one takes the global default.
      * Returns the new/updated reminder id.
      */
     suspend fun importEvent(event: CalendarEvent, bufferMsOverride: Long? = null): Long = mutex.withLock {
         val now = time.nowMs()
-        if (bufferMsOverride != null) {
-            settings.set(SettingsRepository.KEY_TRIP_BUFFER_MIN, (bufferMsOverride / 60_000L).toString())
-        }
-        val buffer = bufferMsOverride ?: bufferMs()
         val mode = travelMode()
-        val tripsGroupId = ensureTripsGroup(buffer)
+        // The group chain is only the default/fallback now that each trip carries its
+        // own buffer, so seed the group from the global default, not this import.
+        val tripsGroupId = ensureTripsGroup(bufferMs())
         val existing = tripDao.getByEvent(event.eventId, event.beginMs)
+        val buffer = bufferMsOverride ?: existing?.bufferMs ?: bufferMs()
         val comp = computeTrip(event, existing, mode)
         writeTrip(event, existing, comp, tripsGroupId, buffer, mode, now)
+    }
+
+    // --- Editing an imported trip's buffer ---
+
+    /**
+     * This trip's heads-up buffer in whole minutes, or null when [reminderId] isn't
+     * a calendar-imported trip — lets the editor decide whether to show the field.
+     */
+    suspend fun tripBufferMin(reminderId: Long): Int? =
+        tripDao.getByReminderId(reminderId)?.let { (it.bufferMs / 60_000L).toInt() }
+
+    /**
+     * Persist a user-edited per-reminder [bufferMin] for the trip behind
+     * [reminderId] and re-arm it so the new heads-up lead takes effect immediately.
+     * No re-routing: only the escalation offsets depend on the buffer, so the cached
+     * travel estimate and leave-by are reused. Returns true when the value changed
+     * (so the caller can skip redundant work); no-op for a non-trip reminder.
+     */
+    suspend fun setTripBufferMin(reminderId: Long, bufferMin: Int): Boolean = mutex.withLock {
+        val newBufferMs = bufferMin.toLong() * 60_000L
+        engine.runExclusive {
+            val trip = tripDao.getByReminderId(reminderId) ?: return@runExclusive false
+            if (trip.bufferMs == newBufferMs) return@runExclusive false
+            tripDao.upsert(trip.copy(bufferMs = newBufferMs))
+            // Re-arm from the reminder's current trigger; the engine reads the row's
+            // (now updated) buffer when rebuilding the trip's chain.
+            repo.getReminder(reminderId)?.let { r -> r.nextFireAt?.let { arm(r, it) } }
+            true
+        }
     }
 
     /** Re-save reminder + row + escalation for a recomputed travel estimate. */

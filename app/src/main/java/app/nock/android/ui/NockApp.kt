@@ -45,6 +45,7 @@ import app.nock.android.ui.settings.DriveSettingsScreen
 import app.nock.android.ui.settings.GeneralSettingsScreen
 import app.nock.android.ui.settings.IntegrationCategory
 import app.nock.android.ui.settings.IntegrationsSettingsScreen
+import app.nock.android.ui.settings.ManualImportScreen
 import app.nock.android.ui.settings.NotificationsSettingsScreen
 import app.nock.android.ui.settings.SettingsCategory
 import app.nock.android.ui.settings.SettingsScreen
@@ -160,7 +161,15 @@ fun NockApp(
                 TelegramSettingsScreen(onBack = { nav.popBackStack() })
             }
             composable("settings/${SettingsCategory.INTEGRATIONS}/${IntegrationCategory.CALENDAR}") {
-                CalendarSettingsScreen(onBack = { nav.popBackStack() })
+                CalendarSettingsScreen(
+                    onBack = { nav.popBackStack() },
+                    onOpenManualImport = {
+                        nav.navigate("settings/${SettingsCategory.INTEGRATIONS}/${IntegrationCategory.CALENDAR}/import")
+                    }
+                )
+            }
+            composable("settings/${SettingsCategory.INTEGRATIONS}/${IntegrationCategory.CALENDAR}/import") {
+                ManualImportScreen(onBack = { nav.popBackStack() })
             }
             composable("settings/${SettingsCategory.INTEGRATIONS}/${IntegrationCategory.DEEPSEEK}") {
                 DeepSeekSettingsScreen(onBack = { nav.popBackStack() })

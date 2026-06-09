@@ -308,6 +308,47 @@
     <string name="trips_synclog_empty">(tap Sync now to fill this log)</string>
     <string name="trips_synclog_copied">Sync log copied to clipboard</string>
 
+    <!-- Settings: manual single-appointment import -->
+    <string name="trips_manual_import_title">Import single appointment</string>
+    <string name="trips_manual_import_desc">Pick one calendar event and import it as an alarm — handy for bringing back an appointment you dismissed, since dismissed alarms aren\'t recreated automatically.</string>
+    <string name="trips_manual_import_open">Import single appointment</string>
+    <string name="trips_manual_step_calendar">Step 1 of 3 · Calendar</string>
+    <string name="trips_manual_step_event">Step 2 of 3 · Appointment</string>
+    <string name="trips_manual_step_preview">Step 3 of 3 · Preview</string>
+    <string name="trips_manual_pick_calendar">Choose a calendar</string>
+    <string name="trips_manual_pick_calendar_help">Pick the calendar the appointment is in.</string>
+    <string name="trips_manual_no_calendars">No calendars found on this device.</string>
+    <string name="trips_manual_pick_event">Choose an appointment</string>
+    <string name="trips_manual_pick_event_help">Search by name or date, or just scroll to find it.</string>
+    <string name="trips_manual_search_hint">Search by name or date</string>
+    <string name="trips_manual_loading_events">Loading appointments…</string>
+    <string name="trips_manual_no_events">No upcoming appointments in this calendar.</string>
+    <string name="trips_manual_no_matches">No appointments match your search.</string>
+    <string name="trips_manual_event_no_location">No location</string>
+    <string name="trips_manual_computing">Working out travel time…</string>
+    <string name="trips_manual_preview_reminder">Reminder preview</string>
+    <string name="trips_manual_field_appointment">Appointment</string>
+    <string name="trips_manual_field_calendar">Calendar</string>
+    <string name="trips_manual_field_starts">Starts</string>
+    <string name="trips_manual_field_location">Location</string>
+    <string name="trips_manual_field_from">From (home)</string>
+    <string name="trips_manual_field_travel">Travel time (TomTom)</string>
+    <string name="trips_manual_field_leave_by">Leave by</string>
+    <string name="trips_manual_field_alerts_at">Alerts at</string>
+    <string name="trips_manual_field_steps">Alarm steps</string>
+    <string name="trips_manual_no_location_note">No location — this alarm fires at the appointment\'s start time.</string>
+    <string name="trips_manual_travel_fallback">Estimate — couldn\'t reach TomTom; using a default travel time.</string>
+    <string name="trips_manual_home_missing">No home address set — using a default travel time. Set one above for an accurate leave-by time.</string>
+    <string name="trips_manual_dest_unresolved">Couldn\'t look up this location — using a default travel time.</string>
+    <string name="trips_manual_already_imported">This appointment is already an alarm. Importing again refreshes it.</string>
+    <string name="trips_manual_previously_dismissed">You dismissed this appointment\'s alarm before. Importing brings it back.</string>
+    <string name="trips_manual_import_button">Import this reminder</string>
+    <string name="trips_manual_importing">Importing…</string>
+    <string name="trips_manual_imported">Reminder imported.</string>
+    <string name="trips_manual_import_another">Import another</string>
+    <string name="trips_manual_duration_min">%1$d min</string>
+    <string name="trips_manual_duration_h_min">%1$d h %2$d min</string>
+
     <!-- Settings: Alarm history -->
     <string name="settings_alarm_history_title">Alarm history</string>
     <string name="settings_alarm_history_help">Everything your alarms did — created, edited, fired, done, snoozed, and late catch-ups after a restart. Copy this and paste it when reporting a wrong-time or missed alarm.</string>

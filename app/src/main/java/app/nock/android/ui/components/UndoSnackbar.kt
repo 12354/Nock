@@ -8,7 +8,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarData
 import androidx.compose.material3.Text
@@ -34,7 +36,16 @@ fun UndoSnackbar(data: SnackbarData, durationMs: Long) {
         modifier = Modifier.padding(12.dp),
         action = data.visuals.actionLabel?.let { label ->
             {
-                TextButton(onClick = { data.performAction() }) {
+                // Snackbar renders on the inverted (light) surface, so the default
+                // TextButton color (primary = light purple) is barely legible here.
+                // inversePrimary is the M3 token for snackbar actions and reads
+                // clearly on the light surface.
+                TextButton(
+                    onClick = { data.performAction() },
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.inversePrimary
+                    )
+                ) {
                     Text(label)
                 }
             }

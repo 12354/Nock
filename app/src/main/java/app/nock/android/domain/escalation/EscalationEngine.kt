@@ -5,16 +5,19 @@ import app.nock.android.alarm.AlarmService
 import app.nock.android.data.NockRepository
 import app.nock.android.data.SettingsRepository
 import app.nock.android.data.dao.ActiveEscalationDao
+import app.nock.android.data.dao.CalendarTripDao
 import app.nock.android.data.dao.PendingTelegramDeletionDao
 import app.nock.android.data.entity.ActiveEscalationEntity
 import app.nock.android.data.entity.PendingTelegramDeletionEntity
 import app.nock.android.data.json.ChainJson
 import app.nock.android.domain.model.EscalationChain
+import app.nock.android.domain.model.Group
 import app.nock.android.domain.model.Reminder
 import app.nock.android.domain.model.Schedule
 import app.nock.android.domain.model.StageConfig
 import app.nock.android.domain.model.StageType
 import app.nock.android.domain.time.TimeSource
+import app.nock.android.domain.trip.TripChain
 import app.nock.android.history.AlarmHistoryLogger
 import app.nock.android.notif.NotificationPresenter
 import app.nock.android.telegram.TelegramSender
@@ -35,6 +38,7 @@ class EscalationEngine @Inject constructor(
     private val time: TimeSource,
     private val history: AlarmHistoryLogger,
     private val pendingDeletionDao: PendingTelegramDeletionDao,
+    private val calendarTripDao: CalendarTripDao,
 ) {
     // All escalation-state mutations are serialized through this mutex. The
     // engine is driven by independent BroadcastReceivers (alarm delivery, Done/
@@ -73,6 +77,24 @@ class EscalationEngine @Inject constructor(
         return next
     }
 
+    /**
+     * The escalation chain to arm [reminder] with. Calendar-imported trips carry a
+     * per-reminder heads-up buffer (edited in the reminder editor), so their chain
+     * is built from that buffer rather than the shared Trips-group default — this is
+     * what makes the buffer truly per-reminder. The chain is snapshotted at arm time
+     * (chainSnapshotJson), so each trip keeps the lead time it was armed with.
+     * Every non-trip reminder uses its group's effective chain unchanged.
+     */
+    private suspend fun effectiveChainFor(reminder: Reminder, group: Group): EscalationChain {
+        val base = repo.effectiveChain(group)
+        if (group.seedKey == TRIPS_SEED_KEY) {
+            calendarTripDao.getByReminderId(reminder.id)?.let { trip ->
+                return TripChain.build(trip.bufferMs, base.repeatIntervalMs)
+            }
+        }
+        return base
+    }
+
     suspend fun startEscalationAt(reminder: Reminder, scheduledAtMs: Long) {
         mutex.withLock { startEscalationAtLocked(reminder, scheduledAtMs) }
         flushPendingTelegramDeletions()
@@ -103,7 +125,7 @@ class EscalationEngine @Inject constructor(
             activeDao.delete(existing)
         }
         val group = repo.getGroup(reminder.groupId) ?: return
-        val chain = repo.effectiveChain(group)
+        val chain = effectiveChainFor(reminder, group)
         val now = time.nowMs()
         if (group.isPaused(now)) return
 
@@ -154,7 +176,7 @@ class EscalationEngine @Inject constructor(
     private suspend fun startEscalationFromBootLocked(reminder: Reminder) {
         val group = repo.getGroup(reminder.groupId) ?: return
         if (group.isPaused(time.nowMs())) return
-        val chain = repo.effectiveChain(group)
+        val chain = effectiveChainFor(reminder, group)
         val firstOffset = chain.stages.first().offsetMs
         val now = time.nowMs()
         val syntheticStart = now - firstOffset
@@ -736,5 +758,9 @@ class EscalationEngine @Inject constructor(
         // alarms are floored a second out when scheduled, so legitimate jitter
         // stays well under this; anything earlier is a real disagreement.
         private const val SANITY_TOLERANCE_MS = 1_000L
+
+        // Seed key of the on-demand calendar-import ("Appointments") group whose
+        // reminders carry a per-reminder trip buffer. Matches TripSyncManager.
+        private const val TRIPS_SEED_KEY = "trips"
     }
 }

@@ -3,6 +3,7 @@ package app.nock.android.domain.escalation
 import app.nock.android.alarm.AlarmScheduler
 import app.nock.android.data.NockRepository
 import app.nock.android.data.SettingsRepository
+import app.nock.android.data.dao.CalendarTripDao
 import app.nock.android.data.entity.ActiveEscalationEntity
 import app.nock.android.data.json.ChainJson
 import app.nock.android.domain.model.EscalationChain
@@ -119,15 +120,19 @@ class EngineHarness(now: Long = NOW) {
     val notifier: NotificationPresenter = mockk(relaxed = true)
     val telegram: TelegramSender = mockk(relaxed = true)
     val history: AlarmHistoryLogger = mockk(relaxed = true)
+    val calendarTripDao: CalendarTripDao = mockk(relaxed = true)
 
     val engine = app.nock.android.domain.escalation.EscalationEngine(
-        repo, dao, settings, scheduler, notifier, telegram, clock, history, pendingDeletionDao
+        repo, dao, settings, scheduler, notifier, telegram, clock, history, pendingDeletionDao,
+        calendarTripDao
     )
 
     init {
         // Sensible defaults; individual tests override as needed.
         coEvery { settings.getStageChain() } returns TEST_CHAIN
         coEvery { repo.effectiveChain(any()) } returns TEST_CHAIN
+        // Non-trip reminders by default: no trip row, so the group chain is used.
+        coEvery { calendarTripDao.getByReminderId(any()) } returns null
         coEvery { telegram.send(any(), any()) } returns TelegramResult(ok = true, messageId = null)
         coEvery { telegram.deleteMessage(any()) } returns true
     }

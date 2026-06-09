@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Place
+import androidx.compose.material.icons.filled.Timelapse
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -132,8 +133,9 @@ fun EditReminderRoute(
                     .padding(horizontal = 16.dp)
             )
 
-            // Location is editable only for reminders imported from the calendar;
-            // it drives the traffic-aware leave-by time, so changing it re-routes.
+            // Location and buffer are editable only for reminders imported from the
+            // calendar; location drives the traffic-aware leave-by (changing it
+            // re-routes), buffer sets this reminder's own heads-up lead.
             if (state.isCalendarReminder) {
                 OutlinedTextField(
                     value = state.location,
@@ -147,6 +149,7 @@ fun EditReminderRoute(
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp)
                 )
+                TripBufferField(state.bufferMin, vm::updateBufferMin)
             }
 
             GroupSelector(
@@ -185,6 +188,55 @@ fun EditReminderRoute(
 
             EscalationSummary(state)
         }
+    }
+}
+
+/**
+ * Per-reminder heads-up buffer for a calendar-imported reminder: how long before
+ * departure the first nudge fires, so the reminder starts at
+ * appointment − travel − buffer. Snaps to whole 5-minute steps.
+ */
+@Composable
+private fun TripBufferField(bufferMin: Int, onChange: (Int) -> Unit) {
+    val min = EditReminderViewModel.MIN_TRIP_BUFFER_MIN
+    val max = EditReminderViewModel.MAX_TRIP_BUFFER_MIN
+    val step = 5
+    val steps = ((max - min) / step) - 1
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                Icons.Filled.Timelapse,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.width(12.dp))
+            Text(
+                stringResource(R.string.edit_trip_buffer_label),
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                stringResource(R.string.edit_trip_buffer_value, bufferMin),
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
+        Slider(
+            value = bufferMin.coerceIn(min, max).toFloat(),
+            onValueChange = { onChange((it / step).toInt() * step) },
+            valueRange = min.toFloat()..max.toFloat(),
+            steps = steps,
+        )
+        Text(
+            stringResource(R.string.edit_trip_buffer_help),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.outline,
+        )
     }
 }
 

@@ -186,9 +186,12 @@ class PendingVoiceProcessor @Inject constructor(
         // Never route a voice reminder into the calendar-import group (seedKey "trips",
         // shown as Appointments / Termine); it is populated from the device calendar.
         val assignable = groups.filter { it.seedKey != "trips" }.ifEmpty { groups }
+        // When DeepSeek can't confidently match a group it omits the hint; fall back to
+        // the Errands group (seedKey "errands") rather than whatever happens to be first.
+        val fallbackGroup = assignable.firstOrNull { it.seedKey == "errands" } ?: assignable.first()
         val groupId = spec.groupHint?.let { hint ->
             assignable.firstOrNull { it.name.equals(hint, ignoreCase = true) }?.id
-        } ?: assignable.first().id
+        } ?: fallbackGroup.id
 
         val nowMs = System.currentTimeMillis()
         val nextFire = spec.schedule.nextFireFrom(nowMs, null)

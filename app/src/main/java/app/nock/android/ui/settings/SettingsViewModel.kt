@@ -22,6 +22,7 @@ import app.nock.android.telegram.TelegramSender
 import app.nock.android.trip.CalendarInfo
 import app.nock.android.trip.CalendarRepository
 import app.nock.android.trip.TomTomClient
+import app.nock.android.trip.TripSyncLog
 import app.nock.android.trip.TripSyncManager
 import app.nock.android.domain.trip.TripDefaults
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -72,10 +73,16 @@ class SettingsViewModel @Inject constructor(
     private val alarmHistory: AlarmHistoryLogger,
     private val activeDao: ActiveEscalationDao,
     private val trips: TripSyncManager,
+    private val tripSyncLog: TripSyncLog,
     private val tomtom: TomTomClient,
     private val calendar: CalendarRepository,
     @ApplicationScope private val appScope: CoroutineScope,
 ) : ViewModel() {
+
+    /** Diagnostic of the latest calendar sync, shown under the Sync button. */
+    val tripSyncLogText: StateFlow<String> = tripSyncLog.log
+
+    fun clearTripSyncLog() = tripSyncLog.clear()
 
     fun syncSeedGroupNames() {
         viewModelScope.launch { seedGroupLocaleSync.sync() }

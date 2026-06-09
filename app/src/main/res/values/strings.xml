@@ -300,6 +300,13 @@
     <string name="trips_reminder_name">Leave for %1$s</string>
     <string name="trips_calendar_unnamed">(unnamed)</string>
     <string name="trips_event_untitled">(no title)</string>
+    <!-- Settings: calendar sync diagnostic log, shown under the Sync button -->
+    <string name="trips_synclog_title">Sync log</string>
+    <string name="trips_synclog_help">Filled every time the calendar syncs. If an event isn\'t turning into an alarm, tap Sync now, then copy this — it lists every event found and why each was or wasn\'t picked up.</string>
+    <string name="trips_synclog_copy">Copy</string>
+    <string name="trips_synclog_clear">Clear</string>
+    <string name="trips_synclog_empty">(tap Sync now to fill this log)</string>
+    <string name="trips_synclog_copied">Sync log copied to clipboard</string>
 
     <!-- Settings: Alarm history -->
     <string name="settings_alarm_history_title">Alarm history</string>

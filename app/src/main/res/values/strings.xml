@@ -80,6 +80,7 @@
     <!-- Edit reminder screen -->
     <string name="edit_title_new">New reminder</string>
     <string name="edit_title_edit">Edit reminder</string>
+    <string name="edit_import_from_calendar">Import from calendar</string>
     <string name="edit_quick_add_label">Quick add (natural language)</string>
     <string name="edit_quick_add_placeholder">e.g. Feed dog every day at 8am and 6pm — Pets</string>
     <string name="edit_ai_thinking">AI is thinking…</string>

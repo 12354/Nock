@@ -183,6 +183,15 @@ class EditReminderViewModel @Inject constructor(
         is Schedule.OnUnlock -> st.copy(scheduleType = ScheduleKind.ON_UNLOCK)
     }
 
+    /** Deletes the reminder being edited (no-op for a new, unsaved one). */
+    suspend fun delete() {
+        val id = _state.value.reminderId
+        if (id == 0L) return
+        val r = repo.getReminder(id) ?: return
+        engine.cancelActive(id)
+        repo.deleteReminder(r)
+    }
+
     suspend fun save() {
         val s = _state.value
         val schedule = buildSchedule(s)

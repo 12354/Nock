@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -79,6 +80,13 @@ fun EditReminderRoute(
                     }
                 },
                 actions = {
+                    if (reminderId != 0L) {
+                        IconButton(onClick = {
+                            scope.launch { vm.delete(); onDone() }
+                        }) {
+                            Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.delete))
+                        }
+                    }
                     TextButton(onClick = {
                         scope.launch { vm.save(); onDone() }
                     }) { Text(stringResource(R.string.save)) }

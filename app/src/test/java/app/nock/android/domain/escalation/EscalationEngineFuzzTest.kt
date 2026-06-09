@@ -117,10 +117,13 @@ class EscalationEngineFuzzTest {
      *
      * This driver dispatches BATCHES of engine operations on real threads and only
      * asserts at a barrier once each batch is quiescent — deliberately racing
-     * MULTIPLE operations against the SAME escalation (fire + done, fire + snooze,
-     * done + snooze). That is exactly the hazard that motivated the engine's mutex:
-     * a loud stage re-arms its repeat at the TAIL of onAlarmFired (update row +
-     * scheduleStage) while a concurrent Done cancels the alarm and deletes the row.
+     * MULTIPLE operations against the SAME reminder/escalation across the whole
+     * engine surface: fire, done, snooze, cancel, a schedule retime/swap saved
+     * through scheduleNextFireForReminder, a low-level in-place re-arm, and an
+     * occasional whole-store rescheduleAll (the boot / clock-change path). That is
+     * exactly the hazard that motivated the engine's mutex: a loud stage re-arms
+     * its repeat at the TAIL of onAlarmFired (update row + scheduleStage) while a
+     * concurrent Done cancels the alarm and deletes the row.
      * Unserialized, the tail arms a fresh loud alarm for a row that no longer
      * exists — an orphan that later fires and pops the full-screen takeover for an
      * already-completed reminder. The bijection oracle (rows ↔ pending alarms) is
@@ -296,19 +299,26 @@ class EscalationEngineFuzzTest {
             for (s in 0 until rounds) {
                 step = s
                 val batch = buildConcurrentBatch()
+                // Any harness-state setup an op needs (swapping a reminder's
+                // schedule, computing a move target) runs single-threaded here,
+                // before the barrier — only the engine call itself races.
+                batch.forEach { it.prep() }
                 // Real parallelism: async on Dispatchers.Default escapes runTest's
                 // single virtual thread so the operations genuinely overlap. None of
                 // them call delay(), so virtual time is irrelevant here.
                 coroutineScope {
-                    batch.map { op -> async(Dispatchers.Default) { op() } }.awaitAll()
+                    batch.map { op -> async(Dispatchers.Default) { op.run() } }.awaitAll()
                 }
                 assertConsistent("after concurrent round $s")
 
                 // Keep the surviving chains at their loud, self-repeating stage and
                 // top the pool back up so later rounds keep racing the repeat re-arm.
+                // Bound by addReminder's own cap (it no-ops at 8 reminders) so this
+                // can't spin when cancels/dismissals leave rows below 3 but the
+                // reminder map already full.
                 clock.advanceBy(rnd.nextLong(1, 4) * MIN)
                 drainDueAlarms(react = false)
-                while (dao.rows.size < 3) addReminder()
+                while (dao.rows.size < 3 && reminders.size < 8) addReminder()
                 advanceToLoudStages()
             }
 
@@ -337,34 +347,82 @@ class EscalationEngineFuzzTest {
         }
 
         /**
-         * A batch of independent engine operations to run concurrently. Picks a few
-         * live escalations and, for some of them, queues TWO operations on the same
-         * id (e.g. onAlarmFired + done) so the loud-repeat re-arm collides head-on
-         * with the dismissal — the exact production race. Returns thunks; the caller
-         * dispatches each on its own thread.
+         * One concurrent operation: an optional single-threaded [prep] that mutates
+         * harness state the engine call will read (a schedule swap, a move target),
+         * plus the [run] thunk the driver dispatches on its own thread. Splitting
+         * them keeps the race purely inside the engine — the harness maps are never
+         * mutated from two threads at once.
          */
-        private fun buildConcurrentBatch(): List<suspend () -> Unit> {
-            val ids = dao.rows.keys.toList()
-            if (ids.isEmpty()) return emptyList()
-            val ops = ArrayList<suspend () -> Unit>()
-            val targets = ids.shuffled(rnd).take(rnd.nextInt(1, minOf(ids.size, 4) + 1))
-            for (id in targets) {
-                // First op: usually a fire (the side that re-arms the repeat).
-                ops += opFor(id, fireBiased = true)
-                // Sometimes a second, racing op on the SAME id — this is the collision.
-                if (rnd.nextBoolean()) ops += opFor(id, fireBiased = false)
+        private inner class ConcurrentOp(
+            val prep: () -> Unit = {},
+            val run: suspend () -> Unit,
+        )
+
+        /**
+         * A batch of independent engine operations to run concurrently. Picks a few
+         * live escalations and, for each, queues a "re-arm" op (the side that
+         * schedules a fresh alarm) plus — often — a colliding mutation on the SAME
+         * reminder/escalation: dismiss (done/snooze), cancel, a schedule retime/swap
+         * saved through scheduleNextFireForReminder, or a low-level in-place re-arm.
+         * Occasionally a whole-store rescheduleAll (the boot / clock-change re-arm)
+         * is thrown in to race every per-row mutation at once. Every one of these
+         * now funnels through the engine's mutex, so the batch must always leave
+         * rows and pending alarms in bijection.
+         */
+        private fun buildConcurrentBatch(): List<ConcurrentOp> {
+            val rows = dao.rows.values.toList()
+            if (rows.isEmpty()) return emptyList()
+            val ops = ArrayList<ConcurrentOp>()
+            val targets = rows.shuffled(rnd).take(rnd.nextInt(1, minOf(rows.size, 4) + 1))
+            for (row in targets) {
+                ops += reArmOp(row)
+                // A second, racing op on the SAME reminder/escalation — the collision.
+                if (rnd.nextInt(4) != 0) ops += collideOp(row)
             }
+            // Sometimes re-arm the entire store mid-flight (ACTION_TIME_CHANGED /
+            // boot), so it races all the per-row mutations above.
+            if (rnd.nextInt(5) == 0) ops += ConcurrentOp(run = { engine.rescheduleAll() })
             return ops.shuffled(rnd)
         }
 
-        private fun opFor(id: Long, fireBiased: Boolean): suspend () -> Unit {
-            if (fireBiased) {
-                // Mostly the loud-repeat re-arm (the side that schedules a fresh
-                // alarm); occasionally a snooze, which also re-arms.
-                return if (rnd.nextInt(10) < 8) ({ engine.onAlarmFired(id) }) else ({ engine.snooze(id) })
+        /** The side that schedules a fresh alarm: mostly a fire, sometimes a snooze. */
+        private fun reArmOp(row: ActiveEscalationEntity): ConcurrentOp {
+            val escId = row.id
+            return if (rnd.nextInt(10) < 8) ConcurrentOp(run = { engine.onAlarmFired(escId) })
+            else ConcurrentOp(run = { engine.snooze(escId) })
+        }
+
+        /** A mutation that races the re-arm — covering the full engine surface. */
+        private fun collideOp(row: ActiveEscalationEntity): ConcurrentOp {
+            val escId = row.id
+            val rid = row.reminderId
+            return when (rnd.nextInt(7)) {
+                0, 1 -> ConcurrentOp(run = { engine.done(escId) })
+                2 -> ConcurrentOp(run = { engine.snooze(escId) })
+                3 -> ConcurrentOp(run = { engine.cancelActive(rid) })
+                4, 5 -> {
+                    // The user edits/swaps the schedule and saves: cancel + re-arm.
+                    ConcurrentOp(
+                        prep = { reminders[rid]?.let { reminders[rid] = it.copy(schedule = retime(it.schedule)) } },
+                        run = { engine.scheduleNextFireForReminder(rid) },
+                    )
+                }
+                else -> {
+                    // Low-level move: re-arm in place from a freshly computed trigger
+                    // (the path with no pre-cancel). Falls back to a dismiss when the
+                    // schedule has no next occurrence.
+                    val rem = reminders[rid]
+                    val newTrigger = rem?.schedule?.nextFireFrom(clock.now, rem.lastCompletedAt)
+                    if (rem == null || newTrigger == null) {
+                        ConcurrentOp(run = { engine.done(escId) })
+                    } else {
+                        ConcurrentOp(
+                            prep = { reminders[rid] = rem.copy(nextFireAt = newTrigger) },
+                            run = { engine.startEscalationAt(reminders.getValue(rid), newTrigger) },
+                        )
+                    }
+                }
             }
-            // The colliding dismissal that cancels + deletes the row.
-            return if (rnd.nextBoolean()) ({ engine.done(id) }) else ({ engine.snooze(id) })
         }
 
         // ----- Actions ---------------------------------------------------------

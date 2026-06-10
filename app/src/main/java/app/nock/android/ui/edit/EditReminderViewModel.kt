@@ -298,8 +298,15 @@ class EditReminderViewModel @Inject constructor(
         val s = _state.value
         val schedule = buildSchedule(s) ?: return false
         val now = System.currentTimeMillis()
-        val nextFire = schedule.nextFireFrom(now, null)
         val existing = if (s.reminderId != 0L) repo.getReminder(s.reminderId) else null
+        // Anchor the next fire on the reminder's existing completion history.
+        // Passing null here made an INTERVAL ("after completion") reminder whose
+        // start time is already in the past recompute its next fire as `now` on
+        // every save — so merely renaming it or moving it to another group fired
+        // it immediately instead of one interval after the last completion. A new
+        // reminder (existing == null) genuinely has no anchor, so it still falls
+        // back to its start time / now + interval as before.
+        val nextFire = schedule.nextFireFrom(now, existing?.lastCompletedAt)
         val name = s.name.ifBlank { ctx.getString(R.string.default_reminder_name) }
         // Persist + (re-)arm as one mutex-guarded step. Doing saveReminder outside
         // the engine lock (as before) let a concurrent alarm fire observe the new

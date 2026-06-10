@@ -23,7 +23,10 @@ data class ScheduleEnvelope(
     val timeOfDayMinutes: Int? = null,
     val intervalMs: Long? = null,
     val intervalStartAtMs: Long? = null,
-    val armedAtMs: Long? = null
+    val armedAtMs: Long? = null,
+    val roomId: Long? = null,
+    val roomAfterMinutes: Int? = null,
+    val roomFallbackMs: Long? = null
 )
 
 fun Schedule.toEnvelope(): ScheduleEnvelope = when (this) {
@@ -37,6 +40,12 @@ fun Schedule.toEnvelope(): ScheduleEnvelope = when (this) {
     is Schedule.Monthly -> ScheduleEnvelope("MONTHLY", dayOfMonth = dayOfMonth, timeOfDayMinutes = timeOfDayMinutes)
     is Schedule.IntervalFromLast -> ScheduleEnvelope("INTERVAL", intervalMs = intervalMs, intervalStartAtMs = startAtMs)
     is Schedule.OnUnlock -> ScheduleEnvelope("ON_UNLOCK", armedAtMs = armedAtMs)
+    is Schedule.RoomAfter -> ScheduleEnvelope(
+        "ROOM_AFTER",
+        roomId = roomId,
+        roomAfterMinutes = afterMinutes,
+        roomFallbackMs = fallbackMs
+    )
 }
 
 fun ScheduleEnvelope.toSchedule(): Schedule = when (type) {
@@ -46,6 +55,7 @@ fun ScheduleEnvelope.toSchedule(): Schedule = when (type) {
     "MONTHLY" -> Schedule.Monthly(dayOfMonth!!, timeOfDayMinutes!!)
     "INTERVAL" -> Schedule.IntervalFromLast(intervalMs!!, startAtMs = intervalStartAtMs)
     "ON_UNLOCK" -> Schedule.OnUnlock(armedAtMs!!)
+    "ROOM_AFTER" -> Schedule.RoomAfter(roomId!!, roomAfterMinutes!!, roomFallbackMs!!)
     else -> error("Unknown schedule type: $type")
 }
 
@@ -55,6 +65,19 @@ object ScheduleJson {
 
     fun encode(s: Schedule): String = adapter.toJson(s.toEnvelope())
     fun decode(json: String): Schedule = adapter.fromJson(json)!!.toSchedule()
+}
+
+// BSSID → RSSI (dBm) map of one WiFi scan, the unit a room fingerprint
+// sample is stored as.
+object WifiLevelsJson {
+    private val type = Types.newParameterizedType(
+        Map::class.java, String::class.java, Integer::class.java
+    )
+    private val adapter: JsonAdapter<Map<String, Int>> = NockMoshi.moshi.adapter(type)
+
+    fun encode(levels: Map<String, Int>): String = adapter.toJson(levels)
+    fun decode(json: String): Map<String, Int>? =
+        runCatching { adapter.fromJson(json) }.getOrNull()
 }
 
 data class ChainEnvelope(

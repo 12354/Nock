@@ -627,6 +627,71 @@ class EscalationEngine @Inject constructor(
         }
     }
 
+    /**
+     * Triggered by RoomCheckManager when the user is detected in a RoomAfter
+     * reminder's target room during its active window. Returns true when the
+     * reminder actually fired.
+     *
+     * Consumes today's occurrence: the chain armed for the fallback deadline
+     * is torn down and nextFireAt is rewritten to the detection moment, so
+     * later checks today see the window as spent (isInWindow needs now <
+     * nextFireAt) and done() advances to tomorrow's deadline (the schedule
+     * skips a window whose start precedes lastCompletedAt).
+     *
+     * The chain is anchored at the detection moment exactly like an overdue
+     * boot replay — first stage now, the rest at their usual spacing — so the
+     * group's escalation runs forward from detection instead of collapsing
+     * straight to the loud stage. The engine's drift check leaves this
+     * re-anchored chain alone because the rewritten trigger is never in the
+     * future.
+     */
+    suspend fun fireRoomReminder(reminderId: Long): Boolean {
+        val fired = mutex.withLock {
+            val reminder = repo.getReminder(reminderId) ?: return@withLock false
+            val schedule = reminder.schedule as? Schedule.RoomAfter ?: return@withLock false
+            val deadline = reminder.nextFireAt ?: return@withLock false
+            val now = time.nowMs()
+            // Only fire inside the open window. A late-delivered or stale
+            // detection (the window already consumed, or not yet started)
+            // must not ring; the deadline case is owned by the armed chain.
+            if (now >= deadline || now < deadline - schedule.fallbackMs) return@withLock false
+            val group = repo.getGroup(reminder.groupId) ?: return@withLock false
+            if (group.isPaused(now)) return@withLock false
+
+            // Tear down the chain armed for the fallback deadline, undoing any
+            // lead-in side effects it already produced (mirrors the move path).
+            activeDao.getByReminderId(reminder.id)?.let { existing ->
+                scheduler.cancel(existing.id)
+                if (AlarmService.ringingEscalationId == existing.id) {
+                    notifier.stopAlarm()
+                }
+                enqueueTelegramDeletions(existing.sentTelegramMessageIdsCsv)
+                activeDao.delete(existing)
+            }
+
+            repo.updateFireState(reminder.id, now, reminder.lastCompletedAt)
+
+            val chain = effectiveChainFor(reminder, group)
+            val firstOffset = chain.stages.first().offsetMs
+            val syntheticStart = now - firstOffset
+            val first = max(syntheticStart + firstOffset, now + 1_000L)
+            val ent = ActiveEscalationEntity(
+                id = 0,
+                reminderId = reminder.id,
+                startedAtMs = syntheticStart,
+                nextStageIndex = 0,
+                nextFireAtMs = first,
+                chainSnapshotJson = ChainJson.encode(chain),
+                repeatIntervalMs = chain.repeatIntervalMs
+            )
+            val id = activeDao.upsert(ent)
+            scheduler.scheduleStage(id, first, chain.stages.first().type)
+            true
+        }
+        flushPendingTelegramDeletions()
+        return fired
+    }
+
     // Triggered by UnlockReceiver. Fires any armed OnUnlock reminders by
     // starting their escalation chain "now". Skips reminders that are
     // already actively escalating so a re-unlock during the escalation

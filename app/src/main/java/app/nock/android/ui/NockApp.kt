@@ -40,6 +40,7 @@ import app.nock.android.ui.debug.DebugScreen
 import app.nock.android.ui.edit.EditReminderRoute
 import app.nock.android.ui.group.GroupEditorScreen
 import app.nock.android.ui.reminders.RemindersScreen
+import app.nock.android.ui.rooms.RoomsScreen
 import app.nock.android.ui.settings.CalendarSettingsScreen
 import app.nock.android.ui.settings.DeepSeekSettingsScreen
 import app.nock.android.ui.settings.DiagnosticsSettingsScreen
@@ -209,6 +210,7 @@ fun NockApp(
                     onImportFromCalendar = {
                         nav.navigate("settings/${SettingsCategory.INTEGRATIONS}/${IntegrationCategory.CALENDAR}/import?fromEdit=true")
                     },
+                    onManageRooms = { nav.navigate("rooms") },
                     onDeleted = { deleted ->
                         scope.launch {
                             // The delete is already committed; the countdown bar in
@@ -229,6 +231,9 @@ fun NockApp(
                         }
                     }
                 )
+            }
+            composable("rooms") {
+                RoomsScreen(onBack = { nav.popBackStack() })
             }
             composable("group?id={id}") { entry ->
                 val id = entry.arguments?.getString("id")?.toLongOrNull() ?: 0L

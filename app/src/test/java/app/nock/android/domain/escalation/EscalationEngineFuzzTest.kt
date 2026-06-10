@@ -944,6 +944,7 @@ class EscalationEngineFuzzTest {
             is Schedule.IntervalFromLast -> randomInterval()
             is Schedule.OneShot -> Schedule.OneShot(clock.now + rnd.nextLong(-120, 6_000) * MIN)
             is Schedule.OnUnlock -> s // not produced in this fuzzer
+            is Schedule.RoomAfter -> s // not produced in this fuzzer
         }
 
         private fun randomTimes(): List<Int> =

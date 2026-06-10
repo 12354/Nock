@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.MeetingRoom
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Timelapse
 import androidx.compose.material.icons.outlined.CalendarMonth
@@ -69,11 +70,22 @@ fun EditReminderRoute(
     onDone: () -> Unit,
     onDeleted: (app.nock.android.domain.model.Reminder) -> Unit = {},
     onImportFromCalendar: () -> Unit = {},
+    onManageRooms: () -> Unit = {},
     vm: EditReminderViewModel = hiltViewModel()
 ) {
     val state by vm.state.collectAsState()
     LaunchedEffect(reminderId) { vm.load(reminderId) }
     val scope = rememberCoroutineScope()
+
+    // Coming back from the rooms screen must show rooms created there.
+    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) vm.refreshRooms()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     Scaffold(
         topBar = {
@@ -105,7 +117,7 @@ fun EditReminderRoute(
                         }
                     }
                     TextButton(onClick = {
-                        scope.launch { vm.save(); onDone() }
+                        scope.launch { if (vm.save()) onDone() }
                     }) { Text(stringResource(R.string.save)) }
                 }
             )
@@ -184,6 +196,16 @@ fun EditReminderRoute(
                     onStartChange = vm::updateIntervalStart
                 )
                 ScheduleKind.ON_UNLOCK -> OnUnlockEditor()
+                ScheduleKind.ROOM -> RoomScheduleEditor(
+                    rooms = state.rooms,
+                    selectedRoomId = state.roomId,
+                    afterMinutes = state.roomAfterMinutes,
+                    fallbackMin = state.roomFallbackMin,
+                    onRoom = vm::updateRoom,
+                    onAfter = vm::updateRoomAfter,
+                    onFallback = vm::updateRoomFallback,
+                    onManageRooms = onManageRooms
+                )
             }
 
             EscalationSummary(state)
@@ -405,6 +427,15 @@ private fun parsedSummary(state: EditState): String? {
             )
         }
         ScheduleKind.ON_UNLOCK -> stringResource(R.string.parsed_summary_on_unlock)
+        ScheduleKind.ROOM -> {
+            val roomName = state.rooms.firstOrNull { it.id == state.roomId }?.name
+                ?: stringResource(R.string.parsed_summary_room_unset)
+            stringResource(
+                R.string.parsed_summary_room,
+                roomName,
+                "%02d:%02d".format(state.roomAfterMinutes / 60, state.roomAfterMinutes % 60)
+            )
+        }
     }
     return stringResource(R.string.parsed_summary_wrapped, schedulePart, groupName)
 }
@@ -508,6 +539,7 @@ private fun ScheduleKindSelector(current: ScheduleKind, onChange: (ScheduleKind)
         ScheduleKind.MONTHLY to R.string.schedule_kind_monthly,
         ScheduleKind.INTERVAL to R.string.schedule_kind_interval,
         ScheduleKind.ON_UNLOCK to R.string.schedule_kind_on_unlock,
+        ScheduleKind.ROOM to R.string.schedule_kind_room,
     )
     Column(modifier = Modifier.padding(horizontal = 16.dp)) {
         Text(
@@ -728,6 +760,116 @@ private fun OnUnlockEditor() {
             Text(
                 text = stringResource(R.string.edit_on_unlock_description),
                 style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(12.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun RoomScheduleEditor(
+    rooms: List<app.nock.android.data.entity.WifiRoomEntity>,
+    selectedRoomId: Long?,
+    afterMinutes: Int,
+    fallbackMin: Int,
+    onRoom: (Long) -> Unit,
+    onAfter: (Int) -> Unit,
+    onFallback: (Int) -> Unit,
+    onManageRooms: () -> Unit,
+) {
+    val ctx = LocalContext.current
+    Column(
+        modifier = Modifier.padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Column {
+            Text(
+                stringResource(R.string.edit_room_label).uppercase(Locale.getDefault()),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
+            )
+            if (rooms.isEmpty()) {
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        stringResource(R.string.edit_room_none),
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(12.dp)
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+            }
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                rooms.forEach { room ->
+                    FilterChip(
+                        selected = room.id == selectedRoomId,
+                        onClick = { onRoom(room.id) },
+                        label = { Text(room.name) }
+                    )
+                }
+                AssistChip(
+                    onClick = onManageRooms,
+                    label = { Text(stringResource(R.string.edit_room_manage)) },
+                    leadingIcon = {
+                        Icon(Icons.Filled.MeetingRoom, contentDescription = null)
+                    }
+                )
+            }
+        }
+
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                stringResource(R.string.edit_room_after_label),
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.weight(1f)
+            )
+            OutlinedButton(onClick = {
+                TimePickerDialog(ctx, { _, h, mn -> onAfter(h * 60 + mn) },
+                    afterMinutes / 60, afterMinutes % 60, true).show()
+            }) { Text("%02d:%02d".format(afterMinutes / 60, afterMinutes % 60)) }
+        }
+
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                stringResource(R.string.edit_room_fallback_label),
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.weight(1f)
+            )
+            OutlinedTextField(
+                value = fallbackMin.toString(),
+                onValueChange = { it.toIntOrNull()?.let(onFallback) },
+                keyboardOptions = KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
+                singleLine = true,
+                modifier = Modifier.width(100.dp)
+            )
+        }
+        Text(
+            stringResource(R.string.edit_room_fallback_help, fallbackMin),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.outline,
+        )
+
+        Surface(
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(
+                stringResource(R.string.edit_room_hint),
+                style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.padding(12.dp)
             )
         }

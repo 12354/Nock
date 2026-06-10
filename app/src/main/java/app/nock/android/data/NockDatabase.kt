@@ -11,6 +11,7 @@ import app.nock.android.data.dao.PendingTelegramDeletionDao
 import app.nock.android.data.dao.PendingVoiceReminderDao
 import app.nock.android.data.dao.ReminderDao
 import app.nock.android.data.dao.SettingsDao
+import app.nock.android.data.dao.WifiRoomDao
 import app.nock.android.data.entity.ActiveEscalationEntity
 import app.nock.android.data.entity.CalendarTripEntity
 import app.nock.android.data.entity.GroupEntity
@@ -18,6 +19,8 @@ import app.nock.android.data.entity.PendingTelegramDeletionEntity
 import app.nock.android.data.entity.PendingVoiceReminderEntity
 import app.nock.android.data.entity.ReminderEntity
 import app.nock.android.data.entity.SettingsEntity
+import app.nock.android.data.entity.WifiRoomEntity
+import app.nock.android.data.entity.WifiRoomSampleEntity
 
 @Database(
     entities = [
@@ -27,9 +30,11 @@ import app.nock.android.data.entity.SettingsEntity
         SettingsEntity::class,
         PendingVoiceReminderEntity::class,
         PendingTelegramDeletionEntity::class,
-        CalendarTripEntity::class
+        CalendarTripEntity::class,
+        WifiRoomEntity::class,
+        WifiRoomSampleEntity::class
     ],
-    version = 6,
+    version = 7,
     exportSchema = true
 )
 abstract class NockDatabase : RoomDatabase() {
@@ -40,6 +45,7 @@ abstract class NockDatabase : RoomDatabase() {
     abstract fun pendingVoiceReminderDao(): PendingVoiceReminderDao
     abstract fun pendingTelegramDeletionDao(): PendingTelegramDeletionDao
     abstract fun calendarTripDao(): CalendarTripDao
+    abstract fun wifiRoomDao(): WifiRoomDao
 }
 
 val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -111,6 +117,32 @@ val MIGRATION_5_6 = object : Migration(5, 6) {
         db.execSQL(
             "CREATE INDEX IF NOT EXISTS `index_calendar_trips_eventId` " +
                 "ON `calendar_trips` (`eventId`)"
+        )
+    }
+}
+
+val MIGRATION_6_7 = object : Migration(6, 7) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `wifi_rooms` (" +
+                "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`name` TEXT NOT NULL, " +
+                "`createdAt` INTEGER NOT NULL" +
+                ")"
+        )
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `wifi_room_samples` (" +
+                "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`roomId` INTEGER NOT NULL, " +
+                "`capturedAt` INTEGER NOT NULL, " +
+                "`levelsJson` TEXT NOT NULL, " +
+                "FOREIGN KEY(`roomId`) REFERENCES `wifi_rooms`(`id`) " +
+                "ON UPDATE NO ACTION ON DELETE CASCADE" +
+                ")"
+        )
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS `index_wifi_room_samples_roomId` " +
+                "ON `wifi_room_samples` (`roomId`)"
         )
     }
 }

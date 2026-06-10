@@ -96,6 +96,7 @@ class NockRepository @Inject constructor(
             is Schedule.Monthly -> "MONTHLY"
             is Schedule.IntervalFromLast -> "INTERVAL"
             is Schedule.OnUnlock -> "ON_UNLOCK"
+            is Schedule.RoomAfter -> "ROOM_AFTER"
         }
         return type to ScheduleJson.encode(s)
     }

@@ -403,4 +403,39 @@
     <string name="parsed_summary_on_unlock">on next unlock</string>
     <string name="parsed_summary_wrapped">%1$s, group %2$s</string>
     <string name="parsed_summary_time_join"> and </string>
+
+    <!-- Room-based reminders -->
+    <string name="schedule_kind_room">Room</string>
+    <string name="schedule_room_after">In room after %1$s</string>
+    <string name="parsed_summary_room">in %1$s after %2$s</string>
+    <string name="parsed_summary_room_unset">a room</string>
+    <string name="edit_room_label">Room</string>
+    <string name="edit_room_none">No rooms defined yet. Create a room and capture its WiFi fingerprint first — the reminder can\'t be saved without one.</string>
+    <string name="edit_room_manage">Manage rooms</string>
+    <string name="edit_room_after_label">Active after</string>
+    <string name="edit_room_fallback_label">Fallback (minutes)</string>
+    <string name="edit_room_fallback_help">Fires when you\'re detected in the room after the start time — at most once per day. If you\'re never detected, it fires anyway %1$d minutes after the start so it can\'t be missed.</string>
+    <string name="edit_room_hint">Room detection reads the WiFi environment when you unlock the phone and in light periodic checks — only while the reminder is waiting. It works best when many networks are visible (including neighbours\'); with a single router, adjacent rooms may be hard to tell apart.</string>
+    <string name="rooms_title">Rooms</string>
+    <string name="rooms_add">Add room</string>
+    <string name="rooms_name_label">Name</string>
+    <string name="rooms_rename">Rename</string>
+    <string name="rooms_capture">Capture this room</string>
+    <string name="rooms_recapture">Re-capture</string>
+    <string name="rooms_add_samples">Add samples</string>
+    <string name="rooms_capturing">Sampling WiFi… scan %1$d of %2$d</string>
+    <string name="rooms_capture_ok">OK</string>
+    <string name="rooms_capture_failed">Couldn\'t sample WiFi. Check that WiFi and location permission are on, then try again.</string>
+    <string name="rooms_not_captured">Not captured yet</string>
+    <string name="rooms_samples_count">%1$d samples</string>
+    <string name="rooms_quality_good">Good spot — %1$d access points visible</string>
+    <string name="rooms_quality_fair">Usable — %1$d access points visible</string>
+    <string name="rooms_quality_poor">Weak — only %1$d access points visible; nearby rooms may be hard to tell apart</string>
+    <string name="rooms_info">Stand in a room and capture it: the app samples the WiFi environment for about 15 seconds to learn the room\'s fingerprint. More visible networks (including neighbours\') means more reliable detection. Re-capture or add samples any time to improve accuracy.</string>
+    <string name="rooms_perm_fine">Location permission is needed to read the WiFi environment.</string>
+    <string name="rooms_perm_background">Allow location "all the time" so rooms can also be checked while the app is in the background.</string>
+    <string name="rooms_perm_grant">Allow</string>
+    <string name="rooms_wifi_off">WiFi (or WiFi scanning) is off — rooms can\'t be detected. The fallback time still fires.</string>
+    <string name="rooms_delete_title">Delete "%1$s"?</string>
+    <string name="rooms_delete_message">Reminders using this room will no longer detect it and will always fire at their fallback time.</string>
 </resources>

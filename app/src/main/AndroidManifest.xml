@@ -22,6 +22,15 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.READ_CALENDAR" />
 
+    <!-- Room-based reminders: WiFi fingerprinting. Scan results are gated
+         behind fine location; background location is what lets the periodic
+         and on-unlock room checks see them while the app is off screen. -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+
     <queries>
         <intent>
             <action android:name="android.intent.action.RINGTONE_PICKER" />
@@ -135,6 +144,10 @@
 
         <receiver
             android:name=".alarm.TripReceiver"
+            android:exported="false" />
+
+        <receiver
+            android:name=".wifi.RoomCheckReceiver"
             android:exported="false" />
 
         <!-- Receives the PackageInstaller commit result for silent self-updates. -->

@@ -82,6 +82,41 @@ sealed class Schedule {
         }
     }
 
+    // Fires once per day when the user is detected (via the WiFi room
+    // fingerprint) in room [roomId] after [afterMinutes], or — if never
+    // detected — at the fallback deadline (window start + [fallbackMs]).
+    //
+    // nextFireFrom returns the fallback DEADLINE, so the ordinary time-based
+    // escalation machinery arms the can't-miss fallback for free; room
+    // detection (RoomCheckManager → EscalationEngine.fireRoomReminder) pulls
+    // the fire forward by re-anchoring the chain at the detection moment and
+    // rewriting nextFireAt to it. "Once per day" falls out of the
+    // lastCompletedAt guard: a window whose start the user already completed
+    // at/after is skipped, so Done always advances to the next day's window.
+    data class RoomAfter(
+        val roomId: Long,
+        val afterMinutes: Int,
+        val fallbackMs: Long
+    ) : Schedule() {
+        override val isOneTime: Boolean = false
+        override fun nextFireFrom(now: Long, lastCompletedAt: Long?, zone: ZoneId): Long? {
+            val nowDt = LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(now), zone)
+            val timeOfDay = LocalTime.of(afterMinutes / 60, afterMinutes % 60)
+            // Start at yesterday: a window that crosses midnight (e.g. start
+            // 23:30 with a 60 min fallback) still has its deadline pending
+            // shortly after midnight.
+            for (offset in -1L..1L) {
+                val start = nowDt.toLocalDate().plusDays(offset).atTime(timeOfDay)
+                    .atZone(zone).toInstant().toEpochMilli()
+                val deadline = start + fallbackMs
+                if (deadline <= now) continue
+                if (lastCompletedAt != null && lastCompletedAt >= start) continue
+                return deadline
+            }
+            return null
+        }
+    }
+
     companion object {
         private fun nextDailyOrWeekly(
             now: Long,

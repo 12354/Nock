@@ -7,6 +7,7 @@ import app.nock.android.data.MIGRATION_2_3
 import app.nock.android.data.MIGRATION_3_4
 import app.nock.android.data.MIGRATION_4_5
 import app.nock.android.data.MIGRATION_5_6
+import app.nock.android.data.MIGRATION_6_7
 import app.nock.android.data.NockDatabase
 import app.nock.android.data.dao.ActiveEscalationDao
 import app.nock.android.data.dao.CalendarTripDao
@@ -15,6 +16,7 @@ import app.nock.android.data.dao.PendingTelegramDeletionDao
 import app.nock.android.data.dao.PendingVoiceReminderDao
 import app.nock.android.data.dao.ReminderDao
 import app.nock.android.data.dao.SettingsDao
+import app.nock.android.data.dao.WifiRoomDao
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -37,7 +39,10 @@ object AppModule {
     @Provides @Singleton
     fun provideDatabase(@ApplicationContext ctx: Context): NockDatabase =
         Room.databaseBuilder(ctx, NockDatabase::class.java, "nock.db")
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+            .addMigrations(
+                MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6,
+                MIGRATION_6_7
+            )
             .fallbackToDestructiveMigration()
             .build()
 
@@ -50,6 +55,7 @@ object AppModule {
     @Provides fun providePendingTelegramDeletionDao(db: NockDatabase): PendingTelegramDeletionDao =
         db.pendingTelegramDeletionDao()
     @Provides fun provideCalendarTripDao(db: NockDatabase): CalendarTripDao = db.calendarTripDao()
+    @Provides fun provideWifiRoomDao(db: NockDatabase): WifiRoomDao = db.wifiRoomDao()
 
     @Provides @Singleton
     fun provideOkHttp(): OkHttpClient = OkHttpClient.Builder()

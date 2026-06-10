@@ -6,11 +6,14 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.nock.android.R
 import app.nock.android.data.NockRepository
+import app.nock.android.data.dao.WifiRoomDao
+import app.nock.android.data.entity.WifiRoomEntity
 import app.nock.android.domain.escalation.EscalationEngine
 import app.nock.android.domain.model.Group
 import app.nock.android.domain.model.Schedule
 import app.nock.android.history.AlarmHistoryLogger
 import app.nock.android.trip.TripSyncManager
+import app.nock.android.wifi.RoomCheckManager
 import app.nock.android.voice.DeepSeekParseResult
 import app.nock.android.voice.DeepSeekReminderParser
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -49,9 +52,15 @@ data class EditState(
     val nlInput: String = "",
     val nlThinking: Boolean = false,
     val nlError: String? = null,
+    // Room-based reminders: the target room, the time of day the detection
+    // window opens, and the can't-miss fallback (minutes after the start).
+    val rooms: List<WifiRoomEntity> = emptyList(),
+    val roomId: Long? = null,
+    val roomAfterMinutes: Int = 22 * 60,
+    val roomFallbackMin: Int = EditReminderViewModel.DEFAULT_ROOM_FALLBACK_MIN,
 )
 
-enum class ScheduleKind { ONESHOT, DAILY, WEEKLY, MONTHLY, INTERVAL, ON_UNLOCK }
+enum class ScheduleKind { ONESHOT, DAILY, WEEKLY, MONTHLY, INTERVAL, ON_UNLOCK, ROOM }
 
 @HiltViewModel
 class EditReminderViewModel @Inject constructor(
@@ -61,6 +70,8 @@ class EditReminderViewModel @Inject constructor(
     private val deepSeekParser: DeepSeekReminderParser,
     private val history: AlarmHistoryLogger,
     private val tripSync: TripSyncManager,
+    private val wifiRoomDao: WifiRoomDao,
+    private val roomChecks: RoomCheckManager,
     savedState: SavedStateHandle
 ) : ViewModel() {
 
@@ -72,7 +83,29 @@ class EditReminderViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             val groups = repo.getGroups()
-            _state.update { it.copy(groups = groups, groupId = groups.firstOrNull()?.id ?: 0L) }
+            val rooms = wifiRoomDao.getRooms()
+            _state.update {
+                it.copy(
+                    groups = groups,
+                    groupId = groups.firstOrNull()?.id ?: 0L,
+                    rooms = rooms,
+                    roomId = it.roomId ?: rooms.firstOrNull()?.id
+                )
+            }
+        }
+    }
+
+    /** Re-read the room list, e.g. after returning from the rooms screen. */
+    fun refreshRooms() {
+        viewModelScope.launch {
+            val rooms = wifiRoomDao.getRooms()
+            _state.update { st ->
+                st.copy(
+                    rooms = rooms,
+                    roomId = st.roomId?.takeIf { id -> rooms.any { it.id == id } }
+                        ?: rooms.firstOrNull()?.id
+                )
+            }
         }
     }
 
@@ -92,6 +125,7 @@ class EditReminderViewModel @Inject constructor(
                 is Schedule.Monthly -> ScheduleKind.MONTHLY
                 is Schedule.IntervalFromLast -> ScheduleKind.INTERVAL
                 is Schedule.OnUnlock -> ScheduleKind.ON_UNLOCK
+                is Schedule.RoomAfter -> ScheduleKind.ROOM
             }
             _state.update {
                 it.copy(
@@ -110,7 +144,12 @@ class EditReminderViewModel @Inject constructor(
                     isCalendarReminder = tripLocation != null,
                     location = tripLocation.orEmpty(),
                     bufferMin = tripBuffer ?: DEFAULT_TRIP_BUFFER_MIN,
-                    groups = groups
+                    groups = groups,
+                    roomId = (r.schedule as? Schedule.RoomAfter)?.roomId ?: it.roomId,
+                    roomAfterMinutes = (r.schedule as? Schedule.RoomAfter)?.afterMinutes
+                        ?: it.roomAfterMinutes,
+                    roomFallbackMin = (r.schedule as? Schedule.RoomAfter)
+                        ?.let { s -> (s.fallbackMs / 60_000L).toInt() } ?: it.roomFallbackMin
                 )
             }
         }
@@ -130,6 +169,10 @@ class EditReminderViewModel @Inject constructor(
     fun updateMonthlyTime(t: Int) = _state.update { it.copy(monthlyTimeMinutes = t) }
     fun updateIntervalHours(h: Int) = _state.update { it.copy(intervalHours = h) }
     fun updateIntervalStart(ms: Long?) = _state.update { it.copy(intervalStartMs = ms) }
+    fun updateRoom(id: Long) = _state.update { it.copy(roomId = id) }
+    fun updateRoomAfter(minutes: Int) = _state.update { it.copy(roomAfterMinutes = minutes) }
+    fun updateRoomFallback(min: Int) =
+        _state.update { it.copy(roomFallbackMin = min.coerceIn(MIN_ROOM_FALLBACK_MIN, MAX_ROOM_FALLBACK_MIN)) }
 
     fun updateNl(input: String) {
         _state.update {
@@ -200,6 +243,12 @@ class EditReminderViewModel @Inject constructor(
             intervalStartMs = s.startAtMs
         )
         is Schedule.OnUnlock -> st.copy(scheduleType = ScheduleKind.ON_UNLOCK)
+        is Schedule.RoomAfter -> st.copy(
+            scheduleType = ScheduleKind.ROOM,
+            roomId = s.roomId,
+            roomAfterMinutes = s.afterMinutes,
+            roomFallbackMin = (s.fallbackMs / 60_000L).toInt()
+        )
     }
 
     /**
@@ -215,12 +264,20 @@ class EditReminderViewModel @Inject constructor(
         // Cancel-then-delete as one mutex-guarded step so a concurrent alarm fire
         // can't re-arm the reminder between the cancel and the delete.
         engine.deleteReminderAndCancel(id)
+        // Deleting a RoomAfter reminder may make the room-check alarm pointless
+        // (or move the next window); recompute it.
+        roomChecks.rearm()
         return snapshot
     }
 
-    suspend fun save() {
+    /**
+     * Persists the edit. Returns false (without saving) when the state can't
+     * form a valid schedule — currently only a ROOM reminder with no room,
+     * which the editor surfaces by showing the create-a-room hint.
+     */
+    suspend fun save(): Boolean {
         val s = _state.value
-        val schedule = buildSchedule(s)
+        val schedule = buildSchedule(s) ?: return false
         val now = System.currentTimeMillis()
         val nextFire = schedule.nextFireFrom(now, null)
         val existing = if (s.reminderId != 0L) repo.getReminder(s.reminderId) else null
@@ -238,6 +295,9 @@ class EditReminderViewModel @Inject constructor(
             lastCompletedAt = existing?.lastCompletedAt,
             createdAt = existing?.createdAt ?: now,
         )
+        // A saved/edited RoomAfter reminder changes when the next room check is
+        // due (and the first ever one starts the self-re-arming check chain).
+        roomChecks.rearm()
         recordHistory(existing, name, schedule, nextFire, s.groupId, s.groups)
         // For a calendar-imported reminder, persist an edited buffer and location.
         // The buffer re-arms locally (no network). A changed location needs a fresh
@@ -248,6 +308,7 @@ class EditReminderViewModel @Inject constructor(
             val locationChanged = tripSync.setTripLocation(s.reminderId, s.location.trim())
             if (locationChanged) viewModelScope.launch { tripSync.recompute(s.reminderId) }
         }
+        return true
     }
 
     private fun recordHistory(
@@ -277,13 +338,16 @@ class EditReminderViewModel @Inject constructor(
         history.modified(name, changes)
     }
 
-    private fun buildSchedule(s: EditState): Schedule = when (s.scheduleType) {
+    private fun buildSchedule(s: EditState): Schedule? = when (s.scheduleType) {
         ScheduleKind.ONESHOT -> Schedule.OneShot(s.oneShotMs)
         ScheduleKind.DAILY -> Schedule.Daily(s.dailyTimesMinutes)
         ScheduleKind.WEEKLY -> Schedule.Weekly(s.weeklyDays, s.weeklyTimesMinutes)
         ScheduleKind.MONTHLY -> Schedule.Monthly(s.monthlyDay, s.monthlyTimeMinutes)
         ScheduleKind.INTERVAL -> Schedule.IntervalFromLast(s.intervalHours * 3_600_000L, s.intervalStartMs)
         ScheduleKind.ON_UNLOCK -> Schedule.OnUnlock(System.currentTimeMillis())
+        ScheduleKind.ROOM -> s.roomId?.let {
+            Schedule.RoomAfter(it, s.roomAfterMinutes, s.roomFallbackMin * 60_000L)
+        }
     }
 
     companion object {
@@ -293,5 +357,10 @@ class EditReminderViewModel @Inject constructor(
         const val MIN_TRIP_BUFFER_MIN = 5
         const val MAX_TRIP_BUFFER_MIN = 120
         const val DEFAULT_TRIP_BUFFER_MIN = 30
+
+        // Fallback deadline bounds for room reminders (minutes after start).
+        const val MIN_ROOM_FALLBACK_MIN = 5
+        const val MAX_ROOM_FALLBACK_MIN = 12 * 60
+        const val DEFAULT_ROOM_FALLBACK_MIN = 60
     }
 }

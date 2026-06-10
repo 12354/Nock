@@ -403,4 +403,39 @@
     <string name="parsed_summary_on_unlock">beim nächsten Entsperren</string>
     <string name="parsed_summary_wrapped">%1$s, Gruppe %2$s</string>
     <string name="parsed_summary_time_join"> und </string>
+
+    <!-- Raum-basierte Erinnerungen -->
+    <string name="schedule_kind_room">Raum</string>
+    <string name="schedule_room_after">Im Raum nach %1$s</string>
+    <string name="parsed_summary_room">in %1$s nach %2$s</string>
+    <string name="parsed_summary_room_unset">einem Raum</string>
+    <string name="edit_room_label">Raum</string>
+    <string name="edit_room_none">Noch keine Räume definiert. Lege zuerst einen Raum an und erfasse seinen WLAN-Fingerabdruck — ohne Raum kann die Erinnerung nicht gespeichert werden.</string>
+    <string name="edit_room_manage">Räume verwalten</string>
+    <string name="edit_room_after_label">Aktiv ab</string>
+    <string name="edit_room_fallback_label">Spätestens nach (Minuten)</string>
+    <string name="edit_room_fallback_help">Klingelt, sobald du nach der Startzeit im Raum erkannt wirst — höchstens einmal pro Tag. Wirst du nicht erkannt, klingelt sie trotzdem %1$d Minuten nach der Startzeit, damit nichts verpasst wird.</string>
+    <string name="edit_room_hint">Die Raumerkennung liest die WLAN-Umgebung beim Entsperren des Telefons und in leichten periodischen Prüfungen — nur solange die Erinnerung wartet. Sie funktioniert am besten, wenn viele Netzwerke sichtbar sind (auch die der Nachbarn); mit nur einem Router sind benachbarte Räume schwer zu unterscheiden.</string>
+    <string name="rooms_title">Räume</string>
+    <string name="rooms_add">Raum hinzufügen</string>
+    <string name="rooms_name_label">Name</string>
+    <string name="rooms_rename">Umbenennen</string>
+    <string name="rooms_capture">Diesen Raum erfassen</string>
+    <string name="rooms_recapture">Neu erfassen</string>
+    <string name="rooms_add_samples">Messungen ergänzen</string>
+    <string name="rooms_capturing">WLAN wird gemessen… Scan %1$d von %2$d</string>
+    <string name="rooms_capture_ok">OK</string>
+    <string name="rooms_capture_failed">WLAN konnte nicht gemessen werden. Prüfe WLAN und Standortberechtigung und versuche es erneut.</string>
+    <string name="rooms_not_captured">Noch nicht erfasst</string>
+    <string name="rooms_samples_count">%1$d Messungen</string>
+    <string name="rooms_quality_good">Guter Standort — %1$d Zugangspunkte sichtbar</string>
+    <string name="rooms_quality_fair">Brauchbar — %1$d Zugangspunkte sichtbar</string>
+    <string name="rooms_quality_poor">Schwach — nur %1$d Zugangspunkte sichtbar; nahe Räume sind schwer zu unterscheiden</string>
+    <string name="rooms_info">Stell dich in einen Raum und erfasse ihn: Die App misst etwa 15 Sekunden lang die WLAN-Umgebung und lernt so den Fingerabdruck des Raums. Je mehr Netzwerke sichtbar sind (auch die der Nachbarn), desto zuverlässiger die Erkennung. Du kannst jederzeit neu erfassen oder Messungen ergänzen.</string>
+    <string name="rooms_perm_fine">Für das Lesen der WLAN-Umgebung wird die Standortberechtigung benötigt.</string>
+    <string name="rooms_perm_background">Erlaube den Standort „immer", damit Räume auch im Hintergrund geprüft werden können.</string>
+    <string name="rooms_perm_grant">Erlauben</string>
+    <string name="rooms_wifi_off">WLAN (oder WLAN-Suche) ist aus — Räume können nicht erkannt werden. Die Ausweichzeit klingelt trotzdem.</string>
+    <string name="rooms_delete_title">„%1$s" löschen?</string>
+    <string name="rooms_delete_message">Erinnerungen mit diesem Raum erkennen ihn nicht mehr und klingeln immer erst zur Ausweichzeit.</string>
 </resources>

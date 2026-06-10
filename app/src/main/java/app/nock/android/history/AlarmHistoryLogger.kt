@@ -78,6 +78,13 @@ class AlarmHistoryLogger @Inject constructor(
     /** The reminder was dismissed. */
     fun done(name: String) = write("DONE", name, "")
 
+    /**
+     * A room reminder fired ahead of its fallback deadline because the user was
+     * detected in its target room during the active window.
+     */
+    fun roomDetected(name: String, roomName: String?) =
+        write("ROOM", name, roomName?.let { "detected in \"$it\"" } ?: "detected in room")
+
     /** The reminder was snoozed; [nextAtMs] is when it will ring again. */
     fun snoozed(name: String, nextAtMs: Long) =
         write("SNOOZE", name, "next ${clockFmt.format(Date(nextAtMs))}")
@@ -181,6 +188,8 @@ class AlarmHistoryLogger @Inject constructor(
         is Schedule.Monthly -> "monthly day ${s.dayOfMonth} at ${hhmm(s.timeOfDayMinutes)}"
         is Schedule.IntervalFromLast -> "every ${humanDuration(s.intervalMs)} after completion"
         is Schedule.OnUnlock -> "on next unlock"
+        is Schedule.RoomAfter ->
+            "in room #${s.roomId} after ${hhmm(s.afterMinutes)} (fallback +${humanDuration(s.fallbackMs)})"
     }
 
     /**

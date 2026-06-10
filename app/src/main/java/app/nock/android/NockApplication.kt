@@ -16,6 +16,7 @@ import app.nock.android.domain.escalation.EscalationEngine
 import app.nock.android.notif.NockNotificationChannels
 import app.nock.android.ui.LocaleHelper
 import app.nock.android.voice.PendingVoiceProcessor
+import app.nock.android.wifi.RoomCheckManager
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -31,6 +32,7 @@ class NockApplication : Application(), Configuration.Provider {
     @Inject lateinit var seedGroupLocaleSync: SeedGroupLocaleSync
     @Inject lateinit var pendingVoiceProcessor: PendingVoiceProcessor
     @Inject lateinit var engine: EscalationEngine
+    @Inject lateinit var roomChecks: RoomCheckManager
     @Inject @ApplicationScope lateinit var appScope: CoroutineScope
 
     override val workManagerConfiguration: Configuration
@@ -65,6 +67,9 @@ class NockApplication : Application(), Configuration.Provider {
             // otherwise leave a reminder stuck at a past fire time that never
             // rings again. An overdue stored time fires (and catches up) at once.
             engine.rescheduleAll()
+            // Same self-heal for the room-check alarm: a killed process may
+            // have dropped it between ticks.
+            runCatching { roomChecks.rearm() }
         }
         pendingVoiceProcessor.kickAll()
     }

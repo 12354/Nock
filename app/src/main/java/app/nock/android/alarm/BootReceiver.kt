@@ -6,6 +6,7 @@ import android.content.Intent
 import app.nock.android.di.ApplicationScope
 import app.nock.android.domain.escalation.EscalationEngine
 import app.nock.android.trip.TripSyncManager
+import app.nock.android.wifi.RoomCheckManager
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -16,6 +17,7 @@ class BootReceiver : BroadcastReceiver() {
 
     @Inject lateinit var engine: EscalationEngine
     @Inject lateinit var trips: TripSyncManager
+    @Inject lateinit var roomChecks: RoomCheckManager
     @Inject @ApplicationScope lateinit var scope: CoroutineScope
 
     override fun onReceive(context: Context, intent: Intent) {
@@ -38,6 +40,11 @@ class BootReceiver : BroadcastReceiver() {
         scope.launch {
             try {
                 engine.rescheduleAll(recomputeWallClock = recomputeWallClock)
+                // The room-check alarm is dropped on reboot (and a time/zone
+                // change moves the windows); run a check right away — the
+                // device may have rebooted mid-window — and re-arm the chain.
+                // Must run after rescheduleAll so nextFireAt is current.
+                runCatching { roomChecks.onCheckAlarm() }
                 // Re-import upcoming events and re-arm the daily sync + recompute
                 // alarms (AlarmManager drops everything on reboot).
                 runCatching { trips.syncNow() }

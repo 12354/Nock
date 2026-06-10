@@ -329,5 +329,10 @@ private fun describe(ctx: android.content.Context, r: Reminder): String = when (
             ctx.getString(R.string.schedule_on_unlock_fired)
         else
             ctx.getString(R.string.schedule_on_unlock_armed)
+    is app.nock.android.domain.model.Schedule.RoomAfter ->
+        ctx.getString(
+            R.string.schedule_room_after,
+            "%02d:%02d".format(s.afterMinutes / 60, s.afterMinutes % 60)
+        )
 }
 

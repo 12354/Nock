@@ -237,9 +237,13 @@ class EscalationEngineFuzzTest {
             every { notifier.showSilent(any(), any(), any(), any()) } answers {
                 displayed += arg<Long>(2) to StageType.SILENT
             }
-            // The TELEGRAM stage posts the audible pre-alarm notification.
-            coEvery { notifier.showPreAlarm(any(), any(), any(), any()) } answers {
+            // The TELEGRAM stage posts a silent local notification alongside the send.
+            every { notifier.showTelegram(any(), any(), any()) } answers {
                 displayed += arg<Long>(2) to StageType.TELEGRAM
+            }
+            // The NOTIFICATION stage posts the audible pre-alarm notification.
+            coEvery { notifier.showPreAlarm(any(), any(), any(), any()) } answers {
+                displayed += arg<Long>(2) to StageType.NOTIFICATION
             }
             every { notifier.showAlarmVibrate(any(), any(), any()) } answers {
                 displayed += arg<Long>(2) to StageType.ALARM_VIBRATE

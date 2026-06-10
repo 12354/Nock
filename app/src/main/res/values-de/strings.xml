@@ -225,6 +225,7 @@
     <string name="stage_type_alarm">Alarm</string>
     <string name="stage_type_alarm_vibrate">Alarm (nur Vibration)</string>
     <string name="stage_type_telegram">Telegram</string>
+    <string name="stage_type_notification">Benachrichtigung</string>
 
     <!-- Ton-Auswahl vor dem Alarm -->
     <string name="settings_prealarm_sound_title">Ton vor dem Alarm</string>

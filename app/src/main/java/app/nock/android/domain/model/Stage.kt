@@ -1,6 +1,6 @@
 package app.nock.android.domain.model
 
-enum class StageType { SILENT, VIBRATE, TELEGRAM, ALARM_VIBRATE, ALARM }
+enum class StageType { SILENT, TELEGRAM, VIBRATE, NOTIFICATION, ALARM_VIBRATE, ALARM }
 
 data class StageConfig(
     val type: StageType,
@@ -59,9 +59,12 @@ object DefaultChain {
      * up to it. Everything before the ALARM is a lead-up warning:
      *
      *   VIBRATE        @ -10 min  silent heads-up that buzzes the phone
-     *   TELEGRAM       @  -5 min  message mirrored to Telegram
+     *   TELEGRAM       @  -5 min  silent notification + message mirrored to Telegram
      *   ALARM_VIBRATE  @  -2 min  vibrate-only alarm (last quiet warning)
      *   ALARM          @   0 min  full loud alarm, rings at the scheduled time
+     *
+     * (A NOTIFICATION stage — an audible heads-up on the phone — is available to
+     * add but isn't in the default lead-up.)
      *
      * If the alarm goes unacknowledged it keeps re-ringing every repeat
      * interval until the user marks it done.

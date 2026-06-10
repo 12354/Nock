@@ -218,6 +218,7 @@ class AlarmHistoryLogger @Inject constructor(
         StageType.SILENT -> "silent"
         StageType.VIBRATE -> "buzz"
         StageType.TELEGRAM -> "telegram"
+        StageType.NOTIFICATION -> "notification"
         StageType.ALARM_VIBRATE -> "vibrate"
         StageType.ALARM -> "alarm"
     }

@@ -40,11 +40,19 @@ class NotificationPresenter @Inject constructor(
     }
 
     /**
+     * The silent local notification that accompanies a TELEGRAM stage: a quiet
+     * heads-up on the phone that a Telegram message was just sent, without making
+     * any sound or vibration. Same silent channel as [showSilent]; the suffix
+     * makes the reason explicit.
+     */
+    fun showTelegram(reminder: Reminder, group: Group, escalationId: Long) =
+        showSilent(reminder, group, escalationId, suffix = " (Telegram sent)")
+
+    /**
      * A normal heads-up notification that plays the user-chosen pre-alarm sound.
-     * Used by the pre-trigger TELEGRAM stage so there's an audible nudge on the
-     * phone in addition to the Telegram message. The sound is resolved from
-     * settings: absent = default notification tone, blank = silent, else a
-     * specific ringtone/notification URI the user picked.
+     * Used by the NOTIFICATION stage so there's an audible nudge on the phone. The
+     * sound is resolved from settings: absent = default notification tone, blank =
+     * silent, else a specific ringtone/notification URI the user picked.
      */
     suspend fun showPreAlarm(reminder: Reminder, group: Group, escalationId: Long, suffix: String = "") {
         val stored = settings.get(SettingsRepository.KEY_PREALARM_SOUND)

@@ -182,7 +182,7 @@ class EscalationEngineFireTest {
         assertEquals("555", h.dao.getById(row.id)!!.sentTelegramMessageIdsCsv)
     }
 
-    @Test fun fire_telegram_stage_sends_and_shows_suffix() = runTest {
+    @Test fun fire_telegram_stage_sends_and_shows_silent_notification() = runTest {
         val h = harnessWithReminder()
         coEvery { h.telegram.send(any(), eq(false)) } returns TelegramResult(ok = true, messageId = 999L)
         // Started 5 min ago -> TELEGRAM (offset +5) is the due stage.
@@ -196,7 +196,7 @@ class EscalationEngineFireTest {
         h.engine.onAlarmFired(row.id)
 
         coVerify { h.telegram.send(any(), eq(false)) }
-        coVerify { h.notifier.showPreAlarm(any(), any(), eq(row.id), eq(" (Telegram sent)")) }
+        verify { h.notifier.showTelegram(any(), any(), eq(row.id)) }
         assertEquals("999", h.dao.getById(row.id)!!.sentTelegramMessageIdsCsv)
     }
 

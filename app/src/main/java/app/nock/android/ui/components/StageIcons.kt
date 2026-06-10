@@ -3,6 +3,7 @@ package app.nock.android.ui.components
 import androidx.annotation.StringRes
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Alarm
+import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material.icons.outlined.NotificationsOff
 import androidx.compose.material.icons.outlined.Send
@@ -15,6 +16,7 @@ fun stageIcon(type: StageType): ImageVector = when (type) {
     StageType.SILENT -> Icons.Outlined.NotificationsOff
     StageType.VIBRATE -> Icons.Outlined.Vibration
     StageType.TELEGRAM -> Icons.Outlined.Send
+    StageType.NOTIFICATION -> Icons.Outlined.Notifications
     StageType.ALARM_VIBRATE -> Icons.Outlined.NotificationsActive
     StageType.ALARM -> Icons.Outlined.Alarm
 }
@@ -26,4 +28,5 @@ fun stageTypeLabel(type: StageType): Int = when (type) {
     StageType.ALARM_VIBRATE -> R.string.stage_type_alarm_vibrate
     StageType.ALARM -> R.string.stage_type_alarm
     StageType.TELEGRAM -> R.string.stage_type_telegram
+    StageType.NOTIFICATION -> R.string.stage_type_notification
 }

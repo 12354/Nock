@@ -110,7 +110,7 @@ class RoomCheckManager @Inject constructor(
         if (samplesByRoom.isEmpty()) return
 
         val matchedRoomId = RoomFingerprints.matchRoom(scan.levels, samplesByRoom)
-            ?.takeIf { it.score >= RoomFingerprints.MIN_MATCH_SCORE }
+            ?.takeIf { it.confident }
             ?.roomId
 
         for (r in candidates) {

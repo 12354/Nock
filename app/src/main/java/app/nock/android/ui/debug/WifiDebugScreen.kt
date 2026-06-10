@@ -236,7 +236,8 @@ private fun ScanSummaryCard(probe: WifiProbe) {
         Column(Modifier.padding(12.dp)) {
             Text(
                 winner?.let { "Detected: ${it.name} (${WifiDebugViewModel.pct(it.score)})" }
-                    ?: "No room detected — nothing clears ${(RoomFingerprints.MIN_MATCH_SCORE * 100).toInt()}%",
+                    ?: "No room detected — nothing clears ${(RoomFingerprints.MIN_MATCH_SCORE * 100).toInt()}% " +
+                        "with a ${(RoomFingerprints.MIN_MATCH_MARGIN * 100).toInt()}% lead",
                 fontWeight = FontWeight.SemiBold,
                 color = onColor,
                 style = MaterialTheme.typography.bodyMedium,

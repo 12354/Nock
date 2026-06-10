@@ -55,18 +55,28 @@ sealed class Schedule {
         }
     }
 
-    data class IntervalFromLast(val intervalMs: Long, val startAtMs: Long? = null) : Schedule() {
+    // Fires on a fixed cadence anchored at [startAtMs]: startAt, startAt+interval,
+    // startAt+2·interval, … The next fire is always the next grid point strictly
+    // after the search instant, derived from the anchor alone — NOT from when the
+    // reminder was last completed. Completing or snoozing an occurrence late (or
+    // twenty times) therefore never drags the cadence with it: the original start
+    // date is preserved and whole intervals are added on top of it.
+    //
+    // [startAtMs] is the grid origin and the first fire; every reminder created
+    // through the editor or voice now carries one. Legacy rows saved before the
+    // cadence had an explicit anchor fall back to a single completion-relative
+    // step so they keep firing instead of going silent.
+    data class IntervalFromStart(val intervalMs: Long, val startAtMs: Long? = null) : Schedule() {
         override val isOneTime: Boolean = false
         override fun nextFireFrom(now: Long, lastCompletedAt: Long?, zone: ZoneId): Long? {
-            if (lastCompletedAt != null) {
-                val next = lastCompletedAt + intervalMs
-                return if (next < now) now else next
-            }
-            // First fire: respect explicit start time, or fall back to now + interval
-            if (startAtMs != null) {
-                return if (startAtMs >= now) startAtMs else now
-            }
-            return now + intervalMs
+            val step = intervalMs.coerceAtLeast(1)
+            // Anchorless legacy row: keep the old completion-relative single step.
+            val anchor = startAtMs ?: return (lastCompletedAt ?: now) + step
+            // Before the first grid point the anchor itself is next.
+            if (now < anchor) return anchor
+            // Otherwise the smallest anchor + n·interval strictly after `now`.
+            val stepsElapsed = (now - anchor) / step
+            return anchor + (stepsElapsed + 1) * step
         }
     }
 

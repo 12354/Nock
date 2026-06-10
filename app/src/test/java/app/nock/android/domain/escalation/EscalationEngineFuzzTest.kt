@@ -78,7 +78,7 @@ import kotlin.random.Random
  *    dismissed slot re-arms and rings again. This is the invariant the
  *    pre-trigger-window bug violated: Done before the due time re-armed the same
  *    occurrence, whose past pre-trigger stage made the chain jump straight to the
- *    alarm. (Completion-anchored IntervalFromLast is excluded — see doneAndAssert.)
+ *    alarm. (IntervalFromStart is excluded — see doneAndAssert.)
  *
  * OnUnlock and group pausing are intentionally excluded here (they're event- /
  * window-gated rather than part of the time-driven fire loop) and are covered
@@ -642,10 +642,10 @@ class EscalationEngineFuzzTest {
          *
          * Scoped to Daily/Weekly/Monthly on purpose. Those are the schedules whose
          * occurrence IS a fixed timestamp, so re-arming the identical trigger is
-         * unambiguously wrong. Completion-anchored schedules (IntervalFromLast) are
-         * excluded: their next occurrence is "now + interval", which can legitimately
-         * coincide with the abandoned trigger (e.g. Done pressed the instant after
-         * arming) without being a re-ring. Checked synchronously right after done()
+         * unambiguously wrong. IntervalFromStart and OneShot are excluded: an
+         * anchorless interval row's next occurrence is "now + interval", which can
+         * legitimately coincide with the abandoned trigger (e.g. Done pressed the
+         * instant after arming) without being a re-ring. Checked synchronously right after done()
          * so a later backward clock jump (which legitimately re-arms past
          * occurrences via rescheduleAll) can't muddy the result.
          */
@@ -818,9 +818,9 @@ class EscalationEngineFuzzTest {
                     )
                     // For fixed-slot calendar schedules the trigger must also be a
                     // real slot of the reminder's CURRENT schedule (round-trips
-                    // through nextFireFrom). Completion-anchored schedules
-                    // (IntervalFromLast/OneShot) don't round-trip this way, so the
-                    // slot check is scoped to the calendar kinds.
+                    // through nextFireFrom). IntervalFromStart/OneShot don't
+                    // round-trip this way, so the slot check is scoped to the
+                    // calendar kinds.
                     val isCalendar = sched is Schedule.Daily ||
                         sched is Schedule.Weekly ||
                         sched is Schedule.Monthly
@@ -931,13 +931,13 @@ class EscalationEngineFuzzTest {
         private fun randomMonthly(): Schedule =
             Schedule.Monthly(rnd.nextInt(1, 32), rnd.nextInt(0, 1440))
 
-        // Sometimes pin an explicit start time (the second IntervalFromLast field)
+        // Sometimes pin an explicit start time (the second IntervalFromStart field)
         // so the "first fire respects startAtMs" branch is covered, not just the
         // "now + interval" default. The start can sit in the past or the future.
         private fun randomInterval(): Schedule {
             val interval = rnd.nextLong(1, 600) * MIN
             val start = if (rnd.nextBoolean()) clock.now + rnd.nextLong(-120, 6_000) * MIN else null
-            return Schedule.IntervalFromLast(interval, start)
+            return Schedule.IntervalFromStart(interval, start)
         }
 
         /** Change only the time/date fields of a schedule, keeping its kind. */
@@ -945,7 +945,7 @@ class EscalationEngineFuzzTest {
             is Schedule.Daily -> Schedule.Daily(randomTimes())
             is Schedule.Weekly -> Schedule.Weekly(randomDays(), randomTimes())
             is Schedule.Monthly -> randomMonthly()
-            is Schedule.IntervalFromLast -> randomInterval()
+            is Schedule.IntervalFromStart -> randomInterval()
             is Schedule.OneShot -> Schedule.OneShot(clock.now + rnd.nextLong(-120, 6_000) * MIN)
             is Schedule.OnUnlock -> s // not produced in this fuzzer
             is Schedule.RoomAfter -> s // not produced in this fuzzer

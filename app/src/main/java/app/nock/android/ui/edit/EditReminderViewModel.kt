@@ -126,7 +126,7 @@ class EditReminderViewModel @Inject constructor(
                 is Schedule.Daily -> ScheduleKind.DAILY
                 is Schedule.Weekly -> ScheduleKind.WEEKLY
                 is Schedule.Monthly -> ScheduleKind.MONTHLY
-                is Schedule.IntervalFromLast -> ScheduleKind.INTERVAL
+                is Schedule.IntervalFromStart -> ScheduleKind.INTERVAL
                 is Schedule.OnUnlock -> ScheduleKind.ON_UNLOCK
                 is Schedule.RoomAfter -> ScheduleKind.ROOM
             }
@@ -142,8 +142,8 @@ class EditReminderViewModel @Inject constructor(
                     weeklyTimesMinutes = (r.schedule as? Schedule.Weekly)?.timesOfDayMinutes ?: it.weeklyTimesMinutes,
                     monthlyDay = (r.schedule as? Schedule.Monthly)?.dayOfMonth ?: it.monthlyDay,
                     monthlyTimeMinutes = (r.schedule as? Schedule.Monthly)?.timeOfDayMinutes ?: it.monthlyTimeMinutes,
-                    intervalHours = ((r.schedule as? Schedule.IntervalFromLast)?.intervalMs ?: (it.intervalHours * 3_600_000L)).let { (it / 3_600_000L).toInt().coerceAtLeast(1) },
-                    intervalStartMs = (r.schedule as? Schedule.IntervalFromLast)?.startAtMs,
+                    intervalHours = ((r.schedule as? Schedule.IntervalFromStart)?.intervalMs ?: (it.intervalHours * 3_600_000L)).let { (it / 3_600_000L).toInt().coerceAtLeast(1) },
+                    intervalStartMs = (r.schedule as? Schedule.IntervalFromStart)?.startAtMs,
                     isCalendarReminder = tripLocation != null,
                     location = tripLocation.orEmpty(),
                     bufferMin = tripBuffer ?: DEFAULT_TRIP_BUFFER_MIN,
@@ -244,7 +244,7 @@ class EditReminderViewModel @Inject constructor(
             monthlyDay = s.dayOfMonth,
             monthlyTimeMinutes = s.timeOfDayMinutes
         )
-        is Schedule.IntervalFromLast -> st.copy(
+        is Schedule.IntervalFromStart -> st.copy(
             scheduleType = ScheduleKind.INTERVAL,
             intervalHours = (s.intervalMs / 3_600_000L).toInt().coerceAtLeast(1),
             intervalStartMs = s.startAtMs
@@ -299,13 +299,12 @@ class EditReminderViewModel @Inject constructor(
         val schedule = buildSchedule(s) ?: return false
         val now = System.currentTimeMillis()
         val existing = if (s.reminderId != 0L) repo.getReminder(s.reminderId) else null
-        // Anchor the next fire on the reminder's existing completion history.
-        // Passing null here made an INTERVAL ("after completion") reminder whose
-        // start time is already in the past recompute its next fire as `now` on
-        // every save — so merely renaming it or moving it to another group fired
-        // it immediately instead of one interval after the last completion. A new
-        // reminder (existing == null) genuinely has no anchor, so it still falls
-        // back to its start time / now + interval as before.
+        // Recompute the next fire from the schedule, carrying the existing
+        // completion history. A fixed-anchor IntervalFromStart ignores it (its
+        // grid is derived from the start date), but an anchorless legacy interval
+        // row still needs it: passing null there would re-step the cadence from
+        // `now` on every edit, so merely renaming or regrouping the reminder would
+        // shift its fire time. A new reminder (existing == null) has no history.
         val nextFire = schedule.nextFireFrom(now, existing?.lastCompletedAt)
         val name = s.name.ifBlank { ctx.getString(R.string.default_reminder_name) }
         // Persist + (re-)arm as one mutex-guarded step. Doing saveReminder outside
@@ -369,7 +368,14 @@ class EditReminderViewModel @Inject constructor(
         ScheduleKind.DAILY -> Schedule.Daily(s.dailyTimesMinutes)
         ScheduleKind.WEEKLY -> Schedule.Weekly(s.weeklyDays, s.weeklyTimesMinutes)
         ScheduleKind.MONTHLY -> Schedule.Monthly(s.monthlyDay, s.monthlyTimeMinutes)
-        ScheduleKind.INTERVAL -> Schedule.IntervalFromLast(s.intervalHours * 3_600_000L, s.intervalStartMs)
+        ScheduleKind.INTERVAL -> {
+            val interval = s.intervalHours * 3_600_000L
+            // The cadence is anchored on a fixed start date. When the user didn't
+            // pick one, anchor the grid at the first fire (now + interval) so the
+            // schedule has a concrete origin and never drifts with completions.
+            val anchor = s.intervalStartMs ?: (System.currentTimeMillis() + interval)
+            Schedule.IntervalFromStart(interval, anchor)
+        }
         ScheduleKind.ON_UNLOCK -> Schedule.OnUnlock(System.currentTimeMillis())
         ScheduleKind.ROOM -> s.roomId?.let {
             Schedule.RoomAfter(it, s.roomAfterMinutes, s.roomFallbackMin * 60_000L, s.roomGraceMin * 60_000L)

@@ -392,7 +392,7 @@ private fun describe(ctx: android.content.Context, r: Reminder): String = when (
             s.dayOfMonth,
             "%02d:%02d".format(s.timeOfDayMinutes / 60, s.timeOfDayMinutes % 60)
         )
-    is app.nock.android.domain.model.Schedule.IntervalFromLast -> {
+    is app.nock.android.domain.model.Schedule.IntervalFromStart -> {
         val hrs = s.intervalMs / 3_600_000.0
         if (hrs >= 1.0) ctx.getString(R.string.schedule_every_h_after_done, "%.1f".format(hrs))
         else ctx.getString(R.string.schedule_every_min_after_done, (s.intervalMs / 60_000).toInt())

@@ -94,7 +94,7 @@ class NockRepository @Inject constructor(
             is Schedule.Daily -> "DAILY"
             is Schedule.Weekly -> "WEEKLY"
             is Schedule.Monthly -> "MONTHLY"
-            is Schedule.IntervalFromLast -> "INTERVAL"
+            is Schedule.IntervalFromStart -> "INTERVAL"
             is Schedule.OnUnlock -> "ON_UNLOCK"
             is Schedule.RoomAfter -> "ROOM_AFTER"
         }

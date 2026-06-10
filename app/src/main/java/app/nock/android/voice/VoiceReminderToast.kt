@@ -56,7 +56,7 @@ object VoiceReminderToast {
                 schedule.dayOfMonth,
                 formatMinutes(schedule.timeOfDayMinutes)
             )
-        is Schedule.IntervalFromLast -> formatInterval(ctx, schedule.intervalMs)
+        is Schedule.IntervalFromStart -> formatInterval(ctx, schedule.intervalMs)
         is Schedule.OnUnlock -> ctx.getString(R.string.voice_when_on_unlock)
         is Schedule.RoomAfter ->
             ctx.getString(R.string.schedule_room_after, formatMinutes(schedule.afterMinutes))

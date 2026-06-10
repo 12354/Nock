@@ -34,7 +34,7 @@ object RoomFingerprints {
     const val MIN_MATCH_SCORE = 0.55
 
     /** RSSI above which an AP counts as reliably visible for [quality]. */
-    private const val STRONG_DBM = -85
+    const val STRONG_DBM = -85
 
     /**
      * 0..1 similarity of two fingerprints: mean absolute RSSI difference over

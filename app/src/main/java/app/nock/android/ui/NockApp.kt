@@ -37,6 +37,7 @@ import app.nock.android.ui.components.UndoSnackbar
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import app.nock.android.ui.debug.DebugScreen
+import app.nock.android.ui.debug.WifiDebugScreen
 import app.nock.android.ui.edit.EditReminderRoute
 import app.nock.android.ui.group.GroupEditorScreen
 import app.nock.android.ui.reminders.RemindersScreen
@@ -200,7 +201,13 @@ fun NockApp(
                 DiagnosticsSettingsScreen(onBack = { nav.popBackStack() })
             }
             composable("settings/${SettingsCategory.DEBUG}") {
-                DebugScreen(onBack = { nav.popBackStack() })
+                DebugScreen(
+                    onBack = { nav.popBackStack() },
+                    onOpenWifiDebug = { nav.navigate("settings/${SettingsCategory.DEBUG}/wifi") }
+                )
+            }
+            composable("settings/${SettingsCategory.DEBUG}/wifi") {
+                WifiDebugScreen(onBack = { nav.popBackStack() })
             }
             composable("edit?id={id}") { entry ->
                 val id = entry.arguments?.getString("id")?.toLongOrNull() ?: 0L

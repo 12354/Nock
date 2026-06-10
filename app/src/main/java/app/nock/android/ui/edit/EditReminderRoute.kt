@@ -44,6 +44,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
@@ -220,42 +221,68 @@ fun EditReminderRoute(
  */
 @Composable
 private fun TripBufferField(bufferMin: Int, onChange: (Int) -> Unit) {
-    val min = EditReminderViewModel.MIN_TRIP_BUFFER_MIN
-    val max = EditReminderViewModel.MAX_TRIP_BUFFER_MIN
-    val step = 5
-    val steps = ((max - min) / step) - 1
-    Column(
+    MinutesSlider(
+        icon = Icons.Filled.Timelapse,
+        label = stringResource(R.string.edit_trip_buffer_label),
+        valueText = stringResource(R.string.edit_trip_buffer_value, bufferMin),
+        helpText = stringResource(R.string.edit_trip_buffer_help),
+        value = bufferMin,
+        min = EditReminderViewModel.MIN_TRIP_BUFFER_MIN,
+        max = EditReminderViewModel.MAX_TRIP_BUFFER_MIN,
+        onChange = onChange,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp)
-    ) {
+            .padding(horizontal = 16.dp),
+    )
+}
+
+/**
+ * A labelled minutes picker rendered as a Material slider that snaps to whole
+ * [step]-minute increments. Shared by the calendar trip buffer and the
+ * room-based fallback so both read and behave identically.
+ */
+@Composable
+private fun MinutesSlider(
+    icon: ImageVector,
+    label: String,
+    valueText: String,
+    helpText: String,
+    value: Int,
+    min: Int,
+    max: Int,
+    onChange: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+    step: Int = 5,
+) {
+    val steps = ((max - min) / step) - 1
+    Column(modifier = modifier) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(
-                Icons.Filled.Timelapse,
+                icon,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.width(12.dp))
             Text(
-                stringResource(R.string.edit_trip_buffer_label),
+                label,
                 style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.weight(1f),
             )
             Text(
-                stringResource(R.string.edit_trip_buffer_value, bufferMin),
+                valueText,
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.primary,
             )
         }
         Slider(
-            value = bufferMin.coerceIn(min, max).toFloat(),
+            value = value.coerceIn(min, max).toFloat(),
             onValueChange = { onChange((it / step).toInt() * step) },
             valueRange = min.toFloat()..max.toFloat(),
             steps = steps,
         )
         Text(
-            stringResource(R.string.edit_trip_buffer_help),
+            helpText,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.outline,
         )
@@ -839,27 +866,16 @@ private fun RoomScheduleEditor(
             }) { Text("%02d:%02d".format(afterMinutes / 60, afterMinutes % 60)) }
         }
 
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Text(
-                stringResource(R.string.edit_room_fallback_label),
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.weight(1f)
-            )
-            OutlinedTextField(
-                value = fallbackMin.toString(),
-                onValueChange = { it.toIntOrNull()?.let(onFallback) },
-                keyboardOptions = KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
-                singleLine = true,
-                modifier = Modifier.width(100.dp)
-            )
-        }
-        Text(
-            stringResource(R.string.edit_room_fallback_help, fallbackMin),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.outline,
+        MinutesSlider(
+            icon = Icons.Filled.Timelapse,
+            label = stringResource(R.string.edit_room_fallback_label),
+            valueText = stringResource(R.string.edit_trip_buffer_value, fallbackMin),
+            helpText = stringResource(R.string.edit_room_fallback_help, fallbackMin),
+            value = fallbackMin,
+            min = EditReminderViewModel.MIN_ROOM_FALLBACK_MIN,
+            max = EditReminderViewModel.MAX_ROOM_FALLBACK_MIN,
+            onChange = onFallback,
+            modifier = Modifier.fillMaxWidth(),
         )
 
         Surface(

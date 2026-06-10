@@ -360,7 +360,7 @@ class EditReminderViewModel @Inject constructor(
 
         // Fallback deadline bounds for room reminders (minutes after start).
         const val MIN_ROOM_FALLBACK_MIN = 5
-        const val MAX_ROOM_FALLBACK_MIN = 12 * 60
+        const val MAX_ROOM_FALLBACK_MIN = MAX_TRIP_BUFFER_MIN
         const val DEFAULT_ROOM_FALLBACK_MIN = 60
     }
 }

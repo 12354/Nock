@@ -413,7 +413,7 @@
     <string name="edit_room_none">Noch keine Räume definiert. Lege zuerst einen Raum an und erfasse seinen WLAN-Fingerabdruck — ohne Raum kann die Erinnerung nicht gespeichert werden.</string>
     <string name="edit_room_manage">Räume verwalten</string>
     <string name="edit_room_after_label">Aktiv ab</string>
-    <string name="edit_room_fallback_label">Spätestens nach (Minuten)</string>
+    <string name="edit_room_fallback_label">Spätestens nach</string>
     <string name="edit_room_fallback_help">Klingelt, sobald du nach der Startzeit im Raum erkannt wirst — höchstens einmal pro Tag. Wirst du nicht erkannt, klingelt sie trotzdem %1$d Minuten nach der Startzeit, damit nichts verpasst wird.</string>
     <string name="edit_room_hint">Die Raumerkennung liest die WLAN-Umgebung beim Entsperren des Telefons und in leichten periodischen Prüfungen — nur solange die Erinnerung wartet. Sie funktioniert am besten, wenn viele Netzwerke sichtbar sind (auch die der Nachbarn); mit nur einem Router sind benachbarte Räume schwer zu unterscheiden.</string>
     <string name="rooms_title">Räume</string>

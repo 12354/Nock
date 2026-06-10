@@ -5,10 +5,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Pause
@@ -18,23 +16,25 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import app.nock.android.R
 import app.nock.android.data.entity.PendingVoiceReminderEntity
 import app.nock.android.domain.model.Group
 import app.nock.android.domain.model.Reminder
+import app.nock.android.ui.ReminderUndoViewModel
 import app.nock.android.ui.components.GroupAvatar
 import app.nock.android.ui.components.PauseUntilDialog
+import app.nock.android.ui.components.UndoSnackbar
 import app.nock.android.ui.components.formatPauseUntil
-import app.nock.android.ui.voice.VoiceAlarmFab
+import app.nock.android.ui.voice.AddReminderFab
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.time.format.TextStyle
 import java.util.Locale
 
@@ -48,26 +48,25 @@ fun RemindersScreen(
 ) {
     val sections by vm.sections.collectAsState()
     val pending by vm.pending.collectAsState()
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    val undoVm: ReminderUndoViewModel = hiltViewModel()
+    val deletedMessage = stringResource(R.string.reminder_deleted_undo_message)
+    val undoAction = stringResource(R.string.today_done_undo_action)
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.reminders)) }
             )
         },
-        floatingActionButton = {
-            Column(
-                horizontalAlignment = Alignment.End,
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                VoiceAlarmFab()
-                ExtendedFloatingActionButton(
-                    onClick = onAddReminder,
-                    icon = { Icon(Icons.Filled.Add, contentDescription = null) },
-                    text = { Text(stringResource(R.string.add)) },
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                )
+        snackbarHost = {
+            SnackbarHost(snackbarHostState) { data ->
+                UndoSnackbar(data = data, durationMs = ReminderUndoViewModel.UNDO_WINDOW_MS)
             }
+        },
+        floatingActionButton = {
+            AddReminderFab(onAdd = onAddReminder, snackbarHostState = snackbarHostState)
         }
     ) { padding ->
         LazyColumn(
@@ -92,7 +91,26 @@ fun RemindersScreen(
                         onPauseToggle = { pauseDialogFor = section.group },
                         onClickReminder = onEditReminder,
                         onClickGroup = { onEditGroup(section.group.id) },
-                        onDelete = { vm.deleteReminder(it) }
+                        // The swipe commits the delete immediately; the snackbar
+                        // offers a restore for the undo window, mirroring the
+                        // editor's delete flow in NockApp.
+                        onDelete = { r ->
+                            vm.deleteReminder(r)
+                            scope.launch {
+                                launch {
+                                    delay(ReminderUndoViewModel.UNDO_WINDOW_MS)
+                                    snackbarHostState.currentSnackbarData?.dismiss()
+                                }
+                                val result = snackbarHostState.showSnackbar(
+                                    message = deletedMessage,
+                                    actionLabel = undoAction,
+                                    duration = SnackbarDuration.Indefinite
+                                )
+                                if (result == SnackbarResult.ActionPerformed) {
+                                    undoVm.restore(r)
+                                }
+                            }
+                        }
                     )
                     pauseDialogFor?.let { g ->
                         PauseUntilDialog(
@@ -143,11 +161,13 @@ private fun GroupSection(
                     }
                 }
                 Text(
-                    text = section.reminders.size.let { c ->
-                        if (c == 1) "1 reminder" else "$c reminders"
-                    },
+                    text = pluralStringResource(
+                        R.plurals.reminders_count,
+                        section.reminders.size,
+                        section.reminders.size
+                    ),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 12.sp
+                    style = MaterialTheme.typography.bodySmall
                 )
             }
             IconButton(onClick = onPauseToggle) {
@@ -167,43 +187,96 @@ private fun GroupSection(
                 modifier = Modifier.padding(start = 68.dp, end = 24.dp, top = 4.dp, bottom = 12.dp)
             )
         } else {
-            val ctx = LocalContext.current
             section.reminders.forEach { r ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onClickReminder(r.id) }
-                        .padding(start = 68.dp, end = 12.dp, top = 8.dp, bottom = 8.dp)
-                        .heightIn(min = 56.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            r.name,
-                            color = if (paused) MaterialTheme.colorScheme.onSurfaceVariant
-                            else MaterialTheme.colorScheme.onSurface,
-                            style = MaterialTheme.typography.bodyLarge
-                        )
-                        Text(
-                            describe(ctx, r),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                    }
-                    IconButton(onClick = { onDelete(r) }) {
-                        Icon(
-                            Icons.Filled.Delete,
-                            contentDescription = stringResource(R.string.delete),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Icon(
-                        Icons.Filled.ChevronRight,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                key(r.id) {
+                    SwipeDeletableReminderRow(
+                        reminder = r,
+                        paused = paused,
+                        onClick = { onClickReminder(r.id) },
+                        onDelete = { onDelete(r) },
                     )
                 }
             }
+        }
+    }
+}
+
+/**
+ * A reminder row that swipes away (end → start) to delete, replacing the old
+ * always-visible per-row trash button. The delete commits on the swipe; the
+ * caller surfaces an undo snackbar.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SwipeDeletableReminderRow(
+    reminder: Reminder,
+    paused: Boolean,
+    onClick: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    val ctx = LocalContext.current
+    val dismissState = rememberSwipeToDismissBoxState(
+        confirmValueChange = { value ->
+            if (value == SwipeToDismissBoxValue.EndToStart) {
+                onDelete()
+                true
+            } else {
+                false
+            }
+        }
+    )
+    SwipeToDismissBox(
+        state = dismissState,
+        enableDismissFromStartToEnd = false,
+        backgroundContent = {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
+                    .background(
+                        MaterialTheme.colorScheme.errorContainer,
+                        RoundedCornerShape(12.dp)
+                    )
+                    .padding(end = 20.dp),
+                contentAlignment = Alignment.CenterEnd
+            ) {
+                Icon(
+                    Icons.Filled.Delete,
+                    contentDescription = stringResource(R.string.delete),
+                    tint = MaterialTheme.colorScheme.onErrorContainer
+                )
+            }
+        }
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                // Opaque background so the delete reveal can't show through the
+                // row while it slides.
+                .background(MaterialTheme.colorScheme.surface)
+                .clickable { onClick() }
+                .padding(start = 68.dp, end = 12.dp, top = 8.dp, bottom = 8.dp)
+                .heightIn(min = 56.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    reminder.name,
+                    color = if (paused) MaterialTheme.colorScheme.onSurfaceVariant
+                    else MaterialTheme.colorScheme.onSurface,
+                    style = MaterialTheme.typography.bodyLarge
+                )
+                Text(
+                    describe(ctx, reminder),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+            Icon(
+                Icons.Filled.ChevronRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }
@@ -335,4 +408,3 @@ private fun describe(ctx: android.content.Context, r: Reminder): String = when (
             "%02d:%02d".format(s.afterMinutes / 60, s.afterMinutes % 60)
         )
 }
-

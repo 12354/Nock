@@ -2,8 +2,6 @@
 
 package app.nock.android.ui.edit
 
-import android.app.DatePickerDialog
-import android.app.TimePickerDialog
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -52,16 +50,21 @@ import androidx.compose.ui.text.input.OffsetMapping
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.compose.ui.text.input.KeyboardType
 import app.nock.android.R
+import app.nock.android.ui.components.NockDatePickerDialog
+import app.nock.android.ui.components.NockTimePickerDialog
 import app.nock.android.ui.components.stageIcon
 import app.nock.android.ui.components.stageTypeLabel
 import kotlinx.coroutines.launch
 import java.time.DayOfWeek
+import java.time.Instant
+import java.time.LocalDate
 import java.time.LocalDateTime
-import java.time.LocalTime
 import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
 import java.time.format.TextStyle as JTextStyle
-import java.util.Calendar
 import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -78,6 +81,17 @@ fun EditReminderRoute(
     LaunchedEffect(reminderId) { vm.load(reminderId) }
     val scope = rememberCoroutineScope()
 
+    // The editor saves on exit (close button and system back alike), matching
+    // the group editor — backing out must not silently discard edits. A brand-new
+    // untouched reminder is skipped inside saveOnExit.
+    val saveAndClose: () -> Unit = {
+        scope.launch {
+            vm.saveOnExit()
+            onDone()
+        }
+    }
+    androidx.activity.compose.BackHandler(onBack = saveAndClose)
+
     // Coming back from the rooms screen must show rooms created there.
     val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
@@ -93,7 +107,7 @@ fun EditReminderRoute(
             CenterAlignedTopAppBar(
                 title = { Text(stringResource(if (reminderId == 0L) R.string.edit_title_new else R.string.edit_title_edit)) },
                 navigationIcon = {
-                    IconButton(onClick = onDone) {
+                    IconButton(onClick = saveAndClose) {
                         Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.back))
                     }
                 },
@@ -435,23 +449,23 @@ private fun parsedSummary(state: EditState): String? {
             val base = stringResource(R.string.parsed_summary_interval, state.intervalHours)
             val startMs = state.intervalStartMs
             if (startMs != null) {
-                val dt = LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(startMs), ZoneId.systemDefault())
+                val dt = LocalDateTime.ofInstant(Instant.ofEpochMilli(startMs), ZoneId.systemDefault())
                 stringResource(
                     R.string.parsed_summary_interval_with_start,
                     state.intervalHours,
-                    "%04d-%02d-%02d".format(dt.year, dt.monthValue, dt.dayOfMonth),
+                    formatDate(dt.toLocalDate()),
                     "%02d:%02d".format(dt.hour, dt.minute)
                 )
             } else base
         }
         ScheduleKind.ONESHOT -> {
             val dt = LocalDateTime.ofInstant(
-                java.time.Instant.ofEpochMilli(state.oneShotMs),
+                Instant.ofEpochMilli(state.oneShotMs),
                 ZoneId.systemDefault()
             )
             stringResource(
                 R.string.parsed_summary_once,
-                "%04d-%02d-%02d".format(dt.year, dt.monthValue, dt.dayOfMonth),
+                formatDate(dt.toLocalDate()),
                 "%02d:%02d".format(dt.hour, dt.minute)
             )
         }
@@ -592,35 +606,50 @@ private fun ScheduleKindSelector(current: ScheduleKind, onChange: (ScheduleKind)
     }
 }
 
+/** Localized medium date for picker buttons and summaries (was a raw ISO string). */
+private fun formatDate(date: LocalDate): String =
+    date.format(DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM))
+
 @Composable
 private fun OneShotEditor(ms: Long, onChange: (Long) -> Unit) {
-    val ctx = LocalContext.current
-    val dt = remember(ms) { LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(ms), ZoneId.systemDefault()) }
+    val dt = remember(ms) { LocalDateTime.ofInstant(Instant.ofEpochMilli(ms), ZoneId.systemDefault()) }
+    var showDate by remember { mutableStateOf(false) }
+    var showTime by remember { mutableStateOf(false) }
     Column(modifier = Modifier.padding(horizontal = 16.dp)) {
         Text(stringResource(R.string.edit_date_time_label), style = MaterialTheme.typography.labelLarge)
         Spacer(Modifier.height(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = {
-                DatePickerDialog(ctx, { _, y, m, d ->
-                    val newDt = dt.withYear(y).withMonth(m + 1).withDayOfMonth(d)
-                    onChange(newDt.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli())
-                }, dt.year, dt.monthValue - 1, dt.dayOfMonth).show()
-            }) { Text("%04d-%02d-%02d".format(dt.year, dt.monthValue, dt.dayOfMonth)) }
-
-            OutlinedButton(onClick = {
-                TimePickerDialog(ctx, { _, h, mn ->
-                    val newDt = dt.withHour(h).withMinute(mn).withSecond(0).withNano(0)
-                    onChange(newDt.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli())
-                }, dt.hour, dt.minute, true).show()
-            }) { Text("%02d:%02d".format(dt.hour, dt.minute)) }
+            OutlinedButton(onClick = { showDate = true }) { Text(formatDate(dt.toLocalDate())) }
+            OutlinedButton(onClick = { showTime = true }) { Text("%02d:%02d".format(dt.hour, dt.minute)) }
         }
+    }
+    if (showDate) {
+        NockDatePickerDialog(
+            initialDate = dt.toLocalDate(),
+            onDismiss = { showDate = false },
+            onConfirm = { date ->
+                val newDt = LocalDateTime.of(date, dt.toLocalTime())
+                onChange(newDt.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli())
+            }
+        )
+    }
+    if (showTime) {
+        NockTimePickerDialog(
+            initialMinutesOfDay = dt.hour * 60 + dt.minute,
+            onDismiss = { showTime = false },
+            onConfirm = { minutes ->
+                val newDt = dt.withHour(minutes / 60).withMinute(minutes % 60).withSecond(0).withNano(0)
+                onChange(newDt.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli())
+            }
+        )
     }
 }
 
 @Composable
 private fun TimesListEditor(label: String, times: List<Int>, onChange: (List<Int>) -> Unit) {
-    val ctx = LocalContext.current
     val primary = MaterialTheme.colorScheme.primary
+    var editIdx by remember { mutableStateOf<Int?>(null) }
+    var adding by remember { mutableStateOf(false) }
     Column(modifier = Modifier.padding(horizontal = 16.dp)) {
         Text(
             label.uppercase(Locale.getDefault()),
@@ -635,11 +664,7 @@ private fun TimesListEditor(label: String, times: List<Int>, onChange: (List<Int
             times.forEachIndexed { idx, m ->
                 FilterChip(
                     selected = true,
-                    onClick = {
-                        TimePickerDialog(ctx, { _, h, mn ->
-                            onChange(times.toMutableList().also { it[idx] = h * 60 + mn }.sorted())
-                        }, m / 60, m % 60, true).show()
-                    },
+                    onClick = { editIdx = idx },
                     label = { Text("%02d:%02d".format(m / 60, m % 60)) },
                     trailingIcon = {
                         Icon(
@@ -659,15 +684,27 @@ private fun TimesListEditor(label: String, times: List<Int>, onChange: (List<Int
                 )
             }
             AssistChip(
-                onClick = {
-                    TimePickerDialog(ctx, { _, h, mn ->
-                        onChange((times + (h * 60 + mn)).sorted())
-                    }, 9, 0, true).show()
-                },
+                onClick = { adding = true },
                 label = { Text(stringResource(R.string.edit_add_time)) },
                 leadingIcon = { Icon(Icons.Filled.Add, contentDescription = null) }
             )
         }
+    }
+    editIdx?.let { idx ->
+        NockTimePickerDialog(
+            initialMinutesOfDay = times.getOrElse(idx) { 9 * 60 },
+            onDismiss = { editIdx = null },
+            onConfirm = { m ->
+                onChange(times.toMutableList().also { it[idx] = m }.sorted())
+            }
+        )
+    }
+    if (adding) {
+        NockTimePickerDialog(
+            initialMinutesOfDay = 9 * 60,
+            onDismiss = { adding = false },
+            onConfirm = { m -> onChange((times + m).sorted()) }
+        )
     }
 }
 
@@ -701,7 +738,7 @@ private fun WeekdaySelector(selected: Set<DayOfWeek>, onChange: (Set<DayOfWeek>)
 
 @Composable
 private fun MonthlyEditor(day: Int, timeMin: Int, onDay: (Int) -> Unit, onTime: (Int) -> Unit) {
-    val ctx = LocalContext.current
+    var showTime by remember { mutableStateOf(false) }
     Column(modifier = Modifier.padding(horizontal = 16.dp)) {
         Text(stringResource(R.string.edit_monthly_label), style = MaterialTheme.typography.labelLarge)
         Spacer(Modifier.height(8.dp))
@@ -710,12 +747,20 @@ private fun MonthlyEditor(day: Int, timeMin: Int, onDay: (Int) -> Unit, onTime: 
                 value = day.toString(),
                 onValueChange = { it.toIntOrNull()?.let { v -> if (v in 1..31) onDay(v) } },
                 label = { Text(stringResource(R.string.edit_day_label)) },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 modifier = Modifier.width(120.dp)
             )
-            OutlinedButton(onClick = {
-                TimePickerDialog(ctx, { _, h, mn -> onTime(h * 60 + mn) }, timeMin / 60, timeMin % 60, true).show()
-            }) { Text(stringResource(R.string.edit_at_time, "%02d:%02d".format(timeMin / 60, timeMin % 60))) }
+            OutlinedButton(onClick = { showTime = true }) {
+                Text(stringResource(R.string.edit_at_time, "%02d:%02d".format(timeMin / 60, timeMin % 60)))
+            }
         }
+    }
+    if (showTime) {
+        NockTimePickerDialog(
+            initialMinutesOfDay = timeMin,
+            onDismiss = { showTime = false },
+            onConfirm = onTime
+        )
     }
 }
 
@@ -726,7 +771,8 @@ private fun IntervalEditor(
     onHoursChange: (Int) -> Unit,
     onStartChange: (Long?) -> Unit
 ) {
-    val ctx = LocalContext.current
+    var showDate by remember { mutableStateOf(false) }
+    var showTime by remember { mutableStateOf(false) }
     Column(modifier = Modifier.padding(horizontal = 16.dp)) {
         Text(stringResource(R.string.edit_interval_label), style = MaterialTheme.typography.labelLarge)
         Spacer(Modifier.height(8.dp))
@@ -734,6 +780,7 @@ private fun IntervalEditor(
             value = hours.toString(),
             onValueChange = { it.toIntOrNull()?.let { v -> if (v in 1..168) onHoursChange(v) } },
             label = { Text(stringResource(R.string.edit_hours_label)) },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             modifier = Modifier.width(160.dp)
         )
         Spacer(Modifier.height(8.dp))
@@ -755,22 +802,32 @@ private fun IntervalEditor(
         }
         if (startMs != null) {
             val dt = remember(startMs) {
-                LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(startMs), ZoneId.systemDefault())
+                LocalDateTime.ofInstant(Instant.ofEpochMilli(startMs), ZoneId.systemDefault())
             }
             Spacer(Modifier.height(4.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = {
-                    DatePickerDialog(ctx, { _, y, m, d ->
-                        val newDt = dt.withYear(y).withMonth(m + 1).withDayOfMonth(d)
+                OutlinedButton(onClick = { showDate = true }) { Text(formatDate(dt.toLocalDate())) }
+                OutlinedButton(onClick = { showTime = true }) { Text("%02d:%02d".format(dt.hour, dt.minute)) }
+            }
+            if (showDate) {
+                NockDatePickerDialog(
+                    initialDate = dt.toLocalDate(),
+                    onDismiss = { showDate = false },
+                    onConfirm = { date ->
+                        val newDt = LocalDateTime.of(date, dt.toLocalTime())
                         onStartChange(newDt.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli())
-                    }, dt.year, dt.monthValue - 1, dt.dayOfMonth).show()
-                }) { Text("%04d-%02d-%02d".format(dt.year, dt.monthValue, dt.dayOfMonth)) }
-                OutlinedButton(onClick = {
-                    TimePickerDialog(ctx, { _, h, mn ->
-                        val newDt = dt.withHour(h).withMinute(mn).withSecond(0).withNano(0)
+                    }
+                )
+            }
+            if (showTime) {
+                NockTimePickerDialog(
+                    initialMinutesOfDay = dt.hour * 60 + dt.minute,
+                    onDismiss = { showTime = false },
+                    onConfirm = { minutes ->
+                        val newDt = dt.withHour(minutes / 60).withMinute(minutes % 60).withSecond(0).withNano(0)
                         onStartChange(newDt.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli())
-                    }, dt.hour, dt.minute, true).show()
-                }) { Text("%02d:%02d".format(dt.hour, dt.minute)) }
+                    }
+                )
             }
         }
     }
@@ -808,7 +865,7 @@ private fun RoomScheduleEditor(
     onGrace: (Int) -> Unit,
     onManageRooms: () -> Unit,
 ) {
-    val ctx = LocalContext.current
+    var showAfterTime by remember { mutableStateOf(false) }
     Column(
         modifier = Modifier.padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -864,10 +921,16 @@ private fun RoomScheduleEditor(
                 style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.weight(1f)
             )
-            OutlinedButton(onClick = {
-                TimePickerDialog(ctx, { _, h, mn -> onAfter(h * 60 + mn) },
-                    afterMinutes / 60, afterMinutes % 60, true).show()
-            }) { Text("%02d:%02d".format(afterMinutes / 60, afterMinutes % 60)) }
+            OutlinedButton(onClick = { showAfterTime = true }) {
+                Text("%02d:%02d".format(afterMinutes / 60, afterMinutes % 60))
+            }
+        }
+        if (showAfterTime) {
+            NockTimePickerDialog(
+                initialMinutesOfDay = afterMinutes,
+                onDismiss = { showAfterTime = false },
+                onConfirm = onAfter
+            )
         }
 
         MinutesSlider(

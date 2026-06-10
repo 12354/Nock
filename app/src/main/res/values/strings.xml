@@ -9,6 +9,9 @@
     <string name="done">Done</string>
     <string name="snooze">Snooze</string>
     <string name="add">Add</string>
+    <string name="ok">OK</string>
+    <string name="pick_time_title">Select time</string>
+    <string name="fab_add_hold_hint">Add reminder — hold to dictate</string>
     <string name="save">Save</string>
     <string name="cancel">Cancel</string>
     <string name="delete">Delete</string>
@@ -55,6 +58,10 @@
     <string name="resume">Resume</string>
     <string name="pause">Pause</string>
     <string name="reminders_empty_group">No reminders yet</string>
+    <plurals name="reminders_count">
+        <item quantity="one">%1$d reminder</item>
+        <item quantity="other">%1$d reminders</item>
+    </plurals>
     <string name="reminders_paused_chip">Paused</string>
     <string name="reminders_paused_until_chip">Paused until %1$s</string>
 
@@ -146,6 +153,7 @@
     <string name="group_editor_edit_stages">Edit stages</string>
     <string name="group_editor_mirror_silent_telegram_sub">Sends a silent Telegram message at the heads-up stage</string>
     <string name="group_editor_chain_summary_default">Using the default chain</string>
+    <string name="chain_offsets_repeat">%1$s (repeats every %2$d min)</string>
 
     <!-- Quick-add styling -->
     <string name="edit_quick_add_hint">Quick add — type it in plain English</string>
@@ -200,9 +208,9 @@
     <!-- Alarm screen / notifications -->
     <string name="alarm_title">Alarm</string>
     <string name="alarm_loud_alarm">Loud alarm</string>
-    <string name="alarm_stage_final">Stage 4 of 4</string>
-    <string name="alarm_subtitle">Earlier nudges weren\'t acknowledged · repeats every 10 min</string>
-    <string name="snooze_10_min">Snooze 10 min</string>
+    <string name="alarm_stage_of">Stage %1$d of %2$d</string>
+    <string name="alarm_subtitle_repeats">Earlier nudges weren\'t acknowledged · repeats every %1$d min</string>
+    <string name="alarm_snooze_minutes">Snooze %1$d min</string>
     <string name="notification_alarm_suffix">%1$s — alarm</string>
 
     <!-- Stage types (StageType enum) -->

@@ -2,11 +2,10 @@
 
 package app.nock.android.ui.components
 
-import android.app.DatePickerDialog
-import android.app.TimePickerDialog
 import android.content.Context
 import android.text.format.DateFormat
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -18,6 +17,10 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -27,7 +30,6 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.ZoneId
-import java.util.Calendar
 
 @Composable
 fun PauseUntilDialog(
@@ -40,11 +42,19 @@ fun PauseUntilDialog(
     val now = System.currentTimeMillis()
     val isPaused = currentPauseUntilMs != null && currentPauseUntilMs > now
 
+    // Custom "until" runs date → time through the M3 Compose pickers (the old
+    // android.app View dialogs didn't match the app theme).
+    var showCustomDate by remember { mutableStateOf(false) }
+    var customDate by remember { mutableStateOf<LocalDate?>(null) }
+    val seed = remember(now) {
+        LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(now + 60L * 60_000L), ZoneId.systemDefault())
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.pause_dialog_title)) },
         text = {
-            androidx.compose.foundation.layout.Column {
+            Column {
                 if (isPaused) {
                     Text(
                         stringResource(
@@ -75,11 +85,7 @@ fun PauseUntilDialog(
                 }
                 Spacer(Modifier.height(12.dp))
                 OutlinedButton(
-                    onClick = {
-                        pickCustomUntil(ctx) { untilMs ->
-                            onPick(untilMs); onDismiss()
-                        }
-                    },
+                    onClick = { showCustomDate = true },
                     modifier = Modifier.fillMaxWidth()
                 ) { Text(stringResource(R.string.pause_pick_custom)) }
             }
@@ -99,6 +105,25 @@ fun PauseUntilDialog(
             }
         }
     )
+
+    if (showCustomDate) {
+        NockDatePickerDialog(
+            initialDate = seed.toLocalDate(),
+            onDismiss = { showCustomDate = false },
+            onConfirm = { date -> customDate = date }
+        )
+    }
+    customDate?.let { date ->
+        NockTimePickerDialog(
+            initialMinutesOfDay = seed.hour * 60 + seed.minute,
+            onDismiss = { customDate = null },
+            onConfirm = { minutes ->
+                val until = LocalDateTime.of(date, LocalTime.of(minutes / 60, minutes % 60))
+                onPick(until.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli())
+                onDismiss()
+            }
+        )
+    }
 }
 
 @Composable
@@ -109,39 +134,6 @@ private fun PauseChip(label: String, onClick: () -> Unit) {
 private fun tomorrowMorningMs(): Long {
     val tomorrowAt7 = LocalDateTime.of(LocalDate.now().plusDays(1), LocalTime.of(7, 0))
     return tomorrowAt7.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
-}
-
-private fun pickCustomUntil(ctx: Context, onPicked: (Long) -> Unit) {
-    val seed = Calendar.getInstance().apply { add(Calendar.HOUR_OF_DAY, 1) }
-    val datePicker = DatePickerDialog(
-        ctx,
-        { _, year, month, day ->
-            val is24h = DateFormat.is24HourFormat(ctx)
-            TimePickerDialog(
-                ctx,
-                { _, hour, minute ->
-                    val cal = Calendar.getInstance().apply {
-                        set(Calendar.YEAR, year)
-                        set(Calendar.MONTH, month)
-                        set(Calendar.DAY_OF_MONTH, day)
-                        set(Calendar.HOUR_OF_DAY, hour)
-                        set(Calendar.MINUTE, minute)
-                        set(Calendar.SECOND, 0)
-                        set(Calendar.MILLISECOND, 0)
-                    }
-                    onPicked(cal.timeInMillis)
-                },
-                seed.get(Calendar.HOUR_OF_DAY),
-                seed.get(Calendar.MINUTE),
-                is24h
-            ).show()
-        },
-        seed.get(Calendar.YEAR),
-        seed.get(Calendar.MONTH),
-        seed.get(Calendar.DAY_OF_MONTH)
-    )
-    datePicker.datePicker.minDate = System.currentTimeMillis()
-    datePicker.show()
 }
 
 fun formatPauseUntil(ctx: Context, untilMs: Long): String {

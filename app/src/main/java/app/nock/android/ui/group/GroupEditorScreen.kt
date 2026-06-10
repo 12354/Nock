@@ -12,8 +12,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowDownward
-import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
@@ -34,8 +32,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import app.nock.android.R
 import app.nock.android.domain.model.EscalationChain
-import app.nock.android.domain.model.StageConfig
-import app.nock.android.domain.model.StageType
+import app.nock.android.ui.components.ChainEditor
 import app.nock.android.ui.components.GroupColorChoices
 import app.nock.android.ui.components.GroupIconChoices
 import app.nock.android.ui.components.PauseUntilDialog
@@ -54,6 +51,12 @@ fun GroupEditorScreen(
     val state by vm.state.collectAsState()
     val scope = rememberCoroutineScope()
     LaunchedEffect(groupId) { vm.load(groupId) }
+
+    // The close button saves; system back must behave the same instead of
+    // silently discarding.
+    androidx.activity.compose.BackHandler {
+        scope.launch { vm.save(); onDone() }
+    }
 
     Scaffold(
         topBar = {
@@ -400,13 +403,17 @@ private fun ChainEditorCard(
             MiniChain(chain = chain, accent = accent)
             Spacer(Modifier.height(8.dp))
             Text(
-                chainOffsetSummary(chain),
+                stringResource(
+                    R.string.chain_offsets_repeat,
+                    chainOffsetParts(chain),
+                    (chain.repeatIntervalMs / 60_000L).toInt()
+                ),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             if (editable) {
                 Spacer(Modifier.height(8.dp))
-                StageEditor(chain, onChange)
+                ChainEditor(chain = chain, onChange = onChange)
             } else {
                 Spacer(Modifier.height(4.dp))
                 Text(
@@ -461,121 +468,13 @@ private fun MiniChain(chain: EscalationChain, accent: Color) {
     }
 }
 
-private fun chainOffsetSummary(chain: EscalationChain): String {
+/** "+0 · +5m · +15m" — the per-stage offsets, joined for the summary line. */
+private fun chainOffsetParts(chain: EscalationChain): String {
     fun fmt(ms: Long): String {
         val sign = if (ms >= 0) "+" else "−"
         val abs = kotlin.math.abs(ms)
         val mins = (abs / 60_000L).toInt()
         return if (mins == 0) "0" else "${sign}${mins}m"
     }
-    val parts = chain.stages.map { fmt(it.offsetMs) }
-    val repeat = (chain.repeatIntervalMs / 60_000L).toInt()
-    return parts.joinToString(" · ") + " (repeat ${repeat}m)"
-}
-
-@Composable
-private fun StageEditor(chain: EscalationChain, onChange: (EscalationChain) -> Unit) {
-    var local by remember(chain) { mutableStateOf(chain) }
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        local.stages.forEachIndexed { idx, stage ->
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = stageIcon(stage.type),
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(20.dp)
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    stringResource(stageTypeLabel(stage.type)),
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.weight(1f)
-                )
-                // Raw text held locally (keyed on the stage type, which is unique
-                // per chain and follows reorders) so the user can clear the field
-                // and type a leading "-" for pre-trigger offsets. Deriving the
-                // displayed value from offsetMs every keystroke snapped those away
-                // and made the field impossible to clear or make negative.
-                var offsetText by remember(stage.type) {
-                    mutableStateOf((stage.offsetMs / 60_000L).toInt().toString())
-                }
-                OutlinedTextField(
-                    value = offsetText,
-                    onValueChange = { v ->
-                        if (v.isEmpty() || v == "-" || v.toIntOrNull() != null) {
-                            offsetText = v
-                            v.toIntOrNull()?.let { m ->
-                                val list = local.stages.toMutableList()
-                                list[idx] = list[idx].copy(offsetMs = m * 60_000L)
-                                local = EscalationChain(list, local.repeatIntervalMs)
-                                onChange(local)
-                            }
-                        }
-                    },
-                    label = { Text(stringResource(R.string.settings_offset_label)) },
-                    singleLine = true,
-                    modifier = Modifier.width(110.dp)
-                )
-                IconButton(
-                    enabled = idx > 0,
-                    onClick = {
-                        val list = local.stages.toMutableList()
-                        val tmp = list[idx]; list[idx] = list[idx - 1]; list[idx - 1] = tmp
-                        local = EscalationChain(list, local.repeatIntervalMs); onChange(local)
-                    }
-                ) { Icon(Icons.Filled.ArrowUpward, contentDescription = stringResource(R.string.move_up)) }
-                IconButton(
-                    enabled = idx < local.stages.lastIndex,
-                    onClick = {
-                        val list = local.stages.toMutableList()
-                        val tmp = list[idx]; list[idx] = list[idx + 1]; list[idx + 1] = tmp
-                        local = EscalationChain(list, local.repeatIntervalMs); onChange(local)
-                    }
-                ) { Icon(Icons.Filled.ArrowDownward, contentDescription = stringResource(R.string.move_down)) }
-                IconButton(
-                    enabled = local.stages.size > 1,
-                    onClick = {
-                        val list = local.stages.toMutableList().also { it.removeAt(idx) }
-                        local = EscalationChain(list, local.repeatIntervalMs); onChange(local)
-                    }
-                ) { Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.remove)) }
-            }
-        }
-        val missing = StageType.values().toSet() - local.stages.map { it.type }.toSet()
-        if (missing.isNotEmpty()) {
-            androidx.compose.foundation.layout.FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                missing.forEach { t ->
-                    AssistChip(
-                        onClick = {
-                            val nextOff = (local.stages.lastOrNull()?.offsetMs ?: 0L) + 5 * 60_000L
-                            val list = local.stages + StageConfig(t, nextOff)
-                            local = EscalationChain(list, local.repeatIntervalMs); onChange(local)
-                        },
-                        label = { Text(stringResource(stageTypeLabel(t))) }
-                    )
-                }
-            }
-        }
-        // Same raw-text treatment so the repeat field can be cleared while
-        // typing; keyed on the value so an external chain swap re-initialises it.
-        var repeatText by remember(local.repeatIntervalMs) {
-            mutableStateOf((local.repeatIntervalMs / 60_000L).toInt().toString())
-        }
-        OutlinedTextField(
-            value = repeatText,
-            onValueChange = { v ->
-                if (v.isEmpty() || v.toIntOrNull() != null) {
-                    repeatText = v
-                    v.toIntOrNull()?.let { m -> if (m >= 1) {
-                        local = local.copy(repeatIntervalMs = m * 60_000L); onChange(local)
-                    } }
-                }
-            },
-            label = { Text(stringResource(R.string.settings_repeat_interval_label)) },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth()
-        )
-    }
+    return chain.stages.joinToString(" · ") { fmt(it.offsetMs) }
 }

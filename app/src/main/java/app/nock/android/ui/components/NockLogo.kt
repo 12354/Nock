@@ -16,18 +16,20 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 
 /**
  * "n · · k" serif wordmark with two apricot dots — the Nock app logo,
  * rendered inline (no tile) so the M3 dark surface acts as the ink background.
+ * Colors come from the theme (primary is seeded from the apricot brand color).
  */
 @Composable
 fun NockLogo(
     modifier: Modifier = Modifier,
     size: Int = 22,
-    dotColor: Color = Color(0xFFFFB070),
-    foreground: Color = Color(0xFFF4EFE6),
+    dotColor: Color = MaterialTheme.colorScheme.primary,
+    foreground: Color = MaterialTheme.colorScheme.onSurface,
 ) {
     val sizeSp: TextUnit = size.sp
     val dotDiameter = (size * 0.26f).dp

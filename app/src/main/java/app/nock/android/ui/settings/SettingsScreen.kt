@@ -25,9 +25,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowDownward
-import androidx.compose.material.icons.filled.ArrowUpward
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.automirrored.filled.Send
@@ -62,8 +59,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import app.nock.android.R
 import app.nock.android.domain.model.EscalationChain
 import app.nock.android.domain.model.Group
-import app.nock.android.domain.model.StageConfig
-import app.nock.android.domain.model.StageType
+import app.nock.android.ui.components.ChainEditor
 import app.nock.android.ui.LocaleHelper
 import app.nock.android.update.UpdateManager
 import app.nock.android.update.UpdateResult
@@ -542,121 +538,13 @@ private fun LanguageSection(vm: SettingsViewModel) {
     }
 }
 
-private fun stageTypeLabel(type: StageType): Int = app.nock.android.ui.components.stageTypeLabel(type)
-
 @Composable
 private fun StageChainSection(chain: EscalationChain, onChange: (EscalationChain) -> Unit) {
-    var local by remember(chain) { mutableStateOf(chain) }
     SectionCard(stringResource(R.string.settings_escalation_chain_title)) {
-        local.stages.forEachIndexed { idx, stage ->
-            StageRow(
-                stage = stage,
-                canMoveUp = idx > 0,
-                canMoveDown = idx < local.stages.lastIndex,
-                onMoveUp = {
-                    val list = local.stages.toMutableList()
-                    val tmp = list[idx]; list[idx] = list[idx - 1]; list[idx - 1] = tmp
-                    local = EscalationChain(list, local.repeatIntervalMs); onChange(local)
-                },
-                onMoveDown = {
-                    val list = local.stages.toMutableList()
-                    val tmp = list[idx]; list[idx] = list[idx + 1]; list[idx + 1] = tmp
-                    local = EscalationChain(list, local.repeatIntervalMs); onChange(local)
-                },
-                onOffsetChange = { newOff ->
-                    val list = local.stages.toMutableList()
-                    list[idx] = list[idx].copy(offsetMs = newOff)
-                    local = EscalationChain(list, local.repeatIntervalMs); onChange(local)
-                },
-                onRemove = {
-                    if (local.stages.size > 1) {
-                        val list = local.stages.toMutableList().also { it.removeAt(idx) }
-                        local = EscalationChain(list, local.repeatIntervalMs); onChange(local)
-                    }
-                }
-            )
-        }
-        val missing = StageType.values().toSet() - local.stages.map { it.type }.toSet()
-        if (missing.isNotEmpty()) {
-            Spacer(Modifier.height(8.dp))
-            Text(stringResource(R.string.settings_add_stage), style = MaterialTheme.typography.labelMedium)
-            androidx.compose.foundation.layout.FlowRow {
-                missing.forEach { t ->
-                    AssistChip(
-                        onClick = {
-                            val nextOff = (local.stages.lastOrNull()?.offsetMs ?: 0L) + 5 * 60_000L
-                            val list = local.stages + StageConfig(t, nextOff)
-                            local = EscalationChain(list, local.repeatIntervalMs); onChange(local)
-                        },
-                        label = { Text(stringResource(stageTypeLabel(t))) },
-                        modifier = Modifier.padding(end = 8.dp, bottom = 4.dp)
-                    )
-                }
-            }
-        }
-        Spacer(Modifier.height(8.dp))
-        IntervalField(
-            label = stringResource(R.string.settings_repeat_interval_label),
-            valueMin = (local.repeatIntervalMs / 60_000L).toInt()
-        ) { newMin ->
-            local = local.copy(repeatIntervalMs = newMin * 60_000L); onChange(local)
-        }
+        // Same editor as the per-group override in the group editor, so the two
+        // can't drift apart.
+        ChainEditor(chain = chain, onChange = onChange)
     }
-}
-
-@Composable
-private fun StageRow(
-    stage: StageConfig,
-    canMoveUp: Boolean,
-    canMoveDown: Boolean,
-    onMoveUp: () -> Unit,
-    onMoveDown: () -> Unit,
-    onOffsetChange: (Long) -> Unit,
-    onRemove: () -> Unit,
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            modifier = Modifier
-                .size(40.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.surfaceContainerHigh),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = app.nock.android.ui.components.stageIcon(stage.type),
-                contentDescription = null,
-                modifier = Modifier.size(20.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        Spacer(Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(stringResource(stageTypeLabel(stage.type)), fontWeight = FontWeight.SemiBold)
-            val mins = (stage.offsetMs / 60_000L).toInt()
-            OutlinedTextField(
-                value = mins.toString(),
-                onValueChange = { it.toIntOrNull()?.let { v -> onOffsetChange(v * 60_000L) } },
-                label = { Text(stringResource(R.string.settings_offset_label)) },
-                modifier = Modifier.width(160.dp).padding(top = 4.dp)
-            )
-        }
-        IconButton(onClick = onMoveUp, enabled = canMoveUp) { Icon(Icons.Filled.ArrowUpward, contentDescription = stringResource(R.string.move_up)) }
-        IconButton(onClick = onMoveDown, enabled = canMoveDown) { Icon(Icons.Filled.ArrowDownward, contentDescription = stringResource(R.string.move_down)) }
-        IconButton(onClick = onRemove) { Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.remove)) }
-    }
-}
-
-@Composable
-private fun IntervalField(label: String, valueMin: Int, onChange: (Int) -> Unit) {
-    OutlinedTextField(
-        value = valueMin.toString(),
-        onValueChange = { it.toIntOrNull()?.let { v -> if (v >= 1) onChange(v) } },
-        label = { Text(label) },
-        modifier = Modifier.fillMaxWidth()
-    )
 }
 
 @Composable

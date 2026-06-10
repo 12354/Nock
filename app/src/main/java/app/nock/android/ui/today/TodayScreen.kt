@@ -6,7 +6,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -14,7 +13,6 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Notifications
@@ -40,13 +38,13 @@ import app.nock.android.R
 import app.nock.android.update.UpdateManager
 import app.nock.android.update.UpdateResult
 import app.nock.android.update.UpdateState
-import app.nock.android.domain.model.EscalationChain
 import app.nock.android.domain.model.Group
 import app.nock.android.ui.components.GroupAvatar
 import app.nock.android.ui.components.NockLogo
+import app.nock.android.ui.components.StageProgress
 import app.nock.android.ui.components.UndoSnackbar
-import app.nock.android.ui.components.stageIcon
-import app.nock.android.ui.voice.VoiceAlarmFab
+import app.nock.android.ui.components.stageTypeLabel
+import app.nock.android.ui.voice.AddReminderFab
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.time.Instant
@@ -101,19 +99,7 @@ fun TodayScreen(
             }
         },
         floatingActionButton = {
-            Column(
-                horizontalAlignment = Alignment.End,
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                VoiceAlarmFab()
-                ExtendedFloatingActionButton(
-                    onClick = onAddReminder,
-                    icon = { Icon(Icons.Filled.Add, contentDescription = null) },
-                    text = { Text(stringResource(R.string.add)) },
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                )
-            }
+            AddReminderFab(onAdd = onAddReminder, snackbarHostState = snackbarHostState)
         }
     ) { padding ->
         if (items.isEmpty()) {
@@ -218,10 +204,10 @@ fun TodayScreen(
  */
 @Composable
 private fun UpdateNowBar() {
-    // Design accent: amber pill on the dark surface, with a near-black label on
-    // the filled Update button so it reads on the bright fill.
-    val accent = Color(0xFFFFB070)
-    val onAccent = Color(0xFF3A2410)
+    // Brand accent pill on the dark surface; primary is seeded from the apricot
+    // logo color, so the banner reads as the brand highlight it was designed as.
+    val accent = MaterialTheme.colorScheme.primary
+    val onAccent = MaterialTheme.colorScheme.onPrimary
 
     val context = LocalContext.current
     val updateManager = remember { UpdateManager(context) }
@@ -526,90 +512,8 @@ private fun ActiveEscalationCard(
     }
 }
 
-@Composable
-private fun StageProgress(
-    chain: EscalationChain,
-    currentIndex: Int,
-    accent: Color,
-) {
-    Surface(
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surface,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            val outline = MaterialTheme.colorScheme.outlineVariant
-            val onSurfVar = MaterialTheme.colorScheme.onSurfaceVariant
-            val ctx = LocalContext.current
-            chain.stages.forEachIndexed { i, stage ->
-                val done = i < currentIndex
-                val live = i == currentIndex
-                val tint = when {
-                    done -> onSurfVar
-                    live -> accent
-                    else -> outline
-                }
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = if (live) Modifier else Modifier.weight(1f)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(if (live) 28.dp else 22.dp)
-                            .clip(CircleShape)
-                            .then(
-                                if (live) Modifier.background(accent)
-                                else Modifier.border(1.5.dp, tint, CircleShape)
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = if (done) Icons.Filled.Check else stageIcon(stage.type),
-                            contentDescription = null,
-                            tint = if (live) Color.Black else tint,
-                            modifier = Modifier.size(if (live) 16.dp else 12.dp)
-                        )
-                    }
-                    if (live) {
-                        Spacer(Modifier.width(6.dp))
-                        Text(
-                            stageDisplayName(ctx, stage.type),
-                            color = MaterialTheme.colorScheme.onSurface,
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-                }
-                if (i < chain.stages.lastIndex) {
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(2.dp)
-                            .padding(horizontal = 6.dp)
-                            .background(
-                                if (done) onSurfVar else outline,
-                                RoundedCornerShape(1.dp)
-                            )
-                    )
-                }
-            }
-        }
-    }
-}
-
-private fun stageDisplayName(ctx: android.content.Context, type: app.nock.android.domain.model.StageType): String {
-    val res = when (type) {
-        app.nock.android.domain.model.StageType.SILENT -> R.string.stage_type_silent
-        app.nock.android.domain.model.StageType.VIBRATE -> R.string.stage_type_vibrate
-        app.nock.android.domain.model.StageType.TELEGRAM -> R.string.stage_type_telegram
-        app.nock.android.domain.model.StageType.ALARM_VIBRATE -> R.string.stage_type_alarm_vibrate
-        app.nock.android.domain.model.StageType.ALARM -> R.string.stage_type_alarm
-    }
-    return ctx.getString(res)
-}
+private fun stageDisplayName(ctx: android.content.Context, type: app.nock.android.domain.model.StageType): String =
+    ctx.getString(stageTypeLabel(type))
 
 private fun groupByBucket(items: List<TodayItem>): List<TodaySection> {
     val now = System.currentTimeMillis()

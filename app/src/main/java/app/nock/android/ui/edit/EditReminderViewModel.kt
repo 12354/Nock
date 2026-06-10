@@ -278,6 +278,18 @@ class EditReminderViewModel @Inject constructor(
     }
 
     /**
+     * Save used when leaving the editor via back/close (the editor saves on
+     * exit, like the group editor). Skips a brand-new reminder the user never
+     * touched — opening "+" and backing straight out must not create a junk
+     * "Reminder" row.
+     */
+    suspend fun saveOnExit(): Boolean {
+        val s = _state.value
+        if (s.reminderId == 0L && s.name.isBlank() && s.nlInput.isBlank()) return false
+        return save()
+    }
+
+    /**
      * Persists the edit. Returns false (without saving) when the state can't
      * form a valid schedule — currently only a ROOM reminder with no room,
      * which the editor surfaces by showing the create-a-room hint.

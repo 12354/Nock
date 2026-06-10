@@ -9,6 +9,9 @@
     <string name="done">Erledigt</string>
     <string name="snooze">Schlummern</string>
     <string name="add">Hinzufügen</string>
+    <string name="ok">OK</string>
+    <string name="pick_time_title">Uhrzeit wählen</string>
+    <string name="fab_add_hold_hint">Erinnerung hinzufügen — halten zum Diktieren</string>
     <string name="save">Speichern</string>
     <string name="cancel">Abbrechen</string>
     <string name="delete">Löschen</string>
@@ -55,6 +58,10 @@
     <string name="resume">Fortsetzen</string>
     <string name="pause">Pausieren</string>
     <string name="reminders_empty_group">Noch keine Erinnerungen</string>
+    <plurals name="reminders_count">
+        <item quantity="one">%1$d Erinnerung</item>
+        <item quantity="other">%1$d Erinnerungen</item>
+    </plurals>
     <string name="reminders_paused_chip">Pausiert</string>
     <string name="reminders_paused_until_chip">Pausiert bis %1$s</string>
 
@@ -146,6 +153,7 @@
     <string name="group_editor_edit_stages">Stufen bearbeiten</string>
     <string name="group_editor_mirror_silent_telegram_sub">Sendet auf der stillen Stufe eine stumme Telegram-Nachricht</string>
     <string name="group_editor_chain_summary_default">Standardkette wird verwendet</string>
+    <string name="chain_offsets_repeat">%1$s (wiederholt sich alle %2$d Min.)</string>
 
     <!-- Quick-add styling -->
     <string name="edit_quick_add_hint">Schnell hinzufügen — in einfacher Sprache eintippen</string>
@@ -200,9 +208,9 @@
     <!-- Alarm screen / notifications -->
     <string name="alarm_title">Alarm</string>
     <string name="alarm_loud_alarm">Lauter Alarm</string>
-    <string name="alarm_stage_final">Stufe 4 von 4</string>
-    <string name="alarm_subtitle">Frühere Hinweise wurden ignoriert · wiederholt sich alle 10 Min</string>
-    <string name="snooze_10_min">10 Min. schlummern</string>
+    <string name="alarm_stage_of">Stufe %1$d von %2$d</string>
+    <string name="alarm_subtitle_repeats">Frühere Hinweise wurden ignoriert · wiederholt sich alle %1$d Min</string>
+    <string name="alarm_snooze_minutes">%1$d Min. schlummern</string>
     <string name="notification_alarm_suffix">%1$s — Alarm</string>
 
     <!-- Stage types (StageType enum) -->

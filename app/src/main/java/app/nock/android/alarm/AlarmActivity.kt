@@ -7,7 +7,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Alarm
@@ -17,11 +16,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -30,9 +28,12 @@ import androidx.lifecycle.lifecycleScope
 import app.nock.android.R
 import app.nock.android.data.NockRepository
 import app.nock.android.data.dao.ActiveEscalationDao
+import app.nock.android.data.json.ChainJson
 import app.nock.android.domain.escalation.EscalationEngine
+import app.nock.android.domain.model.EscalationChain
 import app.nock.android.domain.model.Group
 import app.nock.android.ui.LocaleHelper
+import app.nock.android.ui.components.StageProgress
 import app.nock.android.ui.components.groupIconFor
 import app.nock.android.ui.theme.NockTheme
 import dagger.hilt.android.AndroidEntryPoint
@@ -54,6 +55,8 @@ class AlarmActivity : ComponentActivity() {
     private val nameState = MutableStateFlow("")
     private val groupState = MutableStateFlow<Group?>(null)
     private val escalationIdState = MutableStateFlow(-1L)
+    private val chainState = MutableStateFlow<EscalationChain?>(null)
+    private val startedAtState = MutableStateFlow(0L)
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleHelper.wrap(newBase))
@@ -69,9 +72,13 @@ class AlarmActivity : ComponentActivity() {
             NockTheme {
                 val name by nameState.collectAsState()
                 val group by groupState.collectAsState()
+                val chain by chainState.collectAsState()
+                val startedAt by startedAtState.collectAsState()
                 AlarmTakeoverScreen(
                     name = name,
                     group = group,
+                    chain = chain,
+                    startedAtMs = startedAt,
                     onDone = {
                         val id = escalationIdState.value
                         lifecycleScope.launch {
@@ -120,11 +127,19 @@ class AlarmActivity : ComponentActivity() {
         val intentReminderId = intent?.getLongExtra(IntentExtras.EXTRA_REMINDER_ID, -1L) ?: -1L
         escalationIdState.value = escalationId
         groupState.value = null
+        chainState.value = null
         lifecycleScope.launch {
             val esc = if (escalationId >= 0L) activeDao.getById(escalationId) else null
             if (escalationId >= 0L && esc == null) {
                 finish()
                 return@launch
+            }
+            // The chain snapshot drives the stage rail, the "repeats every N min"
+            // subtitle, and the snooze duration label — the real chain, not the
+            // hardcoded 4-dot default this screen used to show.
+            if (esc != null) {
+                chainState.value = runCatching { ChainJson.decode(esc.chainSnapshotJson) }.getOrNull()
+                startedAtState.value = esc.startedAtMs
             }
             // The receiver launches us without a reminderId (it only knows the
             // escalation), so fall back to the escalation row's reminderId to
@@ -143,6 +158,8 @@ class AlarmActivity : ComponentActivity() {
 private fun AlarmTakeoverScreen(
     name: String,
     group: Group?,
+    chain: EscalationChain?,
+    startedAtMs: Long,
     onDone: () -> Unit,
     onSnooze: () -> Unit
 ) {
@@ -150,6 +167,13 @@ private fun AlarmTakeoverScreen(
     val surface = MaterialTheme.colorScheme.surface
     val onSurface = MaterialTheme.colorScheme.onSurface
     val onSurfaceVariant = MaterialTheme.colorScheme.onSurfaceVariant
+
+    // The stage actually ringing right now, from elapsed time — same rule the
+    // engine uses for snooze (see EscalationEngine.snoozeLocked).
+    val stageIndex = remember(chain, startedAtMs) {
+        chain?.stageDueAt(startedAtMs, System.currentTimeMillis())?.coerceIn(0, chain.lastIndex)
+    }
+    val repeatMin = chain?.let { (it.repeatIntervalMs / 60_000L).toInt() }
 
     Surface(modifier = Modifier.fillMaxSize(), color = surface) {
         // Vertical gradient that fades the group tint into the surface — gives the takeover
@@ -174,12 +198,16 @@ private fun AlarmTakeoverScreen(
                         Spacer(Modifier.size(1.dp))
                     }
                     Spacer(Modifier.weight(1f))
-                    Text(
-                        text = stringResource(R.string.alarm_stage_final).uppercase(),
-                        color = onSurfaceVariant,
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Medium
-                    )
+                    if (chain != null && stageIndex != null) {
+                        Text(
+                            text = stringResource(
+                                R.string.alarm_stage_of, stageIndex + 1, chain.stages.size
+                            ).uppercase(),
+                            color = onSurfaceVariant,
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
                 }
 
                 Spacer(Modifier.height(36.dp))
@@ -196,6 +224,7 @@ private fun AlarmTakeoverScreen(
                 Text(
                     text = clock,
                     fontSize = 84.sp,
+                    fontFamily = FontFamily.Serif,
                     fontWeight = FontWeight.Light,
                     color = onSurface,
                     letterSpacing = (-2).sp
@@ -226,17 +255,21 @@ private fun AlarmTakeoverScreen(
                     textAlign = TextAlign.Center,
                     lineHeight = 42.sp
                 )
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    text = stringResource(R.string.alarm_subtitle),
-                    color = onSurfaceVariant,
-                    style = MaterialTheme.typography.bodyMedium,
-                    textAlign = TextAlign.Center
-                )
+                if (repeatMin != null) {
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        text = stringResource(R.string.alarm_subtitle_repeats, repeatMin),
+                        color = onSurfaceVariant,
+                        style = MaterialTheme.typography.bodyMedium,
+                        textAlign = TextAlign.Center
+                    )
+                }
 
                 Spacer(Modifier.weight(1f))
 
-                StageBreadcrumb(accent = accent)
+                if (chain != null && stageIndex != null) {
+                    StageProgress(chain = chain, currentIndex = stageIndex, accent = accent)
+                }
 
                 Spacer(Modifier.height(32.dp))
                 // Extra-large pill Done button — the design's primary affordance.
@@ -260,7 +293,15 @@ private fun AlarmTakeoverScreen(
                 TextButton(onClick = onSnooze) {
                     Icon(Icons.Outlined.Snooze, contentDescription = null, tint = onSurface)
                     Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.snooze_10_min), color = onSurface, fontSize = 16.sp)
+                    Text(
+                        // Snoozing the loud alarm re-rings one repeat interval out
+                        // (EscalationEngine.snoozeLocked), so say that number.
+                        text = if (repeatMin != null)
+                            stringResource(R.string.alarm_snooze_minutes, repeatMin)
+                        else stringResource(R.string.snooze),
+                        color = onSurface,
+                        fontSize = 16.sp
+                    )
                 }
             }
         }
@@ -289,33 +330,6 @@ private fun GroupPill(group: Group, accent: Color) {
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.Medium
             )
-        }
-    }
-}
-
-@Composable
-private fun StageBreadcrumb(accent: Color) {
-    // 4 dots, last one lit in the accent. Matches the design's bottom "stage 4 of 4" rail.
-    val outline = MaterialTheme.colorScheme.outline
-    val outlineVar = MaterialTheme.colorScheme.outlineVariant
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        repeat(4) { i ->
-            val live = i == 3
-            Box(
-                modifier = Modifier
-                    .size(if (live) 10.dp else 6.dp)
-                    .clip(CircleShape)
-                    .background(if (live) accent else outline)
-            )
-            if (i < 3) {
-                Box(
-                    modifier = Modifier
-                        .width(24.dp)
-                        .height(1.5.dp)
-                        .padding(horizontal = 6.dp)
-                        .background(outlineVar)
-                )
-            }
         }
     }
 }

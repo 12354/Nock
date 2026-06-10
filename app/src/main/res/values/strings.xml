@@ -18,8 +18,6 @@
     <string name="edit">Edit</string>
     <string name="remove">Remove</string>
     <string name="back">Back</string>
-    <string name="move_up">Up</string>
-    <string name="move_down">Down</string>
 
     <!-- Notification channels -->
     <string name="channel_silent_name">Silent reminders</string>
@@ -123,8 +121,16 @@
     <!-- Settings: escalation chain -->
     <string name="settings_escalation_chain_title">Escalation chain (global default)</string>
     <string name="settings_add_stage">Add stage:</string>
-    <string name="settings_repeat_interval_label">Last-stage repeat interval (minutes)</string>
-    <string name="settings_offset_label">Offset (min)</string>
+    <string name="chain_min_before">%1$d min before</string>
+    <string name="chain_at_time">At the scheduled time</string>
+    <string name="chain_min_after">%1$d min after</string>
+    <string name="chain_step_earlier">Earlier</string>
+    <string name="chain_step_later">Later</string>
+    <string name="chain_repeat_every">Repeat every %1$d min</string>
+    <string name="chain_repeat_dialog_title">Repeat interval</string>
+    <string name="chain_minutes_label">Minutes</string>
+    <string name="chain_before">Before</string>
+    <string name="chain_after">After</string>
 
     <!-- Settings: groups -->
     <string name="settings_groups_title">Groups</string>

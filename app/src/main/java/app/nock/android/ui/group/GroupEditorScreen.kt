@@ -400,21 +400,22 @@ private fun ChainEditorCard(
             .padding(horizontal = 16.dp, vertical = 4.dp)
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
-            MiniChain(chain = chain, accent = accent)
-            Spacer(Modifier.height(8.dp))
-            Text(
-                stringResource(
-                    R.string.chain_offsets_repeat,
-                    chainOffsetParts(chain),
-                    (chain.repeatIntervalMs / 60_000L).toInt()
-                ),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
             if (editable) {
-                Spacer(Modifier.height(8.dp))
-                ChainEditor(chain = chain, onChange = onChange)
+                // The timeline editor already shows every stage with its
+                // timing, so the MiniChain summary would be redundant here.
+                ChainEditor(chain = chain, onChange = onChange, accent = accent)
             } else {
+                MiniChain(chain = chain, accent = accent)
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    stringResource(
+                        R.string.chain_offsets_repeat,
+                        chainOffsetParts(chain),
+                        (chain.repeatIntervalMs / 60_000L).toInt()
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
                 Spacer(Modifier.height(4.dp))
                 Text(
                     stringResource(R.string.group_editor_chain_summary_default),

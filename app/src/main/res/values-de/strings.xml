@@ -18,8 +18,6 @@
     <string name="edit">Bearbeiten</string>
     <string name="remove">Entfernen</string>
     <string name="back">Zurück</string>
-    <string name="move_up">Nach oben</string>
-    <string name="move_down">Nach unten</string>
 
     <!-- Notification channels -->
     <string name="channel_silent_name">Stille Erinnerungen</string>
@@ -123,8 +121,16 @@
     <!-- Settings: escalation chain -->
     <string name="settings_escalation_chain_title">Eskalationskette (globaler Standard)</string>
     <string name="settings_add_stage">Stufe hinzufügen:</string>
-    <string name="settings_repeat_interval_label">Wiederholintervall der letzten Stufe (Minuten)</string>
-    <string name="settings_offset_label">Versatz (Min)</string>
+    <string name="chain_min_before">%1$d Min. vorher</string>
+    <string name="chain_at_time">Zur geplanten Zeit</string>
+    <string name="chain_min_after">%1$d Min. danach</string>
+    <string name="chain_step_earlier">Früher</string>
+    <string name="chain_step_later">Später</string>
+    <string name="chain_repeat_every">Wiederholt alle %1$d Min.</string>
+    <string name="chain_repeat_dialog_title">Wiederholintervall</string>
+    <string name="chain_minutes_label">Minuten</string>
+    <string name="chain_before">Vorher</string>
+    <string name="chain_after">Danach</string>
 
     <!-- Settings: groups -->
     <string name="settings_groups_title">Gruppen</string>

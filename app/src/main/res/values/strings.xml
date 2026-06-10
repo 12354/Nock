@@ -77,8 +77,8 @@
     <string name="schedule_daily_at">Daily at %1$s</string>
     <string name="schedule_days_at">%1$s at %2$s</string>
     <string name="schedule_monthly_at">Monthly on day %1$d at %2$s</string>
-    <string name="schedule_every_h_after_done">Every %1$s h after last done</string>
-    <string name="schedule_every_min_after_done">Every %1$d min after last done</string>
+    <string name="schedule_every_h_after_done">Every %1$s h from start</string>
+    <string name="schedule_every_min_after_done">Every %1$d min from start</string>
     <string name="schedule_on_unlock_armed">On next device unlock</string>
     <string name="schedule_on_unlock_fired">On unlock (fired)</string>
 
@@ -412,8 +412,8 @@
     <string name="parsed_summary_daily">daily at %1$s</string>
     <string name="parsed_summary_weekly">%1$s at %2$s</string>
     <string name="parsed_summary_monthly">monthly on day %1$d at %2$s</string>
-    <string name="parsed_summary_interval">every %1$sh after done</string>
-    <string name="parsed_summary_interval_with_start">every %1$sh after done, starting %2$s at %3$s</string>
+    <string name="parsed_summary_interval">every %1$sh from start</string>
+    <string name="parsed_summary_interval_with_start">every %1$sh, starting %2$s at %3$s</string>
     <string name="parsed_summary_once">once on %1$s at %2$s</string>
     <string name="parsed_summary_on_unlock">on next unlock</string>
     <string name="parsed_summary_wrapped">%1$s, group %2$s</string>

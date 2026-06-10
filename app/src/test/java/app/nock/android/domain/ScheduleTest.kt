@@ -52,16 +52,17 @@ class ScheduleTest {
         assertTrue(next!! > feb1)
     }
 
-    @Test fun interval_uses_last_completed() {
-        val s = Schedule.IntervalFromLast(8 * 60 * 60_000L)
+    // An anchorless (legacy) interval row keeps the old completion-relative step.
+    @Test fun interval_anchorless_falls_back_to_last_completed() {
+        val s = Schedule.IntervalFromStart(8 * 60 * 60_000L)
         val last = ms(2026, 1, 15, 10, 0)
         val now = ms(2026, 1, 15, 12, 0)
         val next = s.nextFireFrom(now, last, zone)
         assertEquals(last + 8 * 60 * 60_000L, next)
     }
 
-    @Test fun interval_no_history_returns_now_plus_interval() {
-        val s = Schedule.IntervalFromLast(8 * 60 * 60_000L)
+    @Test fun interval_anchorless_no_history_returns_now_plus_interval() {
+        val s = Schedule.IntervalFromStart(8 * 60 * 60_000L)
         val now = ms(2026, 1, 15, 12, 0)
         val next = s.nextFireFrom(now, null, zone)
         assertEquals(now + 8 * 60 * 60_000L, next)
@@ -69,26 +70,41 @@ class ScheduleTest {
 
     @Test fun interval_with_future_start_fires_at_start() {
         val startAt = ms(2026, 1, 20, 10, 0)
-        val s = Schedule.IntervalFromLast(8 * 60 * 60_000L, startAtMs = startAt)
+        val s = Schedule.IntervalFromStart(8 * 60 * 60_000L, startAtMs = startAt)
         val now = ms(2026, 1, 15, 12, 0)
         val next = s.nextFireFrom(now, null, zone)
         assertEquals(startAt, next)
     }
 
-    @Test fun interval_with_past_start_fires_now() {
+    // Past anchor: the next fire is the next point on the fixed grid, not `now`.
+    @Test fun interval_with_past_start_returns_next_grid_point() {
         val startAt = ms(2026, 1, 10, 10, 0)
-        val s = Schedule.IntervalFromLast(8 * 60 * 60_000L, startAtMs = startAt)
+        val s = Schedule.IntervalFromStart(8 * 60 * 60_000L, startAtMs = startAt)
         val now = ms(2026, 1, 15, 12, 0)
         val next = s.nextFireFrom(now, null, zone)
-        assertEquals(now, next)
+        // 8h grid from 01-10 10:00 → first point strictly after 01-15 12:00.
+        assertEquals(ms(2026, 1, 15, 18, 0), next)
     }
 
-    @Test fun interval_with_start_uses_last_completed_after_first_done() {
+    // The cadence is anchored on the start date, so the next fire is identical
+    // whether the previous occurrence was completed early or hours late.
+    @Test fun interval_cadence_ignores_completion_time() {
         val startAt = ms(2026, 1, 20, 10, 0)
-        val s = Schedule.IntervalFromLast(8 * 60 * 60_000L, startAtMs = startAt)
-        val last = ms(2026, 1, 20, 10, 0)
+        val s = Schedule.IntervalFromStart(8 * 60 * 60_000L, startAtMs = startAt)
         val now = ms(2026, 1, 20, 14, 0)
-        val next = s.nextFireFrom(now, last, zone)
-        assertEquals(last + 8 * 60 * 60_000L, next)
+        val onTime = s.nextFireFrom(now, ms(2026, 1, 20, 10, 5), zone)
+        val late = s.nextFireFrom(now, ms(2026, 1, 20, 13, 59), zone)
+        assertEquals(ms(2026, 1, 20, 18, 0), onTime)
+        assertEquals(ms(2026, 1, 20, 18, 0), late)
+    }
+
+    // Completing days late after repeated snoozes resyncs to the grid; the next
+    // fire is the grid point, never "completion + interval".
+    @Test fun interval_many_snoozes_do_not_shift_grid() {
+        val startAt = ms(2026, 1, 1, 0, 0)
+        val s = Schedule.IntervalFromStart(24 * 60 * 60_000L, startAtMs = startAt)
+        val now = ms(2026, 1, 5, 6, 0)
+        val next = s.nextFireFrom(now, ms(2026, 1, 5, 6, 0), zone)
+        assertEquals(ms(2026, 1, 6, 0, 0), next)
     }
 }

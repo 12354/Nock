@@ -90,7 +90,9 @@ class DeepSeekReminderParser @Inject constructor(
             "INTERVAL", "INTERVAL_FROM_LAST" -> {
                 val mins = spec.intervalMinutes?.coerceAtLeast(1)
                     ?: error(ctx.getString(R.string.voice_error_missing_field, "intervalMinutes"))
-                Schedule.IntervalFromLast(mins * 60_000L)
+                val interval = mins * 60_000L
+                // Anchor the fixed cadence at the first fire (now + interval).
+                Schedule.IntervalFromStart(interval, System.currentTimeMillis() + interval)
             }
             "ON_UNLOCK", "ONUNLOCK" -> Schedule.OnUnlock(System.currentTimeMillis())
             else -> error(ctx.getString(R.string.voice_error_unknown_schedule, type))

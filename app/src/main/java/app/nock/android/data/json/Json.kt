@@ -39,7 +39,7 @@ fun Schedule.toEnvelope(): ScheduleEnvelope = when (this) {
         timesOfDayMinutes = timesOfDayMinutes
     )
     is Schedule.Monthly -> ScheduleEnvelope("MONTHLY", dayOfMonth = dayOfMonth, timeOfDayMinutes = timeOfDayMinutes)
-    is Schedule.IntervalFromLast -> ScheduleEnvelope("INTERVAL", intervalMs = intervalMs, intervalStartAtMs = startAtMs)
+    is Schedule.IntervalFromStart -> ScheduleEnvelope("INTERVAL", intervalMs = intervalMs, intervalStartAtMs = startAtMs)
     is Schedule.OnUnlock -> ScheduleEnvelope("ON_UNLOCK", armedAtMs = armedAtMs)
     is Schedule.RoomAfter -> ScheduleEnvelope(
         "ROOM_AFTER",
@@ -55,7 +55,7 @@ fun ScheduleEnvelope.toSchedule(): Schedule = when (type) {
     "DAILY" -> Schedule.Daily(timesOfDayMinutes!!)
     "WEEKLY" -> Schedule.Weekly(daysOfWeek!!.map { DayOfWeek.of(it) }.toSet(), timesOfDayMinutes!!)
     "MONTHLY" -> Schedule.Monthly(dayOfMonth!!, timeOfDayMinutes!!)
-    "INTERVAL" -> Schedule.IntervalFromLast(intervalMs!!, startAtMs = intervalStartAtMs)
+    "INTERVAL" -> Schedule.IntervalFromStart(intervalMs!!, startAtMs = intervalStartAtMs)
     "ON_UNLOCK" -> Schedule.OnUnlock(armedAtMs!!)
     "ROOM_AFTER" -> Schedule.RoomAfter(roomId!!, roomAfterMinutes!!, roomFallbackMs!!, roomGraceMs ?: 0L)
     else -> error("Unknown schedule type: $type")

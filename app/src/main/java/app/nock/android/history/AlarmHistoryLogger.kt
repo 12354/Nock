@@ -186,7 +186,7 @@ class AlarmHistoryLogger @Inject constructor(
             "weekly $days " + s.timesOfDayMinutes.sorted().joinToString(", ") { hhmm(it) }
         }
         is Schedule.Monthly -> "monthly day ${s.dayOfMonth} at ${hhmm(s.timeOfDayMinutes)}"
-        is Schedule.IntervalFromLast -> "every ${humanDuration(s.intervalMs)} after completion"
+        is Schedule.IntervalFromStart -> "every ${humanDuration(s.intervalMs)} from start"
         is Schedule.OnUnlock -> "on next unlock"
         is Schedule.RoomAfter ->
             "in room #${s.roomId} after ${hhmm(s.afterMinutes)} (fallback +${humanDuration(s.fallbackMs)})"

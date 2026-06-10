@@ -78,8 +78,8 @@
     <string name="schedule_daily_at">Täglich um %1$s</string>
     <string name="schedule_days_at">%1$s um %2$s</string>
     <string name="schedule_monthly_at">Monatlich am %1$d. um %2$s</string>
-    <string name="schedule_every_h_after_done">Alle %1$s Std. nach letztem Erledigt</string>
-    <string name="schedule_every_min_after_done">Alle %1$d Min. nach letztem Erledigt</string>
+    <string name="schedule_every_h_after_done">Alle %1$s Std. ab Start</string>
+    <string name="schedule_every_min_after_done">Alle %1$d Min. ab Start</string>
     <string name="schedule_on_unlock_armed">Beim nächsten Entsperren</string>
     <string name="schedule_on_unlock_fired">Beim Entsperren (ausgelöst)</string>
 
@@ -412,8 +412,8 @@
     <string name="parsed_summary_daily">täglich um %1$s</string>
     <string name="parsed_summary_weekly">%1$s um %2$s</string>
     <string name="parsed_summary_monthly">monatlich am %1$d. um %2$s</string>
-    <string name="parsed_summary_interval">alle %1$s Std. nach Erledigt</string>
-    <string name="parsed_summary_interval_with_start">alle %1$s Std. nach Erledigt, ab %2$s um %3$s</string>
+    <string name="parsed_summary_interval">alle %1$s Std. ab Start</string>
+    <string name="parsed_summary_interval_with_start">alle %1$s Std., ab %2$s um %3$s</string>
     <string name="parsed_summary_once">einmalig am %1$s um %2$s</string>
     <string name="parsed_summary_on_unlock">beim nächsten Entsperren</string>
     <string name="parsed_summary_wrapped">%1$s, Gruppe %2$s</string>

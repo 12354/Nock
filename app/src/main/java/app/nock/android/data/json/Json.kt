@@ -26,7 +26,8 @@ data class ScheduleEnvelope(
     val armedAtMs: Long? = null,
     val roomId: Long? = null,
     val roomAfterMinutes: Int? = null,
-    val roomFallbackMs: Long? = null
+    val roomFallbackMs: Long? = null,
+    val roomGraceMs: Long? = null
 )
 
 fun Schedule.toEnvelope(): ScheduleEnvelope = when (this) {
@@ -44,7 +45,8 @@ fun Schedule.toEnvelope(): ScheduleEnvelope = when (this) {
         "ROOM_AFTER",
         roomId = roomId,
         roomAfterMinutes = afterMinutes,
-        roomFallbackMs = fallbackMs
+        roomFallbackMs = fallbackMs,
+        roomGraceMs = graceMs
     )
 }
 
@@ -55,7 +57,7 @@ fun ScheduleEnvelope.toSchedule(): Schedule = when (type) {
     "MONTHLY" -> Schedule.Monthly(dayOfMonth!!, timeOfDayMinutes!!)
     "INTERVAL" -> Schedule.IntervalFromLast(intervalMs!!, startAtMs = intervalStartAtMs)
     "ON_UNLOCK" -> Schedule.OnUnlock(armedAtMs!!)
-    "ROOM_AFTER" -> Schedule.RoomAfter(roomId!!, roomAfterMinutes!!, roomFallbackMs!!)
+    "ROOM_AFTER" -> Schedule.RoomAfter(roomId!!, roomAfterMinutes!!, roomFallbackMs!!, roomGraceMs ?: 0L)
     else -> error("Unknown schedule type: $type")
 }
 

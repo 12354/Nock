@@ -415,6 +415,8 @@
     <string name="edit_room_after_label">Active after</string>
     <string name="edit_room_fallback_label">Fallback after</string>
     <string name="edit_room_fallback_help">Fires when you\'re detected in the room after the start time — at most once per day. If you\'re never detected, it fires anyway %1$d minutes after the start so it can\'t be missed.</string>
+    <string name="edit_room_grace_label">Grace period</string>
+    <string name="edit_room_grace_help">Waits until you\'ve been in the room this long before ringing, so just passing through doesn\'t set it off. Set to 0 to ring on first detection.</string>
     <string name="edit_room_hint">Room detection reads the WiFi environment when you unlock the phone and in light periodic checks — only while the reminder is waiting. It works best when many networks are visible (including neighbours\'); with a single router, adjacent rooms may be hard to tell apart.</string>
     <string name="rooms_title">Rooms</string>
     <string name="rooms_add">Add room</string>

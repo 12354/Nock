@@ -4,11 +4,13 @@ import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import androidx.core.content.getSystemService
 import app.nock.android.data.NockRepository
 import app.nock.android.data.dao.WifiRoomDao
 import app.nock.android.data.json.WifiLevelsJson
 import app.nock.android.domain.escalation.EscalationEngine
+import app.nock.android.domain.model.Reminder
 import app.nock.android.domain.model.Schedule
 import app.nock.android.domain.time.TimeSource
 import app.nock.android.history.AlarmHistoryLogger
@@ -47,20 +49,39 @@ class RoomCheckManager @Inject constructor(
 ) {
     private val am: AlarmManager = ctx.getSystemService()!!
 
+    // Per-reminder "first detected in the room this window" stamps, backing the
+    // grace/dwell guard. Persisted so the timer survives process death between
+    // the ~15-min ticks; entries are scoped to a window and overwritten when a
+    // newer window opens, so a stale stamp never short-circuits the wait.
+    private val dwellPrefs: SharedPreferences =
+        ctx.getSharedPreferences("room_dwell", Context.MODE_PRIVATE)
+
     /** Periodic tick (or window-start) alarm: check, then arm the next one. */
     suspend fun onCheckAlarm() {
         runCatching { runChecks() }
         rearm()
     }
 
-    /** Free opportunistic check on device unlock; the tick alarm stays as-is. */
+    /**
+     * Free opportunistic check on device unlock. Also re-arms, because the check
+     * may have started a grace timer that needs its own wake-up.
+     */
     suspend fun onUnlock() {
         runCatching { runChecks() }
+        rearm()
     }
 
     /** Recompute and (re-)schedule the single check alarm from current state. */
     suspend fun rearm() {
-        val at = RoomCheckPlanner.nextCheckAt(repo.getAllReminders(), time.nowMs())
+        val reminders = repo.getAllReminders()
+        val now = time.nowMs()
+        val planned = RoomCheckPlanner.nextCheckAt(reminders, now)
+        val grace = nextGraceCheckAt(reminders, now)
+        val at = when {
+            planned == null -> grace
+            grace == null -> planned
+            else -> minOf(planned, grace)
+        }
         val pi = checkPendingIntent()
         am.cancel(pi)
         if (at != null) {
@@ -81,23 +102,70 @@ class RoomCheckManager @Inject constructor(
         val scan = scanner.cachedScan()
             ?.takeIf { it.ageMs <= MAX_SCAN_AGE_MS && it.levels.size >= RoomFingerprints.MIN_SCAN_APS }
             ?: scanner.freshScan()
-            ?: return
+            ?: return // a failed scan tells us nothing — leave dwell timers running
 
         val samplesByRoom = roomDao.getAllSamples()
             .groupBy({ it.roomId }, { WifiLevelsJson.decode(it.levelsJson) })
             .mapValues { (_, v) -> v.filterNotNull() }
         if (samplesByRoom.isEmpty()) return
 
-        val match = RoomFingerprints.matchRoom(scan.levels, samplesByRoom) ?: return
-        if (match.score < RoomFingerprints.MIN_MATCH_SCORE) return
+        val matchedRoomId = RoomFingerprints.matchRoom(scan.levels, samplesByRoom)
+            ?.takeIf { it.score >= RoomFingerprints.MIN_MATCH_SCORE }
+            ?.roomId
 
         for (r in candidates) {
             val s = r.schedule as Schedule.RoomAfter
-            if (s.roomId != match.roomId) continue
+            if (s.roomId != matchedRoomId) {
+                // A good scan placed the user outside the room: reset the clock.
+                clearDwell(r.id)
+                continue
+            }
+            // In the room. Hold off until they've stayed graceMs, so merely
+            // passing through doesn't ring.
+            if (s.graceMs > 0L) {
+                val windowStart = r.nextFireAt!! - s.fallbackMs
+                val firstSeen = dwellStart(r.id, now, windowStart)
+                if (now - firstSeen < s.graceMs) continue
+            }
             if (engine.fireRoomReminder(r.id)) {
                 history.roomDetected(r.name, roomDao.getRoom(s.roomId)?.name)
             }
+            clearDwell(r.id)
         }
+    }
+
+    /**
+     * Earliest moment a pending grace timer elapses, so a detection that started
+     * the dwell clock rings ~on time instead of waiting for the next tick. Reads
+     * the persisted stamps, so it is correct even after a process restart.
+     */
+    private fun nextGraceCheckAt(reminders: List<Reminder>, now: Long): Long? {
+        var next: Long? = null
+        for (r in reminders) {
+            val s = r.schedule as? Schedule.RoomAfter ?: continue
+            if (s.graceMs <= 0L) continue
+            val deadline = r.nextFireAt ?: continue
+            if (!RoomCheckPlanner.isInWindow(s, deadline, now)) continue
+            val firstSeen = dwellPrefs.getLong(r.id.toString(), 0L)
+            if (firstSeen < deadline - s.fallbackMs) continue // no live dwell this window
+            val graceAt = firstSeen + s.graceMs
+            // Past → the tick owns it; at/after the deadline → the fallback does.
+            if (graceAt <= now || graceAt >= deadline) continue
+            if (next == null || graceAt < next) next = graceAt
+        }
+        return next
+    }
+
+    /** First-seen stamp for the current window, starting it at [now] if unset or stale. */
+    private fun dwellStart(reminderId: Long, now: Long, windowStart: Long): Long {
+        val existing = dwellPrefs.getLong(reminderId.toString(), 0L)
+        if (existing >= windowStart) return existing
+        dwellPrefs.edit().putLong(reminderId.toString(), now).apply()
+        return now
+    }
+
+    private fun clearDwell(reminderId: Long) {
+        dwellPrefs.edit().remove(reminderId.toString()).apply()
     }
 
     private fun checkPendingIntent(): PendingIntent {

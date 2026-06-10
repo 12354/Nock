@@ -86,6 +86,11 @@ sealed class Schedule {
     // fingerprint) in room [roomId] after [afterMinutes], or — if never
     // detected — at the fallback deadline (window start + [fallbackMs]).
     //
+    // [graceMs] is a dwell guard: detection only fires once the user has been
+    // continuously in the room for that long, so merely passing through doesn't
+    // ring. 0 means fire on first detection. It only delays the detection-based
+    // fire; the fallback deadline is unaffected and still rings on time.
+    //
     // nextFireFrom returns the fallback DEADLINE, so the ordinary time-based
     // escalation machinery arms the can't-miss fallback for free; room
     // detection (RoomCheckManager → EscalationEngine.fireRoomReminder) pulls
@@ -96,7 +101,8 @@ sealed class Schedule {
     data class RoomAfter(
         val roomId: Long,
         val afterMinutes: Int,
-        val fallbackMs: Long
+        val fallbackMs: Long,
+        val graceMs: Long = 0L
     ) : Schedule() {
         override val isOneTime: Boolean = false
         override fun nextFireFrom(now: Long, lastCompletedAt: Long?, zone: ZoneId): Long? {

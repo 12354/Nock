@@ -202,9 +202,11 @@ fun EditReminderRoute(
                     selectedRoomId = state.roomId,
                     afterMinutes = state.roomAfterMinutes,
                     fallbackMin = state.roomFallbackMin,
+                    graceMin = state.roomGraceMin,
                     onRoom = vm::updateRoom,
                     onAfter = vm::updateRoomAfter,
                     onFallback = vm::updateRoomFallback,
+                    onGrace = vm::updateRoomGrace,
                     onManageRooms = onManageRooms
                 )
             }
@@ -799,9 +801,11 @@ private fun RoomScheduleEditor(
     selectedRoomId: Long?,
     afterMinutes: Int,
     fallbackMin: Int,
+    graceMin: Int,
     onRoom: (Long) -> Unit,
     onAfter: (Int) -> Unit,
     onFallback: (Int) -> Unit,
+    onGrace: (Int) -> Unit,
     onManageRooms: () -> Unit,
 ) {
     val ctx = LocalContext.current
@@ -875,6 +879,18 @@ private fun RoomScheduleEditor(
             min = EditReminderViewModel.MIN_ROOM_FALLBACK_MIN,
             max = EditReminderViewModel.MAX_ROOM_FALLBACK_MIN,
             onChange = onFallback,
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        MinutesSlider(
+            icon = Icons.Filled.Timelapse,
+            label = stringResource(R.string.edit_room_grace_label),
+            valueText = stringResource(R.string.edit_trip_buffer_value, graceMin),
+            helpText = stringResource(R.string.edit_room_grace_help),
+            value = graceMin,
+            min = EditReminderViewModel.MIN_ROOM_GRACE_MIN,
+            max = EditReminderViewModel.MAX_ROOM_GRACE_MIN,
+            onChange = onGrace,
             modifier = Modifier.fillMaxWidth(),
         )
 

@@ -415,6 +415,8 @@
     <string name="edit_room_after_label">Aktiv ab</string>
     <string name="edit_room_fallback_label">Spätestens nach</string>
     <string name="edit_room_fallback_help">Klingelt, sobald du nach der Startzeit im Raum erkannt wirst — höchstens einmal pro Tag. Wirst du nicht erkannt, klingelt sie trotzdem %1$d Minuten nach der Startzeit, damit nichts verpasst wird.</string>
+    <string name="edit_room_grace_label">Wartezeit im Raum</string>
+    <string name="edit_room_grace_help">Klingelt erst, wenn du so lange im Raum warst — kurzes Durchgehen löst sie also nicht aus. Auf 0 stellen, um sofort bei der ersten Erkennung zu klingeln.</string>
     <string name="edit_room_hint">Die Raumerkennung liest die WLAN-Umgebung beim Entsperren des Telefons und in leichten periodischen Prüfungen — nur solange die Erinnerung wartet. Sie funktioniert am besten, wenn viele Netzwerke sichtbar sind (auch die der Nachbarn); mit nur einem Router sind benachbarte Räume schwer zu unterscheiden.</string>
     <string name="rooms_title">Räume</string>
     <string name="rooms_add">Raum hinzufügen</string>

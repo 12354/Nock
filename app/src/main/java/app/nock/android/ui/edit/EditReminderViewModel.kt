@@ -58,6 +58,9 @@ data class EditState(
     val roomId: Long? = null,
     val roomAfterMinutes: Int = 22 * 60,
     val roomFallbackMin: Int = EditReminderViewModel.DEFAULT_ROOM_FALLBACK_MIN,
+    // Dwell guard (minutes): fire only after the user has been in the room this
+    // long, so passing through doesn't ring. 0 fires on first detection.
+    val roomGraceMin: Int = EditReminderViewModel.DEFAULT_ROOM_GRACE_MIN,
 )
 
 enum class ScheduleKind { ONESHOT, DAILY, WEEKLY, MONTHLY, INTERVAL, ON_UNLOCK, ROOM }
@@ -149,7 +152,9 @@ class EditReminderViewModel @Inject constructor(
                     roomAfterMinutes = (r.schedule as? Schedule.RoomAfter)?.afterMinutes
                         ?: it.roomAfterMinutes,
                     roomFallbackMin = (r.schedule as? Schedule.RoomAfter)
-                        ?.let { s -> (s.fallbackMs / 60_000L).toInt() } ?: it.roomFallbackMin
+                        ?.let { s -> (s.fallbackMs / 60_000L).toInt() } ?: it.roomFallbackMin,
+                    roomGraceMin = (r.schedule as? Schedule.RoomAfter)
+                        ?.let { s -> (s.graceMs / 60_000L).toInt() } ?: it.roomGraceMin
                 )
             }
         }
@@ -173,6 +178,8 @@ class EditReminderViewModel @Inject constructor(
     fun updateRoomAfter(minutes: Int) = _state.update { it.copy(roomAfterMinutes = minutes) }
     fun updateRoomFallback(min: Int) =
         _state.update { it.copy(roomFallbackMin = min.coerceIn(MIN_ROOM_FALLBACK_MIN, MAX_ROOM_FALLBACK_MIN)) }
+    fun updateRoomGrace(min: Int) =
+        _state.update { it.copy(roomGraceMin = min.coerceIn(MIN_ROOM_GRACE_MIN, MAX_ROOM_GRACE_MIN)) }
 
     fun updateNl(input: String) {
         _state.update {
@@ -346,7 +353,7 @@ class EditReminderViewModel @Inject constructor(
         ScheduleKind.INTERVAL -> Schedule.IntervalFromLast(s.intervalHours * 3_600_000L, s.intervalStartMs)
         ScheduleKind.ON_UNLOCK -> Schedule.OnUnlock(System.currentTimeMillis())
         ScheduleKind.ROOM -> s.roomId?.let {
-            Schedule.RoomAfter(it, s.roomAfterMinutes, s.roomFallbackMin * 60_000L)
+            Schedule.RoomAfter(it, s.roomAfterMinutes, s.roomFallbackMin * 60_000L, s.roomGraceMin * 60_000L)
         }
     }
 
@@ -362,5 +369,11 @@ class EditReminderViewModel @Inject constructor(
         const val MIN_ROOM_FALLBACK_MIN = 5
         const val MAX_ROOM_FALLBACK_MIN = MAX_TRIP_BUFFER_MIN
         const val DEFAULT_ROOM_FALLBACK_MIN = 60
+
+        // Dwell guard bounds for room reminders (minutes in the room before
+        // ringing). 0 disables the wait and fires on first detection.
+        const val MIN_ROOM_GRACE_MIN = 0
+        const val MAX_ROOM_GRACE_MIN = 30
+        const val DEFAULT_ROOM_GRACE_MIN = 5
     }
 }

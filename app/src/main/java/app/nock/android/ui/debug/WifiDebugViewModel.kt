@@ -40,10 +40,14 @@ data class WifiProbe(
     /** Rooms ranked by score (best first); rooms without samples sort last. */
     val rooms: List<RoomMatchRow>,
     val aps: List<ApReading>,
+    /** Strong APs the top-scoring room has never seen — the negative-match signal. */
+    val topRoomForeignAps: Int = 0,
+    /** True when the top room scores well but is vetoed as "elsewhere" (too many foreign APs). */
+    val topRoomElsewhere: Boolean = false,
 ) {
     /** The winning room, if any room would be detected right now. */
     val winner: RoomMatchRow? get() = rooms.firstOrNull()?.takeIf {
-        enoughAps && (it.score ?: 0.0) >= RoomFingerprints.MIN_MATCH_SCORE
+        enoughAps && (it.score ?: 0.0) >= RoomFingerprints.MIN_MATCH_SCORE && !topRoomElsewhere
     }
 }
 
@@ -131,6 +135,15 @@ class WifiDebugViewModel @Inject constructor(
                 )
             }.sortedWith(compareByDescending { it.score ?: -1.0 })
 
+            // Apply the matcher's negative match to the top scored room with samples,
+            // so the diagnostic suppresses (and explains) the same "outside" false
+            // positives the background check now rejects.
+            val topRoom = matchRows.firstOrNull { it.sampleCount > 0 }
+            val topRoomAps = topRoom?.let { samplesByRoom[it.roomId].orEmpty().flatMapTo(HashSet()) { s -> s.keys } }
+                ?: emptySet()
+            val topForeign = RoomFingerprints.foreignStrongApCount(scan.levels, topRoomAps)
+            val topElsewhere = topRoom != null && RoomFingerprints.isElsewhere(scan.levels, topRoomAps)
+
             val strong = RoomFingerprints.strongApCount(scan.levels)
             val aps = scan.levels.entries
                 .map { ApReading(it.key, it.value) }
@@ -149,6 +162,8 @@ class WifiDebugViewModel @Inject constructor(
                         enoughAps = scan.levels.size >= RoomFingerprints.MIN_SCAN_APS,
                         rooms = matchRows,
                         aps = aps,
+                        topRoomForeignAps = topForeign,
+                        topRoomElsewhere = topElsewhere,
                     ),
                 )
             }
@@ -167,7 +182,10 @@ class WifiDebugViewModel @Inject constructor(
         }
         appendLine()
         appendLine("scan: aps=${p.apCount} strong=${p.strongAps} quality=${p.quality} age=${p.ageMs / 1000}s enoughAps=${p.enoughAps}")
-        appendLine("winner: ${p.winner?.let { "${it.name} (${pct(it.score)})" } ?: "none — no room clears the match threshold"}")
+        val noWinnerReason = if (p.topRoomElsewhere)
+            "none — best room vetoed: ${p.topRoomForeignAps} strong foreign APs (looks like outside the room)"
+        else "none — no room clears the match threshold"
+        appendLine("winner: ${p.winner?.let { "${it.name} (${pct(it.score)})" } ?: noWinnerReason}")
         appendLine()
         appendLine("== ROOM SCORES (${p.rooms.size}) ==")
         p.rooms.forEach { r ->

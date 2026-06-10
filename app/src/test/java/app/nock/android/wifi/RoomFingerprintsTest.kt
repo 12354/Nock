@@ -1,6 +1,7 @@
 package app.nock.android.wifi
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -53,6 +54,36 @@ class RoomFingerprintsTest {
     @Test fun no_samples_matches_nothing() {
         assertNull(RoomFingerprints.matchRoom(bedroom, emptyMap()))
         assertNull(RoomFingerprints.matchRoom(bedroom, mapOf(1L to emptyList())))
+    }
+
+    @Test fun foreign_strong_aps_counts_only_unknown_strong() {
+        // aa:1 is the room's; x:1/x:2 are strong & foreign; x:3 is foreign but faint.
+        val scan = mapOf("aa:1" to -50, "x:1" to -55, "x:2" to -58, "x:3" to -90)
+        assertEquals(2, RoomFingerprints.foreignStrongApCount(scan, bedroom.keys))
+    }
+
+    @Test fun elsewhere_when_foreign_strong_aps_dominate() {
+        val outside = mapOf("x:1" to -50, "x:2" to -55, "x:3" to -60)
+        assertTrue(RoomFingerprints.isElsewhere(outside, bedroom.keys))
+    }
+
+    @Test fun not_elsewhere_when_familiar_aps_hold_their_own() {
+        assertFalse(RoomFingerprints.isElsewhere(bedroom, bedroom.keys))
+        // A single foreign hotspot is never enough to veto.
+        assertFalse(RoomFingerprints.isElsewhere(mapOf("aa:1" to -50, "x:1" to -55), bedroom.keys))
+    }
+
+    @Test fun match_vetoed_when_scan_dominated_by_foreign_aps() {
+        // One bleed-through home AP, two strong unfamiliar networks → "outside".
+        val outside = mapOf("aa:1" to -47, "x:1" to -55, "x:2" to -58)
+        assertNull(RoomFingerprints.matchRoom(outside, mapOf(1L to listOf(bedroom))))
+    }
+
+    @Test fun match_survives_a_lone_foreign_ap() {
+        val withGuestHotspot = bedroom + ("x:1" to -55)
+        val match = RoomFingerprints.matchRoom(withGuestHotspot, mapOf(1L to listOf(bedroom)))!!
+        assertEquals(1L, match.roomId)
+        assertTrue(match.score >= RoomFingerprints.MIN_MATCH_SCORE)
     }
 
     @Test fun quality_buckets() {

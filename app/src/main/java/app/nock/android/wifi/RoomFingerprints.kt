@@ -15,6 +15,13 @@ data class RoomMatch(val roomId: Long, val score: Double)
  * act as discriminators — a reminder only fires when its target room wins
  * outright AND clears [MIN_MATCH_SCORE].
  *
+ * Negative match: a high score alone is not enough. Outside the building the
+ * room's own APs fade while unfamiliar networks (the street, other flats) come
+ * up strong, yet a couple of bleed-through home APs can still inflate the
+ * score. So [matchRoom] also vetoes any winner whose live scan is dominated by
+ * strong APs the room has never recorded ([isElsewhere]) — "too many wrong
+ * WiFis" means you are somewhere else, not in the bedroom.
+ *
  * Honest limitation, surfaced via [quality]: this works because a home
  * usually sees many access points (including the neighbours'). With only a
  * couple visible, adjacent rooms have near-identical fingerprints and
@@ -37,6 +44,15 @@ object RoomFingerprints {
     const val STRONG_DBM = -85
 
     /**
+     * How many strong APs unknown to the matched room it takes to start
+     * doubting the match. Below this a lone foreign hotspot (a guest's phone,
+     * a passing car) can never veto a real detection; at or above it the scan
+     * is only rejected when those foreign APs also *outnumber* the familiar
+     * ones (see [isElsewhere]).
+     */
+    const val MIN_FOREIGN_STRONG_TO_VETO = 2
+
+    /**
      * 0..1 similarity of two fingerprints: mean absolute RSSI difference over
      * the union of APs, with [FLOOR_DBM] standing in for an AP one side
      * doesn't see (so disjoint AP sets score near zero, not high).
@@ -53,21 +69,50 @@ object RoomFingerprints {
 
     /**
      * The room whose samples best match [scan], or null when the scan is too
-     * sparse to distinguish anything ([MIN_SCAN_APS]) or no room has samples.
+     * sparse to distinguish anything ([MIN_SCAN_APS]), no room has samples, or
+     * the scan is dominated by APs the best room has never seen ([isElsewhere])
+     * — the negative match that keeps "outside the house" from reading as a room.
      */
     fun matchRoom(scan: Map<String, Int>, samplesByRoom: Map<Long, List<Map<String, Int>>>): RoomMatch? {
         if (scan.size < MIN_SCAN_APS) return null
         var best: RoomMatch? = null
+        var bestAps: Set<String> = emptySet()
         for ((roomId, samples) in samplesByRoom) {
             if (samples.isEmpty()) continue
             val score = samples.maxOf { similarity(scan, it) }
-            if (best == null || score > best.score) best = RoomMatch(roomId, score)
+            if (best == null || score > best.score) {
+                best = RoomMatch(roomId, score)
+                bestAps = samples.flatMapTo(HashSet()) { it.keys }
+            }
         }
+        if (best == null || isElsewhere(scan, bestAps)) return null
         return best
     }
 
     /** APs visible clearly enough to anchor a fingerprint. */
     fun strongApCount(levels: Map<String, Int>): Int = levels.count { it.value >= STRONG_DBM }
+
+    /**
+     * Strong APs in [scan] that [roomAps] (the union of a room's sampled
+     * BSSIDs) has never recorded — nearby networks foreign to the room.
+     */
+    fun foreignStrongApCount(scan: Map<String, Int>, roomAps: Set<String>): Int =
+        scan.count { it.value >= STRONG_DBM && it.key !in roomAps }
+
+    /**
+     * Negative match: true when [scan]'s strong APs are dominated by ones
+     * foreign to [roomAps]. Outside a building the room's own APs drop below
+     * [STRONG_DBM] while unfamiliar networks read strong, so requiring the
+     * familiar strong APs to at least match the foreign ones rejects a high
+     * score earned from a few walls-bleeding home APs. Needs at least
+     * [MIN_FOREIGN_STRONG_TO_VETO] foreign APs so a single stray one is never
+     * enough to suppress a genuine detection.
+     */
+    fun isElsewhere(scan: Map<String, Int>, roomAps: Set<String>): Boolean {
+        val foreign = foreignStrongApCount(scan, roomAps)
+        val familiar = strongApCount(scan) - foreign
+        return foreign >= MIN_FOREIGN_STRONG_TO_VETO && foreign > familiar
+    }
 
     fun quality(strongAps: Int): SpotQuality = when {
         strongAps >= 8 -> SpotQuality.GOOD

@@ -15,6 +15,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.outlined.SystemUpdate
@@ -39,12 +40,15 @@ import app.nock.android.update.UpdateManager
 import app.nock.android.update.UpdateResult
 import app.nock.android.update.UpdateState
 import app.nock.android.domain.model.Group
+import app.nock.android.domain.model.Reminder
+import app.nock.android.ui.ReminderUndoViewModel
 import app.nock.android.ui.components.GroupAvatar
 import app.nock.android.ui.components.NockLogo
 import app.nock.android.ui.components.StageProgress
 import app.nock.android.ui.components.UndoSnackbar
 import app.nock.android.ui.components.stageTypeLabel
 import app.nock.android.ui.voice.AddReminderFab
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.time.Instant
@@ -76,6 +80,8 @@ fun TodayScreen(
 
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    val undoVm: ReminderUndoViewModel = hiltViewModel()
+    val deletedMessage = stringResource(R.string.reminder_deleted_undo_message)
 
     // Reset the list to the top whenever the app is brought to the foreground
     // (the signal increments on every resume) and whenever this screen is freshly
@@ -86,6 +92,26 @@ fun TodayScreen(
     }
     val undoMessage = stringResource(R.string.today_done_undo_message)
     val undoAction = stringResource(R.string.today_done_undo_action)
+
+    // Swipe-delete on the upcoming rows commits immediately, then offers a restore
+    // for the undo window — mirroring the reminder list's swipe-delete flow.
+    val onDeleteReminder: (Reminder) -> Unit = { r ->
+        vm.deleteReminder(r)
+        scope.launch {
+            launch {
+                delay(ReminderUndoViewModel.UNDO_WINDOW_MS)
+                snackbarHostState.currentSnackbarData?.dismiss()
+            }
+            val result = snackbarHostState.showSnackbar(
+                message = deletedMessage,
+                actionLabel = undoAction,
+                duration = SnackbarDuration.Indefinite
+            )
+            if (result == SnackbarResult.ActionPerformed) {
+                undoVm.restore(r)
+            }
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -182,11 +208,12 @@ fun TodayScreen(
                 }
                 section.items.forEach { item ->
                     item("row-${item.reminder.id}") {
-                        ReminderRow(
+                        SwipeDeletableReminderRow(
                             item = item,
                             timeLabel = formatRowTime(ctx, item.reminder.nextFireAt),
                             relativeLabel = relativeLabel(ctx, item.reminder.nextFireAt),
-                            onClick = { onEditReminder(item.reminder.id) }
+                            onClick = { onEditReminder(item.reminder.id) },
+                            onDelete = { onDeleteReminder(item.reminder) },
                         )
                     }
                 }
@@ -380,6 +407,62 @@ private fun SectionHeader(text: String) {
     )
 }
 
+/**
+ * An upcoming reminder row that swipes away (end → start) to delete, matching the
+ * reminder list. The delete commits on the swipe; the caller surfaces an undo
+ * snackbar.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SwipeDeletableReminderRow(
+    item: TodayItem,
+    timeLabel: String,
+    relativeLabel: String?,
+    onClick: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    val dismissState = rememberSwipeToDismissBoxState(
+        confirmValueChange = { value ->
+            if (value == SwipeToDismissBoxValue.EndToStart) {
+                onDelete()
+                true
+            } else {
+                false
+            }
+        }
+    )
+    SwipeToDismissBox(
+        state = dismissState,
+        enableDismissFromStartToEnd = false,
+        backgroundContent = {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 12.dp, vertical = 4.dp)
+                    .background(
+                        MaterialTheme.colorScheme.errorContainer,
+                        RoundedCornerShape(12.dp)
+                    )
+                    .padding(end = 20.dp),
+                contentAlignment = Alignment.CenterEnd
+            ) {
+                Icon(
+                    Icons.Filled.Delete,
+                    contentDescription = stringResource(R.string.delete),
+                    tint = MaterialTheme.colorScheme.onErrorContainer
+                )
+            }
+        }
+    ) {
+        ReminderRow(
+            item = item,
+            timeLabel = timeLabel,
+            relativeLabel = relativeLabel,
+            onClick = onClick,
+        )
+    }
+}
+
 @Composable
 private fun ReminderRow(
     item: TodayItem,
@@ -390,6 +473,9 @@ private fun ReminderRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            // Opaque background so the delete reveal can't show through the row
+            // while it slides.
+            .background(MaterialTheme.colorScheme.surface)
             .clickable { onClick() }
             .padding(horizontal = 24.dp, vertical = 10.dp)
             .heightIn(min = 56.dp),

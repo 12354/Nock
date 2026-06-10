@@ -147,6 +147,13 @@ class TodayViewModel @Inject constructor(
         engine.completeReminder(reminderId)
     }
 
+    fun deleteReminder(r: Reminder) {
+        // Cancel + delete atomically so a concurrent alarm fire can't re-arm the
+        // reminder between the two steps. Mirrors RemindersViewModel.deleteReminder;
+        // the screen surfaces an undo snackbar that calls back into restore.
+        viewModelScope.launch { engine.deleteReminderAndCancel(r.id) }
+    }
+
     fun snooze(reminderId: Long) {
         viewModelScope.launch {
             val active = activeDao.getByReminderId(reminderId) ?: return@launch

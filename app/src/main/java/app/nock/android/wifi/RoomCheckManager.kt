@@ -14,6 +14,7 @@ import app.nock.android.domain.model.Reminder
 import app.nock.android.domain.model.Schedule
 import app.nock.android.domain.time.TimeSource
 import app.nock.android.history.AlarmHistoryLogger
+import app.nock.android.notif.NotificationPresenter
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -46,6 +47,7 @@ class RoomCheckManager @Inject constructor(
     private val engine: EscalationEngine,
     private val time: TimeSource,
     private val history: AlarmHistoryLogger,
+    private val notifier: NotificationPresenter,
 ) {
     private val am: AlarmManager = ctx.getSystemService()!!
 
@@ -91,7 +93,15 @@ class RoomCheckManager @Inject constructor(
 
     private suspend fun runChecks() {
         val now = time.nowMs()
-        val candidates = repo.getAllReminders().filter {
+        val reminders = repo.getAllReminders()
+
+        // Always surface a quiet, dismissable "mark me done" note for every room
+        // reminder whose window is open — independent of the scan, so the user
+        // has a manual completion path even when WiFi never produces a confident
+        // match. Reminders outside their window get any stale note cleared.
+        syncWindowNotifications(reminders, now)
+
+        val candidates = reminders.filter {
             val s = it.schedule as? Schedule.RoomAfter
             s != null && RoomCheckPlanner.isInWindow(s, it.nextFireAt, now)
         }
@@ -128,9 +138,32 @@ class RoomCheckManager @Inject constructor(
                 if (now - firstSeen < s.graceMs) continue
             }
             if (engine.fireRoomReminder(r.id)) {
+                // Detection consumed the window; the escalation owns the user's
+                // attention now, so retire the manual note.
+                notifier.cancelRoomWindow(r.id)
                 history.roomDetected(r.name, roomDao.getRoom(s.roomId)?.name)
             }
             clearDwell(r.id)
+        }
+    }
+
+    /**
+     * Post the manual "mark done" note for every room reminder whose window is
+     * open right now and clear it for every one whose window is not, so the note
+     * appears at window start and is gone once the reminder is detected,
+     * completed, or its window lapses. The fallback deadline doubles as the
+     * note's auto-timeout (see [NotificationPresenter.showRoomWindow]), so the
+     * deadline edge needs no tick of its own.
+     */
+    private suspend fun syncWindowNotifications(reminders: List<Reminder>, now: Long) {
+        for (r in reminders) {
+            val s = r.schedule as? Schedule.RoomAfter ?: continue
+            val deadline = r.nextFireAt
+            if (deadline != null && RoomCheckPlanner.isInWindow(s, deadline, now)) {
+                notifier.showRoomWindow(r.id, r.name, roomDao.getRoom(s.roomId)?.name, deadline)
+            } else {
+                notifier.cancelRoomWindow(r.id)
+            }
         }
     }
 

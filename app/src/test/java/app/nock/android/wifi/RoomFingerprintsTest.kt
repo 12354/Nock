@@ -58,6 +58,14 @@ class RoomFingerprintsTest {
         assertFalse(match.confident)
     }
 
+    @Test fun a_modest_but_real_lead_is_confident() {
+        // Field case: adjacent rooms share the home's strong APs, so the correct
+        // (top-scoring) room leads the runner-up by only a few points. A clear
+        // winner like 73% over 65% must fire rather than be suppressed as a tie.
+        val match = RoomMatch(roomId = 1L, score = 0.73, margin = 0.08)
+        assertTrue(match.confident)
+    }
+
     @Test fun single_trained_room_needs_only_the_score() {
         val match = RoomFingerprints.matchRoom(bedroom, mapOf(1L to listOf(bedroom)))!!
         assertEquals(match.score, match.margin, 1e-9)

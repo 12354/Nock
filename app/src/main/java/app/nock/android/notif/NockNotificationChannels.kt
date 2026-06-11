@@ -19,6 +19,11 @@ object Channels {
     const val ALARM = "nock_alarm_v2"
     const val SERVICE = "nock_service"
 
+    // The quiet, ever-present "you're in this reminder's window — mark it done"
+    // notification for room reminders. Low importance and silent so it sits in
+    // the shade without alerting; it's a manual completion path, not an alarm.
+    const val ROOM = "nock_room_window"
+
     // The pre-alarm sound is user-configurable, but a channel's sound is frozen
     // at creation on Android O+. We therefore mint one channel per chosen sound,
     // keying the id off the sound URI so a new choice yields a brand-new channel
@@ -86,6 +91,19 @@ class NockNotificationChannels @Inject constructor(
             ).apply {
                 description = ctx.getString(R.string.channel_service_desc)
                 setSound(null, null)
+                setShowBadge(false)
+            }
+        )
+
+        nm.createNotificationChannel(
+            NotificationChannel(
+                Channels.ROOM,
+                ctx.getString(R.string.channel_room_name),
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = ctx.getString(R.string.channel_room_desc)
+                setSound(null, null)
+                enableVibration(false)
                 setShowBadge(false)
             }
         )

@@ -58,8 +58,17 @@ object RoomFingerprints {
     /** Score a room's samples must reach for a detection to count. */
     const val MIN_MATCH_SCORE = 0.55
 
-    /** Lead the winning room must have over the runner-up room. */
-    const val MIN_MATCH_MARGIN = 0.10
+    /**
+     * Lead the winning room must have over the runner-up room. Kept only as a
+     * thin guard against a genuine 50/50 tie (an unmapped spot exactly between
+     * two rooms): in a real home the strong APs the rooms share are visible
+     * almost everywhere, so adjacent rooms legitimately score within ~10 dB of
+     * each other and the correct room wins by only a few points. A 0.10 lead
+     * demanded that gap be huge and so suppressed nearly every true detection;
+     * 0.05 still rejects a dead heat while letting the right room — which is
+     * reliably the top-scoring one — actually fire.
+     */
+    const val MIN_MATCH_MARGIN = 0.05
 
     /** Fraction of a sample's strong APs the scan must still see ([sampleScore]). */
     const val MIN_STRONG_OVERLAP = 0.5

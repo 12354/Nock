@@ -156,6 +156,55 @@ class NotificationPresenter @Inject constructor(
             .build()
     }
 
+    /**
+     * The quiet, ever-present note shown while a room reminder's window is open,
+     * so the user can mark it done by hand even when WiFi never produces a
+     * confident match. It carries a single Done button that completes the
+     * reminder by id (no live escalation needed). Posted under a dedicated tag so
+     * it shares no id space with the escalation notifications keyed by
+     * escalationId, and re-posting it on each ~15-min room check merely refreshes
+     * it. [timeoutAtMs] is the window's fallback deadline: the system auto-removes
+     * the note then, exactly when the loud fallback escalation takes over.
+     */
+    fun showRoomWindow(reminderId: Long, reminderName: String, roomName: String?, timeoutAtMs: Long) {
+        val text = roomName?.let { ctx.getString(R.string.room_window_in_room, it) }
+            ?: ctx.getString(R.string.room_window_generic)
+        val doneIntent = Intent(ctx, NotificationActionReceiver::class.java).apply {
+            // A distinct action keeps this PendingIntent from colliding (via
+            // filterEquals, which ignores extras) with the escalation Done/Snooze
+            // intents that target the same receiver.
+            action = "${ctx.packageName}.${IntentExtras.ACTION_COMPLETE_REMINDER}"
+            putExtra(IntentExtras.EXTRA_ACTION, IntentExtras.ACTION_COMPLETE_REMINDER)
+            putExtra(IntentExtras.EXTRA_REMINDER_ID, reminderId)
+        }
+        val donePI = PendingIntent.getBroadcast(
+            ctx,
+            reminderId.toInt(),
+            doneIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val timeout = timeoutAtMs - System.currentTimeMillis()
+        if (timeout <= 0L) return // window already closed; nothing to show
+        val notif = NotificationCompat.Builder(ctx, Channels.ROOM)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle(reminderName)
+            .setContentText(text)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setSilent(true)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setAutoCancel(false)
+            .setShowWhen(false)
+            .setTimeoutAfter(timeout)
+            .addAction(0, ctx.getString(R.string.done), donePI)
+            .build()
+        nm.notify(ROOM_WINDOW_TAG, reminderId.toInt(), notif)
+    }
+
+    fun cancelRoomWindow(reminderId: Long) {
+        nm.cancel(ROOM_WINDOW_TAG, reminderId.toInt())
+    }
+
     fun cancel(escalationId: Long) {
         nm.cancel(escalationId.toInt())
     }
@@ -219,5 +268,11 @@ class NotificationPresenter @Inject constructor(
             .setOnlyAlertOnce(false)
             .addAction(0, ctx.getString(R.string.done), donePI)
             .addAction(0, ctx.getString(R.string.snooze), snoozePI)
+    }
+
+    private companion object {
+        // Tag for room-window notifications so their per-reminder ids don't
+        // collide with the escalation notifications posted by escalationId.toInt().
+        const val ROOM_WINDOW_TAG = "room_window"
     }
 }

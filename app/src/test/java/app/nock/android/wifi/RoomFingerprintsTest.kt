@@ -1,6 +1,7 @@
 package app.nock.android.wifi
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -28,7 +29,16 @@ class RoomFingerprintsTest {
         assertEquals(0.0, RoomFingerprints.similarity(emptyMap(), bedroom), 1e-9)
     }
 
-    @Test fun match_picks_best_room() {
+    @Test fun equal_rssi_gap_on_a_strong_ap_costs_more() {
+        val strongApMoved = bedroom + ("aa:1" to -60) // -45 → -60
+        val weakApMoved = bedroom + ("aa:4" to -95) // -80 → -95
+        assertTrue(
+            RoomFingerprints.similarity(bedroom, strongApMoved) <
+                RoomFingerprints.similarity(bedroom, weakApMoved)
+        )
+    }
+
+    @Test fun match_picks_best_room_confidently() {
         val samples = mapOf(
             1L to listOf(bedroom),
             2L to listOf(kitchen),
@@ -36,18 +46,50 @@ class RoomFingerprintsTest {
         val nearBedroom = bedroom.mapValues { it.value - 3 }
         val match = RoomFingerprints.matchRoom(nearBedroom, samples)!!
         assertEquals(1L, match.roomId)
-        assertTrue(match.score >= RoomFingerprints.MIN_MATCH_SCORE)
+        assertTrue(match.confident)
     }
 
-    @Test fun match_uses_best_sample_of_a_room() {
+    @Test fun near_tie_between_rooms_is_not_confident() {
+        val twinRoom = bedroom.mapValues { it.value - 2 }
+        val samples = mapOf(1L to listOf(bedroom), 2L to listOf(twinRoom))
+        val match = RoomFingerprints.matchRoom(bedroom.mapValues { it.value - 1 }, samples)!!
+        assertTrue(match.score >= RoomFingerprints.MIN_MATCH_SCORE)
+        assertTrue(match.margin < RoomFingerprints.MIN_MATCH_MARGIN)
+        assertFalse(match.confident)
+    }
+
+    @Test fun single_trained_room_needs_only_the_score() {
+        val match = RoomFingerprints.matchRoom(bedroom, mapOf(1L to listOf(bedroom)))!!
+        assertEquals(match.score, match.margin, 1e-9)
+        assertTrue(match.confident)
+    }
+
+    @Test fun one_lucky_sample_cannot_carry_a_room() {
         val staleSample = bedroom.mapValues { it.value - 25 }
         val samples = mapOf(1L to listOf(staleSample, bedroom))
         val match = RoomFingerprints.matchRoom(bedroom, samples)!!
-        assertEquals(1.0, match.score, 1e-9)
+        val expected = (1.0 + RoomFingerprints.sampleScore(bedroom, staleSample)) / 2
+        assertEquals(expected, match.score, 1e-9)
+        assertTrue(match.score < 1.0)
+    }
+
+    @Test fun room_score_averages_only_the_best_samples() {
+        val junkSample = mapOf("zz:1" to -50, "zz:2" to -60, "zz:3" to -70, "zz:4" to -80)
+        val samples = listOf(bedroom, bedroom, junkSample)
+        assertEquals(1.0, RoomFingerprints.roomScore(bedroom, samples)!!, 1e-9)
+    }
+
+    @Test fun missing_strong_aps_zero_a_sample() {
+        // Just outside the house: only the weakest of bedroom's APs survives,
+        // padded out with neighbours' networks.
+        val outside = mapOf("aa:4" to -92, "nn:1" to -80, "nn:2" to -85, "nn:3" to -90)
+        assertEquals(0.25, RoomFingerprints.strongOverlap(outside, bedroom), 1e-9)
+        assertEquals(0.0, RoomFingerprints.sampleScore(outside, bedroom), 1e-9)
     }
 
     @Test fun sparse_scan_matches_nothing() {
-        assertNull(RoomFingerprints.matchRoom(mapOf("aa:1" to -50), mapOf(1L to listOf(bedroom))))
+        val sparse = mapOf("aa:1" to -45, "aa:2" to -60, "aa:3" to -72)
+        assertNull(RoomFingerprints.matchRoom(sparse, mapOf(1L to listOf(bedroom))))
     }
 
     @Test fun no_samples_matches_nothing() {

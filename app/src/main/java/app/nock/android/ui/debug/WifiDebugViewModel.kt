@@ -25,7 +25,7 @@ data class RoomMatchRow(
     val roomId: Long,
     val name: String,
     val sampleCount: Int,
-    /** Best similarity (0..1) over the room's samples; null when the room has none. */
+    /** The room's score (0..1) exactly as the matcher computes it; null when the room has no samples. */
     val score: Double?,
 )
 
@@ -41,9 +41,17 @@ data class WifiProbe(
     val rooms: List<RoomMatchRow>,
     val aps: List<ApReading>,
 ) {
+    /** The best room's lead over the runner-up; null until two rooms have scores. */
+    val margin: Double? get() {
+        val best = rooms.firstOrNull()?.score ?: return null
+        return best - (rooms.getOrNull(1)?.score ?: 0.0)
+    }
+
     /** The winning room, if any room would be detected right now. */
     val winner: RoomMatchRow? get() = rooms.firstOrNull()?.takeIf {
-        enoughAps && (it.score ?: 0.0) >= RoomFingerprints.MIN_MATCH_SCORE
+        enoughAps &&
+            (it.score ?: 0.0) >= RoomFingerprints.MIN_MATCH_SCORE &&
+            (margin ?: 0.0) >= RoomFingerprints.MIN_MATCH_MARGIN
     }
 }
 
@@ -126,8 +134,7 @@ class WifiDebugViewModel @Inject constructor(
                     roomId = room.id,
                     name = room.name,
                     sampleCount = samples.size,
-                    score = if (samples.isEmpty()) null
-                    else samples.maxOf { RoomFingerprints.similarity(scan.levels, it) },
+                    score = RoomFingerprints.roomScore(scan.levels, samples),
                 )
             }.sortedWith(compareByDescending { it.score ?: -1.0 })
 
@@ -159,7 +166,11 @@ class WifiDebugViewModel @Inject constructor(
     fun buildDump(s: WifiDebugState): String = buildString {
         appendLine("Nock WiFi positioning probe")
         appendLine("permissions: fine=${s.hasFine} background=${s.hasBackground} wifiOn=${s.wifiAvailable}")
-        appendLine("thresholds: minScanAps=${RoomFingerprints.MIN_SCAN_APS} minMatchScore=${RoomFingerprints.MIN_MATCH_SCORE}")
+        appendLine(
+            "thresholds: minScanAps=${RoomFingerprints.MIN_SCAN_APS}" +
+                " minMatchScore=${RoomFingerprints.MIN_MATCH_SCORE}" +
+                " minMatchMargin=${RoomFingerprints.MIN_MATCH_MARGIN}"
+        )
         val p = s.probe
         if (p == null) {
             appendLine(s.error ?: "no probe yet")
@@ -167,7 +178,8 @@ class WifiDebugViewModel @Inject constructor(
         }
         appendLine()
         appendLine("scan: aps=${p.apCount} strong=${p.strongAps} quality=${p.quality} age=${p.ageMs / 1000}s enoughAps=${p.enoughAps}")
-        appendLine("winner: ${p.winner?.let { "${it.name} (${pct(it.score)})" } ?: "none — no room clears the match threshold"}")
+        appendLine("winner: ${p.winner?.let { "${it.name} (${pct(it.score)})" } ?: "none — no room clears the score threshold with a clear margin"}")
+        appendLine("margin over runner-up: ${pct(p.margin)}")
         appendLine()
         appendLine("== ROOM SCORES (${p.rooms.size}) ==")
         p.rooms.forEach { r ->

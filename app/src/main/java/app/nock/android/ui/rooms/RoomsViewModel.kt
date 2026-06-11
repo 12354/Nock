@@ -115,7 +115,7 @@ class RoomsViewModel @Inject constructor(
     }
 
     /**
-     * Sample the WiFi environment from the user's current spot for ~15 s and
+     * Sample the WiFi environment from the user's current spot for ~20 s and
      * store the scans as fingerprint samples of [roomId]. The screen is in the
      * foreground here, so real scans are allowed (4 per 2 minutes) — pacing
      * [CAPTURE_SCANS] of them [CAPTURE_GAP_MS] apart stays inside that budget.
@@ -157,7 +157,7 @@ class RoomsViewModel @Inject constructor(
     }
 
     companion object {
-        const val CAPTURE_SCANS = 3
+        const val CAPTURE_SCANS = 4
         const val CAPTURE_GAP_MS = 5_000L
     }
 }

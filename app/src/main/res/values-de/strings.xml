@@ -30,6 +30,12 @@
     <string name="channel_alarm_desc">Wichtige Alarme, die „Nicht stören“ durchbrechen.</string>
     <string name="channel_service_name">Alarmdienst</string>
     <string name="channel_service_desc">Hält den aktiven Alarmton am Laufen.</string>
+    <string name="channel_room_name">Raum-Erinnerungen</string>
+    <string name="channel_room_desc">Ein leiser, ausblendbarer Hinweis, solange das Zeitfenster einer Raum-Erinnerung offen ist.</string>
+
+    <!-- Room reminder window notification -->
+    <string name="room_window_in_room">Auf Erledigt tippen, wenn du in %1$s bist</string>
+    <string name="room_window_generic">Auf Erledigt tippen, wenn du den Raum erreichst</string>
 
     <!-- Today screen -->
     <string name="today_empty_title">Noch keine Erinnerungen</string>

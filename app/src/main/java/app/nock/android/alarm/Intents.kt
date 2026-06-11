@@ -17,4 +17,9 @@ object IntentExtras {
     const val ACTION_DONE = "done"
     const val ACTION_SNOOZE = "snooze"
     const val ACTION_STOP_ALARM = "stop_alarm"
+
+    // Complete a reminder by id (not by live escalation) — the Done button on a
+    // room reminder's window notification, which may be showing before any
+    // escalation has started.
+    const val ACTION_COMPLETE_REMINDER = "complete_reminder"
 }

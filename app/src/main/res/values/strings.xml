@@ -30,6 +30,12 @@
     <string name="channel_alarm_desc">Critical alarms that pierce Do Not Disturb.</string>
     <string name="channel_service_name">Alarm service</string>
     <string name="channel_service_desc">Keeps the active alarm sound playing.</string>
+    <string name="channel_room_name">Room reminders</string>
+    <string name="channel_room_desc">A quiet, dismissable note while a room reminder\'s window is open.</string>
+
+    <!-- Room reminder window notification -->
+    <string name="room_window_in_room">Tap Done when you\'re in %1$s</string>
+    <string name="room_window_generic">Tap Done when you reach the room</string>
 
     <!-- Today screen -->
     <string name="today_empty_title">No reminders yet</string>

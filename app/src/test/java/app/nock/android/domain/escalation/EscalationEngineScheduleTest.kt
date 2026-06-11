@@ -64,6 +64,22 @@ class EscalationEngineScheduleTest {
         assertEquals(NOW + 24 * 60 * MIN - 10 * MIN, row.nextFireAtMs)
     }
 
+    @Test fun rearming_dismisses_the_previous_chains_posted_notification() = runTest {
+        val h = EngineHarness(now = NOW)
+        val r = reminder()
+        h.stubReminderAndGroup(r, group())
+        // The reminder is mid-escalation: a NOTIFICATION/pre-alarm stage has
+        // already posted a status-bar notification keyed by the escalation id (5).
+        h.dao.upsert(activeEntity(id = 5, nextStageIndex = 3, nextFireAtMs = NOW + 2 * MIN))
+
+        // Move the reminder a day into the future.
+        h.engine.startEscalationAt(r, NOW + 24 * 60 * MIN)
+
+        // The notification posted for the old occurrence must be dismissed, not
+        // left validating for a time the reminder no longer fires at.
+        verify { h.notifier.cancel(5L) }
+    }
+
     @Test fun rearming_deletes_the_previous_chains_sent_telegrams() = runTest {
         val h = EngineHarness(now = NOW)
         val r = reminder()

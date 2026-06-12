@@ -109,21 +109,19 @@ class EscalationEngine @Inject constructor(
         // delete the old escalation explicitly so the move actually moves every
         // already-scheduled alarm. (Callers that pre-cancel see a harmless no-op.)
         //
-        // Moving the alarm also has to undo the side effects the abandoned chain
-        // already produced — chiefly the Telegram messages it sent — exactly as
-        // snooze()/cancelActive()/done() do. Otherwise a reminder moved after its
-        // TELEGRAM stage fired would strand those messages in the chat. Queue them
-        // for deletion (durably, before the row holding the ids is dropped); the
-        // caller flushes the queue after releasing the lock so the new occurrence
-        // starts clean.
-        activeDao.getByReminderId(reminder.id)?.let { existing ->
-            scheduler.cancel(existing.id)
-            if (AlarmService.ringingEscalationId == existing.id) {
-                notifier.stopAlarm()
-            }
-            enqueueTelegramDeletions(existing.sentTelegramMessageIdsCsv)
-            activeDao.delete(existing)
-        }
+        // The teardown must undo EVERY side effect the abandoned chain already
+        // produced for the old occurrence, exactly as snooze()/cancelActive()/
+        // done() do — otherwise a move leaves stale state validating for a time
+        // the reminder no longer fires at:
+        //   - any status-bar notification a fired SILENT/VIBRATE/NOTIFICATION/
+        //     TELEGRAM stage already posted (keyed by the old escalation id) would
+        //     linger for an occurrence pushed to another day, and
+        //   - any Telegram messages the chain sent would be stranded in the chat.
+        // cancelActiveLocked does all of this (cancel the alarm, dismiss the
+        // posted notification, stop a live ring, queue the sent Telegram ids for
+        // deletion, drop the row); the caller flushes the deletion queue after
+        // releasing the lock so the new occurrence starts clean.
+        cancelActiveLocked(reminder.id)
         val group = repo.getGroup(reminder.groupId) ?: return
         val chain = effectiveChainFor(reminder, group)
         val now = time.nowMs()
@@ -660,15 +658,10 @@ class EscalationEngine @Inject constructor(
             if (group.isPaused(now)) return@withLock false
 
             // Tear down the chain armed for the fallback deadline, undoing any
-            // lead-in side effects it already produced (mirrors the move path).
-            activeDao.getByReminderId(reminder.id)?.let { existing ->
-                scheduler.cancel(existing.id)
-                if (AlarmService.ringingEscalationId == existing.id) {
-                    notifier.stopAlarm()
-                }
-                enqueueTelegramDeletions(existing.sentTelegramMessageIdsCsv)
-                activeDao.delete(existing)
-            }
+            // lead-in side effects it already produced — a posted stage
+            // notification, a live ring, sent Telegram messages (mirrors the move
+            // path via cancelActiveLocked).
+            cancelActiveLocked(reminder.id)
 
             repo.updateFireState(reminder.id, now, reminder.lastCompletedAt)
 

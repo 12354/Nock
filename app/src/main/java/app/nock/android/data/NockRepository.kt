@@ -75,7 +75,15 @@ class NockRepository @Inject constructor(
             lastCompletedAt = lastCompletedAt,
             createdAt = createdAt
         )
-        return reminderDao.insert(entity)
+        val rowId = reminderDao.insert(entity)
+        // @Upsert returns the new rowid on the insert path but -1 on the update
+        // path (editing an existing reminder, whose id already exists). For an
+        // edit the id is already known, so fall back to it. Returning the raw -1
+        // here let callers (saveReminderAndArm) look up the escalation/reminder by
+        // a bogus id, so moving a reminder mid-escalation neither tore down the
+        // old escalation nor re-armed the new time — the Today screen kept showing
+        // the stale escalation.
+        return if (id != 0L) id else rowId
     }
 
     suspend fun deleteReminder(r: Reminder) {

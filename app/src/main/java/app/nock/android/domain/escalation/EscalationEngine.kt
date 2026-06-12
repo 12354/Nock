@@ -160,6 +160,7 @@ class EscalationEngine @Inject constructor(
             id = 0,
             reminderId = reminder.id,
             startedAtMs = scheduledAtMs,
+            anchorMs = scheduledAtMs,
             nextStageIndex = firstIdx,
             nextFireAtMs = firstFire,
             chainSnapshotJson = ChainJson.encode(chain),
@@ -186,6 +187,7 @@ class EscalationEngine @Inject constructor(
             id = 0,
             reminderId = reminder.id,
             startedAtMs = syntheticStart,
+            anchorMs = syntheticStart,
             nextStageIndex = 0,
             nextFireAtMs = first,
             chainSnapshotJson = ChainJson.encode(chain),
@@ -347,7 +349,10 @@ class EscalationEngine @Inject constructor(
         // showing whatever earlier stage was queued, we jump to the stage
         // the user should currently be seeing based on elapsed time.
         val storedIdx = esc.nextStageIndex.coerceIn(0, chain.lastIndex)
-        val dueIdx = chain.stageDueAt(esc.startedAtMs, now)
+        // Stage timing runs off anchorMs, not startedAtMs: a snooze shifts the
+        // anchor forward to delay the whole remaining chain while startedAtMs stays
+        // pinned to the occurrence (used by the move/drift check above).
+        val dueIdx = chain.stageDueAt(esc.anchorMs, now)
         val idx = max(storedIdx, dueIdx).coerceAtMost(chain.lastIndex)
         val stage = chain.stage(idx)
 
@@ -388,7 +393,7 @@ class EscalationEngine @Inject constructor(
         } else {
             val nextIdx = idx + 1
             val nextStage = chain.stage(nextIdx)
-            val nextAt = max(esc.startedAtMs + nextStage.offsetMs, now + 1_000L)
+            val nextAt = max(esc.anchorMs + nextStage.offsetMs, now + 1_000L)
             activeDao.update(esc.copy(nextStageIndex = nextIdx, nextFireAtMs = nextAt))
             scheduler.scheduleStage(esc.id, nextAt, nextStage.type)
         }
@@ -480,38 +485,48 @@ class EscalationEngine @Inject constructor(
         // later alarm tick / boot.
         enqueueTelegramDeletions(esc.sentTelegramMessageIdsCsv)
 
-        // Identify the stage that is ACTUALLY firing now from elapsed time, not
-        // from nextStageIndex. After a non-last stage fires, onAlarmFired advances
-        // nextStageIndex to the *next* (not-yet-fired) stage, so reading it here
-        // would mistake a fired pre-alarm warning for the final alarm — and the
-        // isLast branch below would then reschedule the real alarm to now+repeat,
-        // pulling it EARLIER than its scheduled time. stageDueAt returns the latest
-        // stage whose offset is due at `now`, which is the stage truly ringing.
+        // The stage the escalation is currently at — exactly what onAlarmFired would
+        // display: the later of the stored cursor and the stage due by elapsed time.
+        // Using the max (rather than stageDueAt alone) keeps snooze monotonic: an
+        // already-snoozed row has its anchor parked in the FUTURE, so stageDueAt would
+        // hand back stage 0 and a re-snooze would regress a chain that had reached the
+        // loud alarm back to the gentle heads-up. The cursor never moves backwards, so
+        // anchoring off it can't regress.
         val now = time.nowMs()
-        val firingStage = chain.stageDueAt(esc.startedAtMs, now).coerceIn(0, chain.lastIndex)
-        val isLast = firingStage == chain.lastIndex
-        val nextAt: Long
-        if (isLast) {
-            // Snoozing the repeating loud alarm: silence now, ring it again one
-            // repeat interval out. Persist the snoozed state while holding the lock
-            // (before the best-effort Telegram flush) so it survives the process
-            // being killed mid-flush, same as done().
-            nextAt = now + chain.repeatIntervalMs
-            val updated = esc.copy(
-                nextFireAtMs = nextAt,
-                nextStageIndex = firingStage,
-                sentTelegramMessageIdsCsv = ""
-            )
-            activeDao.update(updated)
-            scheduler.scheduleStage(updated.id, nextAt, chain.stage(firingStage).type)
-        } else {
-            // Snoozing a pre-alarm warning: just dismiss its visuals/vibration. The
-            // rest of the chain — including the real alarm at its scheduled time —
-            // stays armed at its existing time and is never pulled earlier.
-            nextAt = esc.nextFireAtMs
-            activeDao.update(esc.copy(sentTelegramMessageIdsCsv = ""))
-        }
-        repo.getReminder(esc.reminderId)?.let { history.snoozed(it.name, nextAt) }
+        val firingStage = max(
+            esc.nextStageIndex.coerceIn(0, chain.lastIndex),
+            chain.stageDueAt(esc.anchorMs, now),
+        ).coerceIn(0, chain.lastIndex)
+
+        // Snooze suppresses the WHOLE remaining chain for one repeat interval, not
+        // just the current stage. Previously, snoozing a pre-alarm warning only
+        // dismissed that stage's visuals and left every later stage — including the
+        // loud ALARM at the scheduled time — armed at its original time, so the alarm
+        // still rang on schedule despite the snooze. Now we shift the escalation
+        // TIMELINE anchor forward so the stage currently firing rings again exactly
+        // one interval from now and every later stage follows at its normal spacing:
+        // nothing rings until the snooze is over, then escalation resumes from the
+        // snoozed stage. The final stage (no successors) is the natural special case
+        // of this — it simply re-rings — matching the previous last-stage behaviour.
+        //
+        // startedAtMs is deliberately left pinned to the occurrence so the row stays
+        // bound to it: move-detection (onAlarmFired's drift check) and the
+        // row<->occurrence invariant keep working, and a reminder moved while snoozed
+        // still re-arms for its new time rather than re-ringing the old schedule.
+        val snoozeUntil = now + chain.repeatIntervalMs
+        val firingType = chain.stage(firingStage).type
+        val rebasedAnchor = snoozeUntil - chain.stage(firingStage).offsetMs
+        // Persist the snoozed state while holding the lock (before the best-effort
+        // Telegram flush) so it survives the process being killed mid-flush, as done().
+        val updated = esc.copy(
+            anchorMs = rebasedAnchor,
+            nextStageIndex = firingStage,
+            nextFireAtMs = snoozeUntil,
+            sentTelegramMessageIdsCsv = ""
+        )
+        activeDao.update(updated)
+        scheduler.scheduleStage(updated.id, snoozeUntil, firingType)
+        repo.getReminder(esc.reminderId)?.let { history.snoozed(it.name, snoozeUntil) }
     }
 
     // Deleting a group cascade-deletes its reminders and their active_escalations
@@ -680,6 +695,7 @@ class EscalationEngine @Inject constructor(
                 id = 0,
                 reminderId = reminder.id,
                 startedAtMs = syntheticStart,
+                anchorMs = syntheticStart,
                 nextStageIndex = 0,
                 nextFireAtMs = first,
                 chainSnapshotJson = ChainJson.encode(chain),

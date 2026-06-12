@@ -76,13 +76,15 @@ chain, and any stage may be omitted entirely if it doesn't suit the user.
 
 Snooze is designed so it can't become an infinite-silence trap.
 
-- **Snooze advances to the next stage.** Pressing snooze suppresses the current
-  stage's notification/sound and waits until the *next* stage in the chain
-  would have fired anyway — at which point the next stage fires normally.
-  In other words, snooze ≡ "skip ahead to whatever's coming next."
-- **At the final (last-configured) stage**, where there is no "next stage,"
-  snooze pauses for a configurable duration (default **10 minutes**, global
-  setting, per-group overridable) before re-firing the same stage.
+- **Snooze suppresses the whole chain for the snooze interval.** Pressing
+  snooze silences the stage currently ringing and delays *every* remaining
+  stage — including the loud alarm — by the snooze duration (default
+  **10 minutes**, global setting, per-group overridable). Nothing rings until
+  the snooze is over, at which point the stage that was ringing re-rings and
+  escalation resumes from there at its normal spacing. In other words,
+  snooze ≡ "push the whole escalation out by the snooze interval."
+- **At the final (last-configured) stage**, where there is no later stage to
+  delay, this reduces to re-firing the same stage one interval later.
 - Snooze is available as a notification action and as a button in the
   full-screen alarm activity.
 
@@ -345,8 +347,10 @@ Resolved during planning — captured here as the source of truth:
 - **Default stage chain:** Silent → Normal → Telegram → Loud alarm.
 - **Default timing:** Silent at −10 min (pre-alarm heads-up), Normal at 0,
   Telegram at +5 min, Loud alarm at +10 min (then repeats every 10 min).
-- **Snooze model:** advances to next stage; at the final stage, snoozes for
-  10 min (global default, per-group overridable).
+- **Snooze model:** suppresses the whole remaining chain for the snooze
+  interval (default 10 min, global, per-group overridable), then resumes
+  escalation from the snoozed stage; at the final stage this is just a
+  re-fire one interval later.
 - **Alarm sound:** device's system default alarm sound, user-pickable in
   Settings via the system ringtone picker.
 - **TTS:** not in v1. Alarm is sound-only.
@@ -367,7 +371,7 @@ exercisable end-to-end on the next slice of functionality.
    schedules it, single silent notification appears at the right time. Done
    button removes it.
 3. **M3 — Full escalation chain.** All three local stages (silent, normal,
-   loud alarm) driven by per-reminder offsets. Snooze advances to next stage.
+   loud alarm) driven by per-reminder offsets. Snooze delays the whole chain.
    Last-stage repeat loop. Done stops the chain at any stage.
 4. **M4 — Recurring + interval schedules.** Daily/weekly/monthly recurrence and
    interval-from-last-completion. Boot receiver reschedules everything.

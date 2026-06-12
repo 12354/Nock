@@ -63,14 +63,29 @@ is a nullable JSON column on `groups`.
 
 ## Snooze semantics
 
-Implemented exactly as §3.3:
+Snooze suppresses the **whole remaining chain** for one repeat interval —
+not just the stage currently ringing. Pressing snooze at any stage:
 
-- Stage N (not last): snooze just suppresses the current stage's
-  notification + sound. Stage N+1's alarm has already been scheduled
-  (we always advance the DB cursor at the moment the alarm fires), so the
-  chain continues at the next stage's planned absolute time.
-- Stage N (last): snooze cancels current notification + sound, then
-  re-schedules the same stage at `now + repeatIntervalMs`.
+- Silences the current stage (cancel notification/sound, stop a live ring).
+- Shifts the escalation **timeline anchor** (`active_escalations.anchorMs`)
+  forward so the stage that was ringing re-rings exactly `repeatIntervalMs`
+  from now, and every later stage follows at its normal spacing. Nothing
+  rings until the snooze is over, then escalation resumes from the snoozed
+  stage. The final stage is the natural special case (no successors, so it
+  simply re-rings) — this preserves the original last-stage behaviour.
+
+This replaced the earlier "snooze advances to the next stage" model
+(plan §3.3), which only hid the current stage's visuals and left every later
+stage — including the loud ALARM at the scheduled time — armed to ring on
+schedule. Snoozing the pre-alarm heads-up therefore did nothing to hold back
+the alarm; now it delays the alarm by the snooze interval as expected.
+
+`startedAtMs` stays pinned to the occurrence (it is the row↔occurrence key
+that move-detection compares against `reminder.nextFireAt`), so only the new
+`anchorMs` field moves on snooze. A reminder moved while snoozed still re-arms
+for its new time rather than re-ringing the old schedule. Stage timing
+(`stageDueAt`, next-stage scheduling) reads `anchorMs`; move-detection and the
+done/occurrence binding read `startedAtMs`. New rows set `anchorMs == startedAtMs`.
 
 ## Done semantics
 

@@ -8,6 +8,7 @@ import app.nock.android.data.MIGRATION_3_4
 import app.nock.android.data.MIGRATION_4_5
 import app.nock.android.data.MIGRATION_5_6
 import app.nock.android.data.MIGRATION_6_7
+import app.nock.android.data.MIGRATION_7_8
 import app.nock.android.data.NockDatabase
 import app.nock.android.data.dao.ActiveEscalationDao
 import app.nock.android.data.dao.CalendarTripDao
@@ -41,7 +42,7 @@ object AppModule {
         Room.databaseBuilder(ctx, NockDatabase::class.java, "nock.db")
             .addMigrations(
                 MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6,
-                MIGRATION_6_7
+                MIGRATION_6_7, MIGRATION_7_8
             )
             .fallbackToDestructiveMigration()
             .build()

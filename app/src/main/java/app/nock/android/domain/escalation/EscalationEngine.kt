@@ -800,7 +800,14 @@ class EscalationEngine @Inject constructor(
         createdAt: Long,
     ): Long {
         val savedId = mutex.withLock {
-            val sid = repo.saveReminder(id, groupId, name, schedule, nextFireAt, lastCompletedAt, createdAt)
+            val rowId = repo.saveReminder(id, groupId, name, schedule, nextFireAt, lastCompletedAt, createdAt)
+            // For an edit the id is already known: @Upsert returns the new rowid only
+            // on the insert path and -1 when it updates an existing row, so never trust
+            // the return for a known id. Trusting it left edits keyed by -1 — the old
+            // escalation was neither found (cancelActiveLocked(-1) is a no-op) nor was
+            // the reminder re-armed (getReminder(-1) is null), so moving a reminder
+            // mid-escalation left the stale escalation showing on the Today screen.
+            val sid = if (id != 0L) id else rowId
             // Tear down any escalation armed for the prior version of this reminder
             // before arming the new one (REPLACE-on-reminderId would orphan its alarm).
             cancelActiveLocked(sid)

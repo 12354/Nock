@@ -102,8 +102,42 @@ class EscalationEngineScheduleTest {
         coVerify { h.telegram.deleteMessage(22L) }
     }
 
-    // --- Stage selection on arm --------------------------------------------
+    // --- Editing (saveReminderAndArm) re-arms despite @Upsert's -1 return ---
 
+    @Test fun moving_a_reminder_mid_escalation_replaces_the_stale_escalation() = runTest {
+        val h = EngineHarness(now = NOW)
+        // The reminder is mid-escalation: a started chain with ALARM_VIBRATE queued
+        // 2 min out — exactly the "escalation just a few minutes away" the Today
+        // screen shows.
+        h.dao.upsert(activeEntity(id = 5, nextStageIndex = 2, nextFireAtMs = NOW + 2 * MIN))
+        val moved = reminder(schedule = Schedule.Daily(listOf(10 * 60)), nextFireAt = NOW + 24 * 60 * MIN)
+        h.stubReminderAndGroup(moved, group())
+        // Room's @Upsert returns the new rowid on insert but -1 when it updates an
+        // existing row (an edit). Reproduce that here: trusting the return left the
+        // engine keyed by -1, so it neither tore down nor re-armed the reminder and
+        // the stale escalation lingered on the Today screen.
+        coEvery { h.repo.saveReminder(any(), any(), any(), any(), any(), any(), any()) } returns -1L
+
+        h.engine.saveReminderAndArm(
+            id = REMINDER_ID,
+            groupId = GROUP_ID,
+            name = moved.name,
+            schedule = moved.schedule,
+            nextFireAt = NOW + 24 * 60 * MIN,
+            lastCompletedAt = null,
+            createdAt = NOW,
+        )
+
+        // The stale escalation's alarm is cancelled and its row replaced by a single
+        // freshly-armed escalation at the new time.
+        verify { h.scheduler.cancel(5L) }
+        val row = h.dao.rows.values.single()
+        assertEquals(REMINDER_ID, row.reminderId)
+        assertEquals(0, row.nextStageIndex)
+        assertEquals(NOW + 24 * 60 * MIN - 10 * MIN, row.nextFireAtMs)
+    }
+
+    // --- Stage selection on arm --------------------------------------------
     @Test fun future_trigger_with_short_lead_skips_past_silent_pre_stage() = runTest {
         val h = EngineHarness(now = NOW)
         val r = reminder()

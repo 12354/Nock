@@ -478,38 +478,36 @@ class EscalationEngine @Inject constructor(
         // later alarm tick / boot.
         enqueueTelegramDeletions(esc.sentTelegramMessageIdsCsv)
 
-        // Identify the stage that is ACTUALLY firing now from elapsed time, not
-        // from nextStageIndex. After a non-last stage fires, onAlarmFired advances
-        // nextStageIndex to the *next* (not-yet-fired) stage, so reading it here
-        // would mistake a fired pre-alarm warning for the final alarm — and the
-        // isLast branch below would then reschedule the real alarm to now+repeat,
-        // pulling it EARLIER than its scheduled time. stageDueAt returns the latest
-        // stage whose offset is due at `now`, which is the stage truly ringing.
+        // Snooze buys one repeat interval of silence, then RESUMES the chain on its
+        // unchanged timeline — it never delays the escalation. Delaying it (pushing
+        // every later stage out by the snooze) would let the user keep snoozing the
+        // gentle stages and bury the loud alarm forever; this app exists to prevent
+        // exactly that. So we only mute: the next fire is pushed to one interval from
+        // now, but startedAtMs (the timeline) is untouched, so the loud alarm still
+        // arrives on its original schedule and repeated snoozes can't keep deferring
+        // the escalation.
+        //
+        // What fires when the silence ends is the latest stage that came due during
+        // the muted window — "continue with the last escalation that would have
+        // happened in the snooze time" — computed off the original timeline. The
+        // intermediate stages it skipped over stay skipped (they were the silence).
+        // This can never go below the stage already showing: stageDueAt at the (later)
+        // resume time is >= stageDueAt now, which is the stage currently displayed.
         val now = time.nowMs()
-        val firingStage = chain.stageDueAt(esc.startedAtMs, now).coerceIn(0, chain.lastIndex)
-        val isLast = firingStage == chain.lastIndex
-        val nextAt: Long
-        if (isLast) {
-            // Snoozing the repeating loud alarm: silence now, ring it again one
-            // repeat interval out. Persist the snoozed state while holding the lock
-            // (before the best-effort Telegram flush) so it survives the process
-            // being killed mid-flush, same as done().
-            nextAt = now + chain.repeatIntervalMs
-            val updated = esc.copy(
-                nextFireAtMs = nextAt,
-                nextStageIndex = firingStage,
-                sentTelegramMessageIdsCsv = ""
-            )
-            activeDao.update(updated)
-            scheduler.scheduleStage(updated.id, nextAt, chain.stage(firingStage).type)
-        } else {
-            // Snoozing a pre-alarm warning: just dismiss its visuals/vibration. The
-            // rest of the chain — including the real alarm at its scheduled time —
-            // stays armed at its existing time and is never pulled earlier.
-            nextAt = esc.nextFireAtMs
-            activeDao.update(esc.copy(sentTelegramMessageIdsCsv = ""))
-        }
-        repo.getReminder(esc.reminderId)?.let { history.snoozed(it.name, nextAt) }
+        val snoozeUntil = now + chain.repeatIntervalMs
+        val resumeStage = chain.stageDueAt(esc.startedAtMs, snoozeUntil).coerceIn(0, chain.lastIndex)
+        // Persist the snoozed state while holding the lock (before the best-effort
+        // Telegram flush) so it survives the process being killed mid-flush, as done().
+        // The resume stage's own type is what we arm with, so the loud stage still gets
+        // a setAlarmClock-backed alarm rather than a deferrable one.
+        val updated = esc.copy(
+            nextStageIndex = resumeStage,
+            nextFireAtMs = snoozeUntil,
+            sentTelegramMessageIdsCsv = ""
+        )
+        activeDao.update(updated)
+        scheduler.scheduleStage(updated.id, snoozeUntil, chain.stage(resumeStage).type)
+        repo.getReminder(esc.reminderId)?.let { history.snoozed(it.name, snoozeUntil) }
     }
 
     // Deleting a group cascade-deletes its reminders and their active_escalations

@@ -63,14 +63,29 @@ is a nullable JSON column on `groups`.
 
 ## Snooze semantics
 
-Implemented exactly as §3.3:
+Snooze **mutes the escalation for one repeat interval, then resumes the chain
+on its unchanged timeline** — it never delays the escalation. Pressing snooze
+at any stage:
 
-- Stage N (not last): snooze just suppresses the current stage's
-  notification + sound. Stage N+1's alarm has already been scheduled
-  (we always advance the DB cursor at the moment the alarm fires), so the
-  chain continues at the next stage's planned absolute time.
-- Stage N (last): snooze cancels current notification + sound, then
-  re-schedules the same stage at `now + repeatIntervalMs`.
+- Silences the current stage (cancel notification/sound, stop a live ring).
+- Pushes the single pending alarm out to `now + repeatIntervalMs`, but leaves
+  `startedAtMs` (the escalation timeline) untouched. When the silence ends it
+  fires the *latest stage that came due during the muted window* — "continue
+  with the last escalation that would have happened in the snooze time" —
+  computed off the original timeline (`stageDueAt(startedAtMs, snoozeUntil)`),
+  then carries on normally. Stages skipped over during the silence stay skipped.
+
+The key property (this is an ADHD app): snooze must **not** delay the
+escalation, or the user could keep snoozing the gentle stages and bury the
+loud alarm forever. Because the timeline is never shifted, the loud alarm
+always arrives on its original schedule; snooze only buys silence. Snoozing
+the final (loud) stage repeatedly still re-fires it every interval — that's the
+intended last-line-of-defense behaviour, not a way to silence it for longer.
+
+This fixed the original bug where snoozing a pre-alarm warning only hid that
+stage's visuals and let every later stage — including the loud ALARM — ring on
+schedule anyway. The resume stage is armed with its own stage type, so a loud
+stage still gets a `setAlarmClock` alarm rather than a deferrable one.
 
 ## Done semantics
 

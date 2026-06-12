@@ -752,11 +752,9 @@ class EscalationEngineFuzzTest {
                 return
             }
 
-            // Independent re-derivation of which stage is due — the oracle. Stage
-            // timing runs off anchorMs (snooze shifts it); startedAtMs stays pinned
-            // to the occurrence and is checked separately by the move oracle below.
+            // Independent re-derivation of which stage is due — the oracle.
             val storedIdx = row.nextStageIndex.coerceIn(0, chain.lastIndex)
-            val dueIdx = chain.stageDueAt(row.anchorMs, now)
+            val dueIdx = chain.stageDueAt(row.startedAtMs, now)
             val idx = max(storedIdx, dueIdx).coerceAtMost(chain.lastIndex)
             val expected = chain.stage(idx).type
 

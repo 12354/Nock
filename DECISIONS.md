@@ -63,29 +63,29 @@ is a nullable JSON column on `groups`.
 
 ## Snooze semantics
 
-Snooze suppresses the **whole remaining chain** for one repeat interval —
-not just the stage currently ringing. Pressing snooze at any stage:
+Snooze **mutes the escalation for one repeat interval, then resumes the chain
+on its unchanged timeline** — it never delays the escalation. Pressing snooze
+at any stage:
 
 - Silences the current stage (cancel notification/sound, stop a live ring).
-- Shifts the escalation **timeline anchor** (`active_escalations.anchorMs`)
-  forward so the stage that was ringing re-rings exactly `repeatIntervalMs`
-  from now, and every later stage follows at its normal spacing. Nothing
-  rings until the snooze is over, then escalation resumes from the snoozed
-  stage. The final stage is the natural special case (no successors, so it
-  simply re-rings) — this preserves the original last-stage behaviour.
+- Pushes the single pending alarm out to `now + repeatIntervalMs`, but leaves
+  `startedAtMs` (the escalation timeline) untouched. When the silence ends it
+  fires the *latest stage that came due during the muted window* — "continue
+  with the last escalation that would have happened in the snooze time" —
+  computed off the original timeline (`stageDueAt(startedAtMs, snoozeUntil)`),
+  then carries on normally. Stages skipped over during the silence stay skipped.
 
-This replaced the earlier "snooze advances to the next stage" model
-(plan §3.3), which only hid the current stage's visuals and left every later
-stage — including the loud ALARM at the scheduled time — armed to ring on
-schedule. Snoozing the pre-alarm heads-up therefore did nothing to hold back
-the alarm; now it delays the alarm by the snooze interval as expected.
+The key property (this is an ADHD app): snooze must **not** delay the
+escalation, or the user could keep snoozing the gentle stages and bury the
+loud alarm forever. Because the timeline is never shifted, the loud alarm
+always arrives on its original schedule; snooze only buys silence. Snoozing
+the final (loud) stage repeatedly still re-fires it every interval — that's the
+intended last-line-of-defense behaviour, not a way to silence it for longer.
 
-`startedAtMs` stays pinned to the occurrence (it is the row↔occurrence key
-that move-detection compares against `reminder.nextFireAt`), so only the new
-`anchorMs` field moves on snooze. A reminder moved while snoozed still re-arms
-for its new time rather than re-ringing the old schedule. Stage timing
-(`stageDueAt`, next-stage scheduling) reads `anchorMs`; move-detection and the
-done/occurrence binding read `startedAtMs`. New rows set `anchorMs == startedAtMs`.
+This fixed the original bug where snoozing a pre-alarm warning only hid that
+stage's visuals and let every later stage — including the loud ALARM — ring on
+schedule anyway. The resume stage is armed with its own stage type, so a loud
+stage still gets a `setAlarmClock` alarm rather than a deferrable one.
 
 ## Done semantics
 

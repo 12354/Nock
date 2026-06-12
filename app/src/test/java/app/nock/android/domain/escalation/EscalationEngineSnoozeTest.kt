@@ -78,10 +78,10 @@ class EscalationEngineSnoozeTest {
         assertEquals(NOW + 3 * MIN + TEST_CHAIN.repeatIntervalMs, atSlot.captured)
     }
 
-    @Test fun snooze_on_non_last_stage_suppresses_whole_chain_for_one_interval() = runTest {
+    @Test fun snooze_on_non_last_stage_mutes_one_interval_then_resumes_at_due_stage() = runTest {
         val h = EngineHarness(now = NOW)
-        // The TELEGRAM stage (idx 1, offset +5) is the one firing now: started 5 min
-        // ago and the cursor is at it. The later ALARM is still ahead in the chain.
+        // The TELEGRAM stage (idx 1, offset +5) is firing now: started 5 min ago. The
+        // later ALARM_VIBRATE (+8) and ALARM (+10) are due within the snooze window.
         val row = activeEntity(
             startedAtMs = NOW - 5 * MIN,
             nextStageIndex = 1,
@@ -92,51 +92,33 @@ class EscalationEngineSnoozeTest {
 
         h.engine.snooze(row.id)
 
-        // The chain is pushed out a full repeat interval and re-rings the stage that
-        // was firing (TELEGRAM) — rather than leaving the later ALARM armed to ring
-        // on schedule during the snooze (the old behaviour did nothing here).
+        // Muted for exactly one repeat interval (no later stage rings during it),
+        // then resumes at the LAST stage that came due in that window on the unchanged
+        // timeline — here the ALARM, due 10 min after the started-at (NOW+5). The
+        // intermediate ALARM_VIBRATE it skipped stays skipped.
         val atSlot = slot<Long>()
         val typeSlot = slot<StageType>()
         verify { h.scheduler.scheduleStage(eq(row.id), capture(atSlot), capture(typeSlot)) }
         assertEquals(NOW + TEST_CHAIN.repeatIntervalMs, atSlot.captured)
-        assertEquals(StageType.TELEGRAM, typeSlot.captured)
+        assertEquals(StageType.ALARM, typeSlot.captured)
         val updated = h.dao.getById(row.id)!!
         assertEquals(NOW + TEST_CHAIN.repeatIntervalMs, updated.nextFireAtMs)
-        assertEquals(1, updated.nextStageIndex)
+        assertEquals(TEST_CHAIN.lastIndex, updated.nextStageIndex)
+        assertEquals(NOW - 5 * MIN, updated.startedAtMs) // timeline NOT shifted
         assertEquals("", updated.sentTelegramMessageIdsCsv)
     }
 
-    @Test fun re_snooze_of_an_already_snoozed_alarm_does_not_regress_the_stage() = runTest {
+    @Test fun snooze_does_not_delay_the_escalation_timeline() = runTest {
+        // The crux of the ADHD design: snooze must never push the escalation out, or
+        // the loud alarm could be buried by snoozing forever. Snoozing the SILENT
+        // pre-alarm heads-up gives one interval of silence but leaves startedAtMs
+        // untouched, so the loud ALARM still arrives on its original schedule.
         val h = EngineHarness(now = NOW)
-        // A row already snoozed at the loud ALARM: its anchor is parked in the future
-        // (the re-ring hasn't fired yet), so stageDueAt alone would read stage 0.
-        // Snoozing again must keep it on the ALARM, not drop back to the heads-up.
-        val row = activeEntity(
-            startedAtMs = NOW - 5 * MIN,
-            anchorMs = NOW + 30 * MIN, // parked ahead by a prior snooze
-            nextStageIndex = TEST_CHAIN.lastIndex,
-            nextFireAtMs = NOW + 30 * MIN,
-        )
-        h.dao.upsert(row)
-
-        h.engine.snooze(row.id)
-
-        val typeSlot = slot<StageType>()
-        verify { h.scheduler.scheduleStage(eq(row.id), eq(NOW + TEST_CHAIN.repeatIntervalMs), capture(typeSlot)) }
-        assertEquals(StageType.ALARM, typeSlot.captured)
-        assertEquals(TEST_CHAIN.lastIndex, h.dao.getById(row.id)!!.nextStageIndex)
-    }
-
-    @Test fun snooze_of_pre_alarm_delays_the_loud_alarm_past_its_scheduled_time() = runTest {
-        // The bug this fixes: snoozing the SILENT pre-alarm heads-up used to leave the
-        // loud ALARM armed to ring at the reminder's scheduled time anyway. Now the
-        // whole chain is delayed, so the ALARM lands one repeat interval later than it
-        // would have. SILENT (offset -10) is due now, with the trigger 10 min out.
-        val h = EngineHarness(now = NOW)
-        h.stubReminderAndGroup(reminder(nextFireAt = NOW + 10 * MIN), group())
+        // SILENT (offset -10) firing now; trigger (and thus the ALARM at +10) sits
+        // 10 min out so the ALARM is NOT inside the snooze window this time.
         val triggerAt = NOW + 10 * MIN
         val row = activeEntity(
-            startedAtMs = triggerAt, // SILENT (offset -10) is due now
+            startedAtMs = triggerAt,
             nextStageIndex = 0,
             nextFireAtMs = NOW,
         )
@@ -144,22 +126,40 @@ class EscalationEngineSnoozeTest {
 
         h.engine.snooze(row.id)
 
-        // SILENT re-rings one interval out; startedAtMs (the occurrence) is untouched,
-        // and the anchor is shifted so the rest of the chain follows from there.
         val updated = h.dao.getById(row.id)!!
+        // Timeline pinned to the occurrence — the ALARM is still anchored at
+        // startedAtMs + 10 min, exactly where it would have been with no snooze.
         assertEquals(triggerAt, updated.startedAtMs)
+        // Only SILENT came due within the muted window, so the chain resumes there
+        // (a gentle re-nudge), and the louder stages stay on the original schedule.
         assertEquals(NOW + TEST_CHAIN.repeatIntervalMs, updated.nextFireAtMs)
         assertEquals(0, updated.nextStageIndex)
+        verify { h.scheduler.scheduleStage(eq(row.id), eq(NOW + TEST_CHAIN.repeatIntervalMs), eq(StageType.SILENT)) }
+    }
 
-        // The loud ALARM (last stage) is now anchored to fire AFTER the original
-        // scheduled time (triggerAt), proving the snooze actually held it back.
-        // SILENT re-rings at NOW+10, the anchor is NOW+20, so ALARM (offset +10)
-        // lands at NOW+30 — well past the NOW+10 trigger.
-        val alarmFireAt = updated.anchorMs + TEST_CHAIN.stages.last().offsetMs
-        assertTrue(
-            "loud alarm must be delayed past the scheduled time ($alarmFireAt vs $triggerAt)",
-            alarmFireAt > triggerAt,
+    @Test fun repeated_snooze_cannot_push_the_loud_alarm_out_indefinitely() = runTest {
+        // Snoozing the same early stage twice must not keep deferring the alarm: the
+        // second snooze still resumes off the original timeline, so by then the ALARM
+        // is the due stage and fires — it cannot be buried.
+        val h = EngineHarness(now = NOW)
+        val triggerAt = NOW + 10 * MIN
+        val row = activeEntity(
+            startedAtMs = triggerAt, // SILENT due now; ALARM due at NOW+20
+            nextStageIndex = 0,
+            nextFireAtMs = NOW,
         )
+        h.dao.upsert(row)
+
+        h.engine.snooze(row.id)                 // mute until NOW+10, resumes SILENT
+        h.clock.advanceBy(10 * MIN)             // ... user snoozes again at NOW+10
+        h.engine.snooze(row.id)
+
+        // Second snooze ends at NOW+20, which is the ALARM's original time, so the
+        // chain resumes at the ALARM — not pushed any further out.
+        val updated = h.dao.getById(row.id)!!
+        assertEquals(NOW + 20 * MIN, updated.nextFireAtMs)
+        assertEquals(TEST_CHAIN.lastIndex, updated.nextStageIndex)
+        verify { h.scheduler.scheduleStage(eq(row.id), eq(NOW + 20 * MIN), eq(StageType.ALARM)) }
     }
 
     @Test fun snooze_always_tears_down_current_alarm_visuals() = runTest {
@@ -241,7 +241,6 @@ class EscalationEngineSnoozeTest {
             id = 0,
             reminderId = REMINDER_ID,
             startedAtMs = lastStageStartedAt,
-            anchorMs = lastStageStartedAt,
             nextStageIndex = TEST_CHAIN.lastIndex,
             nextFireAtMs = NOW,
             chainSnapshotJson = "{not valid json",

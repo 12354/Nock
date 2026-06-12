@@ -34,7 +34,7 @@ import app.nock.android.data.entity.WifiRoomSampleEntity
         WifiRoomEntity::class,
         WifiRoomSampleEntity::class
     ],
-    version = 8,
+    version = 7,
     exportSchema = true
 )
 abstract class NockDatabase : RoomDatabase() {
@@ -144,16 +144,5 @@ val MIGRATION_6_7 = object : Migration(6, 7) {
             "CREATE INDEX IF NOT EXISTS `index_wifi_room_samples_roomId` " +
                 "ON `wifi_room_samples` (`roomId`)"
         )
-    }
-}
-
-val MIGRATION_7_8 = object : Migration(7, 8) {
-    override fun migrate(db: SupportSQLiteDatabase) {
-        // The escalation timeline anchor (shifted by snooze). Back-fill existing
-        // rows with their startedAtMs, which is the anchor for any non-snoozed chain.
-        db.execSQL(
-            "ALTER TABLE active_escalations ADD COLUMN anchorMs INTEGER NOT NULL DEFAULT 0"
-        )
-        db.execSQL("UPDATE active_escalations SET anchorMs = startedAtMs")
     }
 }

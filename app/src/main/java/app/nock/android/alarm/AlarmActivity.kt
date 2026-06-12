@@ -139,9 +139,7 @@ class AlarmActivity : ComponentActivity() {
             // hardcoded 4-dot default this screen used to show.
             if (esc != null) {
                 chainState.value = runCatching { ChainJson.decode(esc.chainSnapshotJson) }.getOrNull()
-                // Drive the stage rail off the escalation timeline anchor (shifted by
-                // snooze), matching the engine's own stage selection.
-                startedAtState.value = esc.anchorMs
+                startedAtState.value = esc.startedAtMs
             }
             // The receiver launches us without a reminderId (it only knows the
             // escalation), so fall back to the escalation row's reminderId to

@@ -256,7 +256,6 @@
     <string name="voice_error_bad_json">Modellantwort konnte nicht gelesen werden</string>
     <string name="voice_error_bad_schedule">Konnte daraus keinen Zeitplan erzeugen</string>
     <string name="voice_error_missing_field">Modellantwort fehlt Feld: %1$s</string>
-    <string name="voice_error_unknown_schedule">Unbekannter Zeitplantyp: %1$s</string>
     <string name="voice_error_save_failed">Erinnerung konnte nicht gespeichert werden</string>
     <string name="voice_captured">Gespeichert — wird im Hintergrund verarbeitet</string>
 

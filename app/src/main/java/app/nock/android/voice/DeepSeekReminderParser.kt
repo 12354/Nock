@@ -9,7 +9,6 @@ import com.squareup.moshi.JsonAdapter
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import dagger.hilt.android.qualifiers.ApplicationContext
-import java.time.DayOfWeek
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -69,34 +68,13 @@ class DeepSeekReminderParser @Inject constructor(
         )
     }
 
+    // DeepSeek only ever produces a single, one-shot reminder. Recurring phrasing
+    // ("every day at 8") is collapsed by the prompt to the next single occurrence,
+    // so any returned scheduleType is treated as ONESHOT.
     private fun toSchedule(spec: VoiceAlarmSpec, now: LocalDateTime, zone: ZoneId): Schedule {
-        val type = spec.scheduleType?.uppercase()?.replace('-', '_') ?: "ONESHOT"
-        return when (type) {
-            "ONESHOT", "ONCE", "ONE_SHOT" -> {
-                val iso = spec.oneShotIso ?: error(ctx.getString(R.string.voice_error_missing_field, "oneShotIso"))
-                val dt = parseIso(iso, now)
-                Schedule.OneShot(dt.atZone(zone).toInstant().toEpochMilli())
-            }
-            "DAILY" -> Schedule.Daily(parseTimesOfDay(spec.timesOfDay))
-            "WEEKLY" -> Schedule.Weekly(
-                daysOfWeek = parseDaysOfWeek(spec.daysOfWeek),
-                timesOfDayMinutes = parseTimesOfDay(spec.timesOfDay)
-            )
-            "MONTHLY" -> Schedule.Monthly(
-                dayOfMonth = spec.dayOfMonth?.coerceIn(1, 31)
-                    ?: error(ctx.getString(R.string.voice_error_missing_field, "dayOfMonth")),
-                timeOfDayMinutes = parseSingleTime(spec.timeOfDay)
-            )
-            "INTERVAL", "INTERVAL_FROM_LAST" -> {
-                val mins = spec.intervalMinutes?.coerceAtLeast(1)
-                    ?: error(ctx.getString(R.string.voice_error_missing_field, "intervalMinutes"))
-                val interval = mins * 60_000L
-                // Anchor the fixed cadence at the first fire (now + interval).
-                Schedule.IntervalFromStart(interval, System.currentTimeMillis() + interval)
-            }
-            "ON_UNLOCK", "ONUNLOCK" -> Schedule.OnUnlock(System.currentTimeMillis())
-            else -> error(ctx.getString(R.string.voice_error_unknown_schedule, type))
-        }
+        val iso = spec.oneShotIso ?: error(ctx.getString(R.string.voice_error_missing_field, "oneShotIso"))
+        val dt = parseIso(iso, now)
+        return Schedule.OneShot(dt.atZone(zone).toInstant().toEpochMilli())
     }
 
     private fun parseIso(iso: String, now: LocalDateTime): LocalDateTime {
@@ -104,32 +82,6 @@ class DeepSeekReminderParser @Inject constructor(
         runCatching { LocalDateTime.parse(iso, DateTimeFormatter.ISO_DATE_TIME) }.getOrNull()?.let { return it }
         runCatching { java.time.LocalDate.parse(iso).atStartOfDay() }.getOrNull()?.let { return it }
         return now
-    }
-
-    private fun parseTimesOfDay(values: List<String>?): List<Int> {
-        val list = values?.mapNotNull { parseTimeStringOrNull(it) }?.distinct()?.sorted().orEmpty()
-        if (list.isEmpty()) error(ctx.getString(R.string.voice_error_missing_field, "timesOfDay"))
-        return list
-    }
-
-    private fun parseSingleTime(value: String?): Int {
-        return value?.let { parseTimeStringOrNull(it) }
-            ?: error(ctx.getString(R.string.voice_error_missing_field, "timeOfDay"))
-    }
-
-    private fun parseTimeStringOrNull(s: String): Int? {
-        val parts = s.trim().split(":")
-        if (parts.size < 2) return null
-        val h = parts[0].toIntOrNull() ?: return null
-        val m = parts[1].toIntOrNull() ?: return null
-        if (h !in 0..23 || m !in 0..59) return null
-        return h * 60 + m
-    }
-
-    private fun parseDaysOfWeek(values: List<String>?): Set<DayOfWeek> {
-        val out = values?.mapNotNull { runCatching { DayOfWeek.valueOf(it.uppercase()) }.getOrNull() }?.toSet().orEmpty()
-        if (out.isEmpty()) error(ctx.getString(R.string.voice_error_missing_field, "daysOfWeek"))
-        return out
     }
 
     private fun buildSystemPrompt(
@@ -157,26 +109,24 @@ class DeepSeekReminderParser @Inject constructor(
             """.trimIndent()
         } else ""
         return """
-            You convert a spoken or typed phrase into a JSON specification for a single reminder/alarm.
+            You convert a spoken or typed phrase into a JSON specification for a single one-shot reminder/alarm.
 
-            Output ONLY a single JSON object, no prose, with these fields (only include fields relevant to the chosen scheduleType):
+            Every reminder fires exactly once, at one specific date and time. The app does not
+            support recurring reminders here, so you must always resolve the phrase to a single moment.
+
+            Output ONLY a single JSON object, no prose, with these fields:
             - name (string, required): a short imperative reminder label, max 60 chars. Do not include time-of-day.
-            - scheduleType (string, required): one of ONESHOT, DAILY, WEEKLY, MONTHLY, INTERVAL, ON_UNLOCK.
-            - oneShotIso (string, required when scheduleType=ONESHOT): local datetime in ISO format YYYY-MM-DDTHH:mm:ss (no zone suffix, interpreted in the user's local zone).
-            - timesOfDay (array of "HH:mm" strings, required for DAILY and WEEKLY): 24-hour clock.
-            - daysOfWeek (array of strings, required for WEEKLY): MONDAY, TUESDAY, WEDNESDAY, THURSDAY, FRIDAY, SATURDAY, SUNDAY.
-            - dayOfMonth (integer 1-31, required for MONTHLY).
-            - timeOfDay ("HH:mm" string, required for MONTHLY): 24-hour clock.
-            - intervalMinutes (integer >= 1, required for INTERVAL): minutes between firings, measured from the user's last "Done".
+            - scheduleType (string, required): always "ONESHOT".
+            - oneShotIso (string, required): local datetime in ISO format YYYY-MM-DDTHH:mm:ss (no zone suffix, interpreted in the user's local zone).
             - groupHint (string, optional): MUST exactly match one of the group names listed below (verbatim, case-insensitive).
 
-            Schedule rules:
-            - Prefer ONESHOT for an unambiguous single event ("tomorrow at 3pm", "in 20 minutes").
-            - Prefer DAILY / WEEKLY when the user says "every day", "each morning", "every Monday and Wednesday", etc.
-            - Prefer INTERVAL when the user says "every 4 hours" or "every 30 minutes" (the time between firings, not a fixed time of day).
-            - Prefer ON_UNLOCK only when the user explicitly says something like "next time I unlock my phone".
-            - "in N minutes/hours" => ONESHOT, oneShotIso = now + that duration.
-            - Times like "8" / "8pm" / "20:00" => "20:00" (HH:mm).
+            Schedule rules (always ONESHOT):
+            - "tomorrow at 3pm", "Friday at noon" => the single matching datetime.
+            - "in N minutes/hours" => oneShotIso = now + that duration.
+            - If the phrase is recurring ("every day at 8", "each morning", "every Monday", "every 4 hours"),
+              do NOT try to repeat it. Pick the NEXT single occurrence from now and use that as oneShotIso.
+            - If only a time of day is given with no date, use today if that time is still in the future, otherwise tomorrow.
+            - Times like "8" / "8pm" / "20:00" map to a 24-hour local time.
             - All times are interpreted in the user's local time zone.
 
             Group selection (be careful — this is often the wrong field):

@@ -16,11 +16,6 @@ data class VoiceAlarmSpec(
     val name: String?,
     val scheduleType: String?,
     val oneShotIso: String?,
-    val timesOfDay: List<String>?,
-    val daysOfWeek: List<String>?,
-    val dayOfMonth: Int?,
-    val timeOfDay: String?,
-    val intervalMinutes: Int?,
     val groupHint: String?
 )
 

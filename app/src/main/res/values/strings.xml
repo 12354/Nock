@@ -256,7 +256,6 @@
     <string name="voice_error_bad_json">Couldn\'t parse model response</string>
     <string name="voice_error_bad_schedule">Couldn\'t build a schedule from that</string>
     <string name="voice_error_missing_field">Model response missing field: %1$s</string>
-    <string name="voice_error_unknown_schedule">Unknown schedule type: %1$s</string>
     <string name="voice_error_save_failed">Failed to save reminder</string>
     <string name="voice_captured">Saved — processing in background</string>
 

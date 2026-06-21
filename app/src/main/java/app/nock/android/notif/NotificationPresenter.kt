@@ -121,6 +121,13 @@ class NotificationPresenter @Inject constructor(
             // Done/Snooze actions still surface. Sound and vibration need the
             // service, so they're lost in this fallback, but the reminder is
             // still shown and acknowledgeable rather than silently dropped.
+            //
+            // Mark the alarm ringing even though no service is running: this
+            // fallback's only takeover is the notification's full-screen intent,
+            // and AlarmActivity self-finishes when nothing is ringing. Without
+            // this flag the launched takeover would see a null ring state and
+            // immediately dismiss itself. Done/Snooze clear it the usual way.
+            AlarmService.markRinging(escalationId, reminder.id)
             nm.notify(
                 escalationId.toInt(),
                 buildAlarmNotification(escalationId, reminder.id, reminder.name, group.name)

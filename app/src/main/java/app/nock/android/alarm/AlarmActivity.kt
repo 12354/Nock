@@ -24,7 +24,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import app.nock.android.R
 import app.nock.android.data.NockRepository
 import app.nock.android.data.dao.ActiveEscalationDao
@@ -67,6 +69,7 @@ class AlarmActivity : ComponentActivity() {
         applyAlarmWindowFlags()
         nameState.value = getString(R.string.alarm_title)
         bindFromIntent(intent)
+        finishWhenAlarmStops()
 
         setContent {
             NockTheme {
@@ -105,6 +108,34 @@ class AlarmActivity : ComponentActivity() {
         // re-reading the intent the screen would still show the previous alarm.
         applyAlarmWindowFlags()
         bindFromIntent(intent)
+    }
+
+    /**
+     * The takeover must vanish the moment its alarm stops ringing. The only way
+     * to leave this screen used to be its own Done/Snooze buttons (which call
+     * finish() themselves) or the escalation row disappearing. But an alarm is
+     * routinely stopped from *elsewhere* while the takeover is on screen — Snooze
+     * or Done tapped on the notification, the Today screen's Done, a reminder
+     * move, a group pause, a room detection, a sync. None of those finish this
+     * activity, so it lingered (silent, since AlarmService had stopped) in its
+     * own task and resurfaced on the next app foreground — a "ghost" alarm. A
+     * snoozed escalation's row still exists, so the row-missing guard in
+     * bindFromIntent never caught it.
+     *
+     * AlarmService is the single source of truth for "an alarm is ringing right
+     * now"; collecting its state and finishing on null closes every one of those
+     * paths at once. A different non-null id means another alarm took over — the
+     * service re-launches us for it via onNewIntent (singleTask), so only null
+     * (nothing ringing) finishes us.
+     */
+    private fun finishWhenAlarmStops() {
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                AlarmService.ringingEscalation.collect { ringingId ->
+                    if (ringingId == null) finish()
+                }
+            }
+        }
     }
 
     private fun applyAlarmWindowFlags() {

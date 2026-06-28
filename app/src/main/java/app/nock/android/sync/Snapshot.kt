@@ -52,6 +52,10 @@ data class ReminderSnap(
     val createdAt: Long
 )
 
+/** A serialized snapshot plus the savedAt stamp baked into it, so the pusher can
+ *  record its own snapshot as already-applied (KEY_DRIVE_LAST_REMOTE_MS). */
+data class ExportedSnapshot(val json: String, val savedAtMs: Long)
+
 @Singleton
 class SnapshotCodec @Inject constructor() {
     private val moshi: Moshi = Moshi.Builder().add(KotlinJsonAdapterFactory()).build()
@@ -77,7 +81,22 @@ class SnapshotService @Inject constructor(
     // other devices.
     private val tripsSeedKey = "trips"
 
-    suspend fun export(): String {
+    // The current snapshot schema version. Snapshots tagged with anything else are
+    // rejected on import rather than force-applied (see importMerge).
+    private val supportedVersion = 1
+
+    // Per-device bookkeeping that must NOT travel between devices: which Google
+    // account this device synced with, and this device's own freshness cursors.
+    // Copying them onto another device would overwrite that device's display
+    // account and confuse its own next-sync comparison. (KEY_DRIVE_LAST_* are also
+    // re-set after import, but excluding them on export keeps the payload clean.)
+    private val deviceLocalSettingKeys = setOf(
+        SettingsRepository.KEY_DRIVE_ACCOUNT,
+        SettingsRepository.KEY_DRIVE_LAST_SYNC_MS,
+        SettingsRepository.KEY_DRIVE_LAST_REMOTE_MS,
+    )
+
+    suspend fun export(): ExportedSnapshot {
         val allGroups = groupDao.getAll()
         val tripsGroupIds = allGroups.filter { it.seedKey == tripsSeedKey }.map { it.id }.toSet()
         val groups = allGroups.filter { it.id !in tripsGroupIds }.map {
@@ -89,19 +108,26 @@ class SnapshotService @Inject constructor(
             ReminderSnap(it.id, it.groupId, it.name, it.scheduleType, it.scheduleJson,
                 it.nextFireAt, it.lastCompletedAt, it.createdAt)
         }
-        val settingsMap = settingsDao.observeAll().first().associate { it.key to it.value }
+        val settingsMap = settingsDao.observeAll().first()
+            .filter { it.key !in deviceLocalSettingKeys }
+            .associate { it.key to it.value }
         val snap = SnapshotV1(
-            version = 1,
+            version = supportedVersion,
             savedAtMs = System.currentTimeMillis(),
             groups = groups,
             reminders = reminders,
             settings = settingsMap
         )
-        return codec.adapter.toJson(snap)
+        return ExportedSnapshot(codec.adapter.toJson(snap), snap.savedAtMs)
     }
 
     suspend fun importMerge(json: String): Boolean {
         val snap = codec.adapter.fromJson(json) ?: return false
+        // Reject an unsupported schema version BEFORE the destructive wipe. Moshi
+        // tolerates extra/defaulted fields, so a future version=2 snapshot would
+        // otherwise decode into SnapshotV1 and silently clear+repopulate from a
+        // payload whose fields may mean something different. Leave local data intact.
+        if (snap.version != supportedVersion) return false
         val remoteSettings = snap.settings
         val syncStart = System.currentTimeMillis()
 
@@ -157,10 +183,20 @@ class SnapshotService @Inject constructor(
         return true
     }
 
-    suspend fun mergeIfNewer(json: String): Boolean {
-        val snap = codec.adapter.fromJson(json) ?: return false
+    suspend fun mergeIfNewer(json: String): MergeResult {
+        // A blank body or one that fails to decode (a truncated/interrupted push,
+        // or an unsupported schema version) is CORRUPT — distinct from a perfectly
+        // valid snapshot that simply isn't newer than what we already have. The
+        // caller surfaces the two differently (a corrupt remote should not look like
+        // a healthy in-sync state).
+        if (json.isBlank()) return MergeResult.Corrupt
+        val snap = codec.adapter.fromJson(json) ?: return MergeResult.Corrupt
+        if (snap.version != supportedVersion) return MergeResult.Corrupt
         val localRemote = settings.get(SettingsRepository.KEY_DRIVE_LAST_REMOTE_MS)?.toLongOrNull() ?: 0L
-        if (snap.savedAtMs <= localRemote) return false
-        return importMerge(json)
+        if (snap.savedAtMs <= localRemote) return MergeResult.NotNewer
+        return if (importMerge(json)) MergeResult.Merged else MergeResult.Corrupt
     }
 }
+
+/** Outcome of [SnapshotService.mergeIfNewer]. */
+enum class MergeResult { Merged, NotNewer, Corrupt }

@@ -1,6 +1,8 @@
 package app.nock.android.domain.escalation
 
+import app.nock.android.domain.model.EscalationChain
 import app.nock.android.domain.model.Schedule
+import app.nock.android.domain.model.StageConfig
 import app.nock.android.domain.model.StageType
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -209,6 +211,34 @@ class EscalationEngineScheduleTest {
         val row = h.dao.rows.values.single()
         assertEquals(1, row.nextStageIndex)
         assertEquals(NOW + 5 * MIN, row.nextFireAtMs)
+    }
+
+    @Test fun onUnlock_with_all_pretrigger_chain_escalates_from_gentlest_stage() = runTest {
+        val h = EngineHarness(now = NOW)
+        // The shipped alarm-clock shape: every stage is at or before the trigger
+        // (offset ≤ 0), built to lead UP to a deadline. OnUnlock has no deadline, so
+        // "first strictly-future stage" doesn't exist; the engine must re-anchor the
+        // chain forward (gentlest stage ~now) instead of collapsing to the loud last
+        // stage, which is what it used to do — ringing instantly with no escalation.
+        val chain = EscalationChain(
+            stages = listOf(
+                StageConfig(StageType.VIBRATE, -10 * MIN),
+                StageConfig(StageType.TELEGRAM, -5 * MIN),
+                StageConfig(StageType.ALARM, 0L),
+            ),
+            repeatIntervalMs = 10 * MIN,
+        )
+        coEvery { h.repo.effectiveChain(any()) } returns chain
+        val r = reminder(schedule = Schedule.OnUnlock(NOW))
+        h.stubReminderAndGroup(r, group())
+
+        h.engine.startEscalationAt(r, NOW)
+
+        val row = h.dao.rows.values.single()
+        // Starts at the gentlest stage (index 0) ~1 s out — NOT the loud last stage.
+        assertEquals(0, row.nextStageIndex)
+        assertEquals(NOW + 1_000L, row.nextFireAtMs)
+        verify { h.scheduler.scheduleStage(any(), eq(NOW + 1_000L), eq(StageType.VIBRATE)) }
     }
 
     // --- Boot replay --------------------------------------------------------

@@ -1,7 +1,9 @@
 package app.nock.android.voice
 
 import android.content.Context
+import androidx.room.withTransaction
 import app.nock.android.R
+import app.nock.android.data.NockDatabase
 import app.nock.android.data.NockRepository
 import app.nock.android.data.dao.PendingVoiceReminderDao
 import app.nock.android.data.entity.PendingVoiceReminderEntity
@@ -43,6 +45,7 @@ sealed interface VoiceProcessOutcome {
 @Singleton
 class PendingVoiceProcessor @Inject constructor(
     @ApplicationContext private val ctx: Context,
+    private val db: NockDatabase,
     private val pendingDao: PendingVoiceReminderDao,
     private val parser: DeepSeekReminderParser,
     private val repo: NockRepository,
@@ -195,15 +198,23 @@ class PendingVoiceProcessor @Inject constructor(
 
         val nowMs = System.currentTimeMillis()
         val nextFire = spec.schedule.nextFireFrom(nowMs, null)
-        val reminderId = repo.saveReminder(
-            id = 0L,
-            groupId = groupId,
-            name = name,
-            schedule = spec.schedule,
-            nextFireAt = nextFire,
-            lastCompletedAt = null,
-            createdAt = nowMs
-        )
+        // Create the reminder and retire the pending row in ONE transaction so a
+        // crash between them can't leave a re-processable pending row after the
+        // reminder already exists — which kickAll would re-parse into a duplicate.
+        // The (non-transactional, alarm-scheduling) engine arming runs afterwards.
+        val reminderId = db.withTransaction {
+            val rid = repo.saveReminder(
+                id = 0L,
+                groupId = groupId,
+                name = name,
+                schedule = spec.schedule,
+                nextFireAt = nextFire,
+                lastCompletedAt = null,
+                createdAt = nowMs
+            )
+            pendingDao.deleteById(pendingId)
+            rid
+        }
         engine.cancelActive(reminderId)
         val saved = repo.getReminder(reminderId)
         if (saved != null && nextFire != null && spec.schedule !is Schedule.OnUnlock) {
@@ -211,7 +222,6 @@ class PendingVoiceProcessor @Inject constructor(
         }
         val groupName = groups.firstOrNull { it.id == groupId }?.name
         history.created(name, groupName, spec.schedule, nextFire)
-        pendingDao.deleteById(pendingId)
         return VoiceReminderToast.format(ctx, name, nextFire, spec.schedule)
     }
 

@@ -1,6 +1,7 @@
 package app.nock.android.domain.escalation
 
 import app.nock.android.domain.model.Schedule
+import app.nock.android.telegram.TelegramResult
 import io.mockk.coEvery
 import io.mockk.coVerify
 import kotlinx.coroutines.test.runTest
@@ -87,5 +88,43 @@ class EscalationEngineTelegramDeletionTest {
         coVerify { h.telegram.deleteMessage(111L) }
         assertTrue(h.pendingDeletionDao.snapshot().isEmpty())
         assertFalse(h.dao.rows.values.any { it.reminderId == row.reminderId })
+    }
+
+    @Test fun snooze_during_inflight_telegram_send_cleans_up_the_late_message() = runTest {
+        // The Telegram send runs OUTSIDE the engine lock and can take tens of
+        // seconds. A snooze landing during that window clears the row's csv but
+        // KEEPS the row (same id). Without a generation guard the late send would
+        // re-attach its just-sent id to the cleared, still-live row, stranding a
+        // message for the abandoned occurrence a full interval past the snooze that
+        // was meant to delete it.
+        val h = EngineHarness(now = NOW)
+        val r = reminder(schedule = Schedule.Daily(listOf(9 * 60)), nextFireAt = NOW - 5 * MIN)
+        h.stubReminderAndGroup(r, group())
+        coEvery { h.telegram.deleteMessage(any()) } returns true
+
+        // TELEGRAM is index 1 in TEST_CHAIN (+5 min); started 5 min ago, due now.
+        val row = activeEntity(
+            reminderId = r.id,
+            startedAtMs = NOW - 5 * MIN,
+            nextStageIndex = 1,
+            nextFireAtMs = NOW,
+        )
+        h.dao.upsert(row)
+
+        val sentId = 777L
+        // Model the snooze interleaving by snoozing re-entrantly from inside the
+        // (lock-free) send, then returning the freshly-sent message id.
+        coEvery { h.telegram.send(any(), any()) } coAnswers {
+            h.engine.snooze(row.id)
+            TelegramResult(ok = true, messageId = sentId)
+        }
+
+        h.engine.onAlarmFired(row.id)
+
+        // The late message belongs to the occurrence the snooze abandoned, so it is
+        // cleaned up immediately rather than re-attached to the cleared row.
+        coVerify { h.telegram.deleteMessage(sentId) }
+        assertTrue(h.pendingDeletionDao.snapshot().isEmpty())
+        assertEquals("", h.dao.getById(row.id)!!.sentTelegramMessageIdsCsv)
     }
 }

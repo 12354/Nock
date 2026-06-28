@@ -288,7 +288,8 @@ class EscalationEngineFuzzTest {
                     in 71..77 -> retimeRandomAlarm()   // user edits the alarm's own time/date
                     in 78..84 -> directRearmRandomActive() // re-arm an in-flight chain without pre-cancel
                     in 85..90 -> modifyRandomSchedule()    // user swaps the whole schedule
-                    in 91..96 -> simulateReboot()      // device restart: alarms lost, tables survive
+                    in 91..95 -> simulateReboot()      // device restart: alarms lost, tables survive
+                    in 96..97 -> corruptRowAndReschedule() // corrupt stage index, then re-arm
                     else -> orphanReminder()           // reminder removed out-of-band; row lingers
                 }
                 assertConsistent("after step $s (action complete)")
@@ -528,6 +529,23 @@ class EscalationEngineFuzzTest {
             if (rnd.nextBoolean()) clock.advanceBy(randomDelta())
             engine.rescheduleAll()
             drainDueAlarms(react = true)
+        }
+
+        /**
+         * Stamp a live row with a corrupt stage cursor — a negative or far-past-end
+         * [ActiveEscalationEntity.nextStageIndex], as a downgraded chain snapshot or
+         * a bad sync import would leave — then run the boot/clock re-arm. Every read
+         * of nextStageIndex (engine AND oracle) coerces into the chain's bounds, so
+         * the re-arm must clamp identically and keep the row ↔ pending alarm bijection
+         * rather than throwing IndexOutOfBounds out of the reschedule loop and
+         * aborting every other reminder's re-arm.
+         */
+        private suspend fun corruptRowAndReschedule() {
+            val row = dao.rows.values.randomOrNull(rnd) ?: return
+            val badIndex = if (rnd.nextBoolean()) -rnd.nextInt(1, 5) else row.nextStageIndex + rnd.nextInt(50, 200)
+            dao.update(row.copy(nextStageIndex = badIndex))
+            engine.rescheduleAll()
+            drainDueAlarms(react = false)
         }
 
         /**
@@ -917,12 +935,43 @@ class EscalationEngineFuzzTest {
             else -> rnd.nextLong(1, 10) * 1_000L              // a few seconds
         }
 
-        private fun randomSchedule(): Schedule = when (rnd.nextInt(5)) {
-            0 -> Schedule.Daily(randomTimes())
-            1 -> Schedule.Weekly(randomDays(), randomTimes())
-            2 -> randomMonthly()
-            3 -> randomInterval()
-            else -> Schedule.OneShot(clock.now + rnd.nextLong(-120, 6_000) * MIN)
+        private fun randomSchedule(): Schedule {
+            // Occasionally hand the engine a corrupt / out-of-range schedule, exactly
+            // as a malformed Drive import or a downgraded row would. nextFireFrom must
+            // clamp or skip these (never throw out of the reschedule loop), and the
+            // engine must keep rows ↔ pending alarms in bijection regardless.
+            if (rnd.nextInt(12) == 0) return degenerateSchedule()
+            return when (rnd.nextInt(5)) {
+                0 -> Schedule.Daily(randomTimes())
+                1 -> Schedule.Weekly(randomDays(), randomTimes())
+                2 -> randomMonthly()
+                3 -> randomInterval()
+                else -> Schedule.OneShot(clock.now + rnd.nextLong(-120, 6_000) * MIN)
+            }
+        }
+
+        /**
+         * Schedules carrying out-of-range or degenerate fields — a day-of-month ≤ 0,
+         * a minute-of-day past midnight, an empty time/day list. These never reach
+         * the DB through the editor (it clamps/validates), but a corrupt or
+         * adversarial sync payload can persist them, and the boot/clock-change
+         * reschedule runs nextFireFrom over every row. A single throw there would
+         * abort re-arming ALL reminders, so the math must degrade gracefully: clamp
+         * the bad field into range, or return null (never fires).
+         *
+         * Deliberately limited to schedules that still resolve to a SANE near-future
+         * (clamped) instant or to null. Pathological far-future / zero-interval
+         * cadences (interval overflow, 1 ms steps) are covered by focused unit tests
+         * instead — here they would feed the concurrent driver's advance-to-loud-
+         * stages a multi-million-year fire time and blow up the harness, not the
+         * engine.
+         */
+        private fun degenerateSchedule(): Schedule = when (rnd.nextInt(5)) {
+            0 -> Schedule.Monthly(rnd.nextInt(-5, 1), rnd.nextInt(0, 1440))        // dayOfMonth ≤ 0
+            1 -> Schedule.Monthly(rnd.nextInt(1, 32), rnd.nextInt(1440, 5_000))    // minute ≥ 1440
+            2 -> Schedule.Daily(listOf(rnd.nextInt(1440, 9_000)))                  // out-of-range time
+            3 -> Schedule.Daily(emptyList())                                       // never fires
+            else -> Schedule.Weekly(emptySet(), randomTimes())                     // never fires
         }
 
         // Days 1..31 on purpose: 29/30/31 exercise Monthly's month-length

@@ -73,15 +73,30 @@ class DeepSeekReminderParser @Inject constructor(
     // so any returned scheduleType is treated as ONESHOT.
     private fun toSchedule(spec: VoiceAlarmSpec, now: LocalDateTime, zone: ZoneId): Schedule {
         val iso = spec.oneShotIso ?: error(ctx.getString(R.string.voice_error_missing_field, "oneShotIso"))
-        val dt = parseIso(iso, now)
-        return Schedule.OneShot(dt.atZone(zone).toInstant().toEpochMilli())
+        // An unparseable datetime is a hard failure, NOT a silent fallback to "now"
+        // (which would schedule the reminder to fire immediately). The thrown error
+        // surfaces as DeepSeekParseResult.Failed via buildResult's runCatching.
+        var dt = parseIso(iso) ?: error(ctx.getString(R.string.voice_error_bad_schedule))
+        val nowMs = now.atZone(zone).toInstant().toEpochMilli()
+        var epochMs = dt.atZone(zone).toInstant().toEpochMilli()
+        // A time-of-day that has already passed today is meant to roll to tomorrow
+        // (the prompt says so, but the model can slip — e.g. "remind me at 8" said at
+        // 8:05). Roll forward one day rather than firing instantly.
+        if (epochMs <= nowMs) {
+            dt = dt.plusDays(1)
+            epochMs = dt.atZone(zone).toInstant().toEpochMilli()
+        }
+        // Still in the past means a genuinely past full date — reject so the user
+        // sees an error instead of an immediate misfire.
+        if (epochMs <= nowMs) error(ctx.getString(R.string.voice_error_bad_schedule))
+        return Schedule.OneShot(epochMs)
     }
 
-    private fun parseIso(iso: String, now: LocalDateTime): LocalDateTime {
+    private fun parseIso(iso: String): LocalDateTime? {
         runCatching { LocalDateTime.parse(iso) }.getOrNull()?.let { return it }
         runCatching { LocalDateTime.parse(iso, DateTimeFormatter.ISO_DATE_TIME) }.getOrNull()?.let { return it }
         runCatching { java.time.LocalDate.parse(iso).atStartOfDay() }.getOrNull()?.let { return it }
-        return now
+        return null
     }
 
     private fun buildSystemPrompt(

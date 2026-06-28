@@ -107,4 +107,65 @@ class ScheduleTest {
         val next = s.nextFireFrom(now, ms(2026, 1, 5, 6, 0), zone)
         assertEquals(ms(2026, 1, 6, 0, 0), next)
     }
+
+    // --- Robustness against corrupt / out-of-range fields -------------------
+    // nextFireFrom runs inside the boot/clock-change reschedule loop over every
+    // reminder, so a single throw would abort re-arming all of them. A corrupt or
+    // adversarial sync payload must degrade gracefully (clamp or never-fire), not
+    // crash.
+
+    @Test fun monthly_clamps_zero_or_negative_day_instead_of_crashing() {
+        // dayOfMonth 0 / negative would throw DateTimeException out of
+        // withDayOfMonth without a lower-bound clamp.
+        for (badDay in listOf(0, -1, -31)) {
+            val s = Schedule.Monthly(badDay, 9 * 60)
+            val now = ms(2026, 2, 10, 0, 0)
+            val next = s.nextFireFrom(now, null, zone)
+            assertNotNull("Monthly(day=$badDay) must still produce a fire time", next)
+            assertTrue(next!! > now)
+            // Clamped up to the 1st of a month at 09:00.
+            val dt = LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(next), zone)
+            assertEquals(1, dt.dayOfMonth)
+            assertEquals(9, dt.hour)
+        }
+    }
+
+    @Test fun out_of_range_minute_fields_do_not_crash() {
+        // Minute-of-day past 1439 (or negative) would throw from LocalTime.of.
+        val now = ms(2026, 1, 10, 0, 0)
+        assertNotNull(Schedule.Monthly(15, 5_000).nextFireFrom(now, null, zone))
+        assertNotNull(Schedule.Daily(listOf(9_000)).nextFireFrom(now, null, zone))
+        assertNotNull(
+            Schedule.Weekly(setOf(DayOfWeek.MONDAY), listOf(-30)).nextFireFrom(now, null, zone)
+        )
+        assertNotNull(
+            Schedule.RoomAfter(roomId = 1, afterMinutes = 4_000, fallbackMs = 60_000L)
+                .nextFireFrom(now, null, zone)
+        )
+    }
+
+    @Test fun empty_daily_or_weekly_never_fires_but_does_not_crash() {
+        val now = ms(2026, 1, 10, 0, 0)
+        assertNull(Schedule.Daily(emptyList()).nextFireFrom(now, null, zone))
+        assertNull(Schedule.Weekly(emptySet(), listOf(9 * 60)).nextFireFrom(now, null, zone))
+        assertNull(Schedule.Weekly(setOf(DayOfWeek.MONDAY), emptyList()).nextFireFrom(now, null, zone))
+    }
+
+    @Test fun interval_overflow_saturates_to_future_never_wraps_negative() {
+        // A near-Long.MAX interval would wrap to a negative (past) fire time without
+        // overflow-safe arithmetic, which the engine would then treat as overdue.
+        val now = ms(2026, 1, 10, 0, 0)
+        val s = Schedule.IntervalFromStart(Long.MAX_VALUE / 2, startAtMs = now - 1)
+        val next = s.nextFireFrom(now, null, zone)
+        assertNotNull(next)
+        assertTrue("overflowing interval must never return a past time", next!! > now)
+    }
+
+    @Test fun interval_zero_is_coerced_and_still_advances() {
+        val now = ms(2026, 1, 10, 0, 0)
+        val s = Schedule.IntervalFromStart(0L, startAtMs = now)
+        val next = s.nextFireFrom(now, null, zone)
+        assertNotNull(next)
+        assertTrue(next!! > now)
+    }
 }

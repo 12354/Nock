@@ -43,10 +43,15 @@ sealed class Schedule {
         override val isOneTime: Boolean = false
         override fun nextFireFrom(now: Long, lastCompletedAt: Long?, zone: ZoneId): Long? {
             val nowDt = LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(now), zone)
-            val time = LocalTime.of(timeOfDayMinutes / 60, timeOfDayMinutes % 60)
+            val time = localTimeOfMinutes(timeOfDayMinutes)
             for (offset in 0..2) {
                 val month = nowDt.toLocalDate().plusMonths(offset.toLong())
-                val safeDay = dayOfMonth.coerceAtMost(month.lengthOfMonth())
+                // Clamp BOTH ends: a 29/30/31 in a short month coerces down to the
+                // last valid day, and a corrupt/synced 0-or-negative dayOfMonth
+                // coerces up to the 1st instead of throwing DateTimeException out of
+                // the boot-reschedule loop (which would abort re-arming every other
+                // reminder, not just this one).
+                val safeDay = dayOfMonth.coerceIn(1, month.lengthOfMonth())
                 val candidate = month.withDayOfMonth(safeDay).atTime(time)
                 val candidateMs = candidate.atZone(zone).toInstant().toEpochMilli()
                 if (candidateMs > now) return candidateMs
@@ -71,12 +76,16 @@ sealed class Schedule {
         override fun nextFireFrom(now: Long, lastCompletedAt: Long?, zone: ZoneId): Long? {
             val step = intervalMs.coerceAtLeast(1)
             // Anchorless legacy row: keep the old completion-relative single step.
-            val anchor = startAtMs ?: return (lastCompletedAt ?: now) + step
+            val anchor = startAtMs ?: return addClamped(lastCompletedAt ?: now, step)
             // Before the first grid point the anchor itself is next.
             if (now < anchor) return anchor
             // Otherwise the smallest anchor + n·interval strictly after `now`.
+            // Overflow-safe: a corrupt interval near Long.MAX could otherwise wrap
+            // negative and hand back a fire time in the PAST, which the engine would
+            // then treat as overdue and ring immediately. Saturate at Long.MAX_VALUE
+            // instead so a degenerate schedule simply never comes due.
             val stepsElapsed = (now - anchor) / step
-            return anchor + (stepsElapsed + 1) * step
+            return addClamped(anchor, mulClamped(stepsElapsed + 1, step))
         }
     }
 
@@ -117,7 +126,7 @@ sealed class Schedule {
         override val isOneTime: Boolean = false
         override fun nextFireFrom(now: Long, lastCompletedAt: Long?, zone: ZoneId): Long? {
             val nowDt = LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(now), zone)
-            val timeOfDay = LocalTime.of(afterMinutes / 60, afterMinutes % 60)
+            val timeOfDay = localTimeOfMinutes(afterMinutes)
             // Start at yesterday: a window that crosses midnight (e.g. start
             // 23:30 with a 60 min fallback) still has its deadline pending
             // shortly after midnight.
@@ -134,6 +143,29 @@ sealed class Schedule {
     }
 
     companion object {
+        private const val MINUTES_PER_DAY = 24 * 60
+
+        /**
+         * Build a [LocalTime] from a minute-of-day, clamping into 0..1439 first.
+         * The minute fields are persisted/synced unvalidated, so a corrupt or
+         * out-of-range value (negative, or >= 1440) would otherwise make
+         * LocalTime.of throw DateTimeException out of nextFireFrom — which runs
+         * inside the boot/clock-change reschedule loop and would abort re-arming
+         * every reminder, not just the bad one.
+         */
+        private fun localTimeOfMinutes(minutes: Int): LocalTime {
+            val safe = minutes.coerceIn(0, MINUTES_PER_DAY - 1)
+            return LocalTime.of(safe / 60, safe % 60)
+        }
+
+        /** Saturating add: never wraps past Long.MAX_VALUE into a negative time. */
+        private fun addClamped(a: Long, b: Long): Long =
+            try { Math.addExact(a, b) } catch (e: ArithmeticException) { Long.MAX_VALUE }
+
+        /** Saturating multiply for two non-negative operands. */
+        private fun mulClamped(a: Long, b: Long): Long =
+            try { Math.multiplyExact(a, b) } catch (e: ArithmeticException) { Long.MAX_VALUE }
+
         private fun nextDailyOrWeekly(
             now: Long,
             zone: ZoneId,
@@ -146,7 +178,7 @@ sealed class Schedule {
                 val date: LocalDate = nowDt.toLocalDate().plusDays(offset)
                 if (daysOfWeek != null && date.dayOfWeek !in daysOfWeek) continue
                 for (m in timesOfDayMinutes.sorted()) {
-                    val candidate = date.atTime(m / 60, m % 60)
+                    val candidate = date.atTime(localTimeOfMinutes(m))
                     val candidateMs = candidate.atZone(zone).toInstant().toEpochMilli()
                     if (candidateMs > now) return candidateMs
                 }

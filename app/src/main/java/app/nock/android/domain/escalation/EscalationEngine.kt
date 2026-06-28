@@ -134,7 +134,20 @@ class EscalationEngine @Inject constructor(
         // escalation actually escalates over time.
         val firstIdx = if (reminder.schedule is Schedule.OnUnlock) {
             val firstFuture = chain.stages.indexOfFirst { it.offsetMs > 0 }
-            if (firstFuture >= 0) firstFuture else chain.stageDueAt(scheduledAtMs, now)
+            if (firstFuture >= 0) {
+                firstFuture
+            } else {
+                // No stage fires after the trigger — e.g. the shipped default
+                // alarm-clock chain, whose stages all lead UP to a deadline
+                // (offsets ≤ 0). For OnUnlock there is no deadline, so picking
+                // "the latest stage due now" (stageDueAt) collapsed straight to
+                // the loud last stage and rang instantly with no escalation.
+                // Re-anchor the chain forward from the unlock moment instead, so
+                // the gentlest stage fires ~now and the rest escalate over their
+                // usual spacing — exactly like an overdue boot replay.
+                armForwardAnchoredLocked(reminder, chain)
+                return
+            }
         } else if (scheduledAtMs > now) {
             // The trigger is still in the future. Pre-trigger stages with a
             // negative offset may nonetheless already be in the past when the
@@ -175,8 +188,22 @@ class EscalationEngine @Inject constructor(
         val group = repo.getGroup(reminder.groupId) ?: return
         if (group.isPaused(time.nowMs())) return
         val chain = effectiveChainFor(reminder, group)
-        val firstOffset = chain.stages.first().offsetMs
+        armForwardAnchoredLocked(reminder, chain)
+        history.replayedOverdue(reminder.name, reminder.nextFireAt, time.nowMs())
+    }
+
+    /**
+     * Arm [chain] for [reminder] anchored FORWARD from now: a synthetic start of
+     * `now - firstOffset` places the gentlest (first) stage at ~now and the rest at
+     * their usual spacing, so the chain escalates over time rather than collapsing
+     * to whatever stage is "due" at an instant. Shared by the overdue boot replay,
+     * room-detection firing, and the OnUnlock arm for a chain with no post-trigger
+     * stage. The row REPLACEs any existing escalation for this reminder (callers
+     * cancel/upsert on reminderId), so the alarm and the row stay in bijection.
+     */
+    private suspend fun armForwardAnchoredLocked(reminder: Reminder, chain: EscalationChain) {
         val now = time.nowMs()
+        val firstOffset = chain.stages.first().offsetMs
         val syntheticStart = now - firstOffset
         val first = max(syntheticStart + firstOffset, now + 1_000L)
 
@@ -191,7 +218,6 @@ class EscalationEngine @Inject constructor(
         )
         val id = activeDao.upsert(ent)
         scheduler.scheduleStage(id, first, chain.stages.first().type)
-        history.replayedOverdue(reminder.name, reminder.nextFireAt, now)
     }
 
     suspend fun onAlarmFired(escalationId: Long) {
@@ -205,7 +231,7 @@ class EscalationEngine @Inject constructor(
         val pendingSend = mutex.withLock { onAlarmFiredLocked(escalationId) }
         if (pendingSend != null) {
             val messageId = telegram.send(pendingSend.reminder, silent = pendingSend.silent).messageId
-            if (messageId != null) recordSentTelegramMessage(escalationId, messageId)
+            if (messageId != null) recordSentTelegramMessage(escalationId, messageId, pendingSend.generation)
         }
         // Retry any pending Telegram deletions (transient failures, a previous
         // Done/Snooze whose process died mid-call) and drain anything this fire's
@@ -214,20 +240,39 @@ class EscalationEngine @Inject constructor(
     }
 
     /** What [onAlarmFiredLocked] decided still needs sending to Telegram, performed
-     *  by the caller after releasing the lock. */
-    private data class PendingTelegramSend(val reminder: Reminder, val silent: Boolean)
+     *  by the caller after releasing the lock. [generation] is the escalation's
+     *  teardown generation captured at send-decision time (see [teardownGeneration]). */
+    private data class PendingTelegramSend(val reminder: Reminder, val silent: Boolean, val generation: Int)
+
+    // Per-escalation teardown generation, bumped whenever a snooze/done/cancel
+    // abandons the messages a chain has sent (and queues them for deletion). The
+    // Telegram send runs OUTSIDE the lock and can take tens of seconds; a snooze
+    // that lands during that window enqueues + flushes the row's *current* csv and
+    // then clears it but KEEPS the row (same id). Without this guard the late send's
+    // recordSentTelegramMessage would find the row present and re-attach the just-
+    // sent id to the now-cleared csv — stranding, past the snooze that was meant to
+    // delete it, a message that won't be cleaned up until the next teardown. The
+    // generation lets recordSentTelegramMessage detect that a teardown intervened
+    // and queue the id for immediate deletion instead. Touched only under [mutex].
+    private val teardownGeneration = HashMap<Long, Int>()
+
+    private fun bumpTeardownGeneration(escalationId: Long) {
+        teardownGeneration[escalationId] = (teardownGeneration[escalationId] ?: 0) + 1
+    }
 
     /**
      * Append a just-sent message id to the escalation's sent-ids list so a later
      * Done/Snooze/Cancel can delete it. If the escalation was torn down (Done/
-     * Snooze/Cancel) while we were sending — so the row is gone and its teardown
-     * already queued the ids it could see, but not this one — queue this id for
-     * deletion directly so the message still gets cleaned up rather than stranded.
+     * Snooze/Cancel) while we were sending — the row is gone, OR a snooze cleared
+     * its csv while keeping the row (detected via the teardown [generation] having
+     * advanced since the send was scheduled) — queue this id for deletion directly
+     * so the message still gets cleaned up rather than stranded.
      */
-    private suspend fun recordSentTelegramMessage(escalationId: Long, messageId: Long) {
+    private suspend fun recordSentTelegramMessage(escalationId: Long, messageId: Long, sentAtGeneration: Int) {
         mutex.withLock {
             val row = activeDao.getById(escalationId)
-            if (row != null) {
+            val currentGeneration = teardownGeneration[escalationId] ?: 0
+            if (row != null && currentGeneration == sentAtGeneration) {
                 activeDao.update(
                     row.copy(sentTelegramMessageIdsCsv = appendMessageId(row.sentTelegramMessageIdsCsv, messageId))
                 )
@@ -351,20 +396,23 @@ class EscalationEngine @Inject constructor(
 
         // Local, fast notification work happens under the lock; the (slow,
         // killable) Telegram send is deferred to the caller via the returned
-        // PendingTelegramSend so it runs outside the lock.
+        // PendingTelegramSend so it runs outside the lock. Capture the current
+        // teardown generation so a snooze/done/cancel that intervenes during the
+        // send is detected when the id is recorded.
+        val generation = teardownGeneration[escalationId] ?: 0
         var pendingSend: PendingTelegramSend? = null
         when (stage.type) {
             StageType.SILENT -> {
                 notifier.showSilent(reminder, group, escalationId)
-                if (group.telegramSilentMirror) pendingSend = PendingTelegramSend(reminder, silent = true)
+                if (group.telegramSilentMirror) pendingSend = PendingTelegramSend(reminder, silent = true, generation = generation)
             }
             StageType.VIBRATE -> {
                 notifier.showVibrate(reminder, group, escalationId)
-                if (group.telegramSilentMirror) pendingSend = PendingTelegramSend(reminder, silent = true)
+                if (group.telegramSilentMirror) pendingSend = PendingTelegramSend(reminder, silent = true, generation = generation)
             }
             StageType.TELEGRAM -> {
                 notifier.showTelegram(reminder, group, escalationId)
-                pendingSend = PendingTelegramSend(reminder, silent = false)
+                pendingSend = PendingTelegramSend(reminder, silent = false, generation = generation)
             }
             StageType.NOTIFICATION -> notifier.showPreAlarm(reminder, group, escalationId)
             StageType.ALARM_VIBRATE -> notifier.showAlarmVibrate(reminder, group, escalationId)
@@ -429,6 +477,7 @@ class EscalationEngine @Inject constructor(
         // queue above means a killed flush merely defers the deletion.
         val reminder = repo.getReminder(esc.reminderId)
         activeDao.delete(esc)
+        teardownGeneration.remove(esc.id)
         if (reminder != null) {
             history.done(reminder.name)
             // One-time schedules have no future occurrence once dismissed, so
@@ -477,6 +526,10 @@ class EscalationEngine @Inject constructor(
         // drained by the public wrapper (outside the lock) and retried on every
         // later alarm tick / boot.
         enqueueTelegramDeletions(esc.sentTelegramMessageIdsCsv)
+        // Snooze keeps the row but clears its csv; bump the generation so a
+        // Telegram send still in flight for the pre-snooze occurrence is cleaned
+        // up directly instead of being re-attached to the cleared row.
+        bumpTeardownGeneration(esc.id)
 
         // Snooze buys one repeat interval of silence, then RESUMES the chain on its
         // unchanged timeline — it never delays the escalation. Delaying it (pushing
@@ -592,6 +645,7 @@ class EscalationEngine @Inject constructor(
         // flushes the queue after releasing the lock.
         enqueueTelegramDeletions(esc.sentTelegramMessageIdsCsv)
         activeDao.delete(esc)
+        teardownGeneration.remove(esc.id)
     }
 
     private fun appendMessageId(csv: String, messageId: Long): String =
@@ -663,21 +717,10 @@ class EscalationEngine @Inject constructor(
 
             repo.updateFireState(reminder.id, now, reminder.lastCompletedAt)
 
-            val chain = effectiveChainFor(reminder, group)
-            val firstOffset = chain.stages.first().offsetMs
-            val syntheticStart = now - firstOffset
-            val first = max(syntheticStart + firstOffset, now + 1_000L)
-            val ent = ActiveEscalationEntity(
-                id = 0,
-                reminderId = reminder.id,
-                startedAtMs = syntheticStart,
-                nextStageIndex = 0,
-                nextFireAtMs = first,
-                chainSnapshotJson = ChainJson.encode(chain),
-                repeatIntervalMs = chain.repeatIntervalMs
-            )
-            val id = activeDao.upsert(ent)
-            scheduler.scheduleStage(id, first, chain.stages.first().type)
+            // Anchor the chain at the detection moment (first stage now, the rest
+            // at their usual spacing) so the group's escalation runs forward from
+            // detection instead of collapsing to the loud stage.
+            armForwardAnchoredLocked(reminder, effectiveChainFor(reminder, group))
             true
         }
         flushPendingTelegramDeletions()
@@ -720,43 +763,56 @@ class EscalationEngine @Inject constructor(
 
     private suspend fun rescheduleAllLocked(recomputeWallClock: Boolean = false) {
             activeDao.getAll().forEach { esc ->
-                val chain = runCatching { ChainJson.decode(esc.chainSnapshotJson) }.getOrNull() ?: return@forEach
-                // A wall-clock change shifts what local time-of-day a stored fire
-                // time means. For an escalation that hasn't begun firing, re-derive
-                // its reminder's next occurrence in the current zone and re-arm, so
-                // a daily 09:00 alarm still rings at 09:00 local. An already-firing
-                // escalation is left on its stored time so a TZ change can't
-                // silently cancel a live ring.
-                if (recomputeWallClock && time.nowMs() < esc.startedAtMs) {
-                    val reminder = repo.getReminder(esc.reminderId)
-                    if (reminder != null && reminder.schedule !is Schedule.OnUnlock) {
-                        val next = reminder.schedule.nextFireFrom(time.nowMs(), reminder.lastCompletedAt)
-                        if (next != null && kotlin.math.abs(next - esc.startedAtMs) > SANITY_TOLERANCE_MS) {
-                            repo.updateFireState(reminder.id, next, reminder.lastCompletedAt)
-                            startEscalationAtLocked(reminder.copy(nextFireAt = next), next)
-                            return@forEach
-                        }
-                    }
-                }
-                val type = chain.stage(esc.nextStageIndex.coerceAtMost(chain.lastIndex)).type
-                scheduler.scheduleStage(esc.id, esc.nextFireAtMs, type)
+                // Guard the whole per-row body: a single malformed row (bad chain
+                // JSON, a schedule whose nextFireFrom throws on corrupt time fields,
+                // a corrupt stage index) must not abort re-arming every OTHER reminder
+                // on this boot/clock pass.
+                runCatching { rearmEscalationRow(esc, recomputeWallClock) }
             }
             repo.getAllReminders().forEach { reminder ->
-                // OnUnlock reminders are event-triggered, never time-triggered;
-                // boot/time changes must not fire them.
-                if (reminder.schedule is Schedule.OnUnlock) return@forEach
-                val active = activeDao.getByReminderId(reminder.id)
-                if (active != null) return@forEach
-                val now = time.nowMs()
-                val nextFromSchedule = reminder.schedule.nextFireFrom(now, reminder.lastCompletedAt) ?: return@forEach
-                val overdue = reminder.nextFireAt != null && reminder.nextFireAt < now
-                if (overdue) {
-                    startEscalationFromBootLocked(reminder)
-                } else {
-                    repo.updateFireState(reminder.id, nextFromSchedule, reminder.lastCompletedAt)
-                    startEscalationAtLocked(reminder.copy(nextFireAt = nextFromSchedule), nextFromSchedule)
+                runCatching {
+                    // OnUnlock reminders are event-triggered, never time-triggered;
+                    // boot/time changes must not fire them.
+                    if (reminder.schedule is Schedule.OnUnlock) return@runCatching
+                    val active = activeDao.getByReminderId(reminder.id)
+                    if (active != null) return@runCatching
+                    val now = time.nowMs()
+                    val nextFromSchedule =
+                        reminder.schedule.nextFireFrom(now, reminder.lastCompletedAt) ?: return@runCatching
+                    val overdue = reminder.nextFireAt != null && reminder.nextFireAt < now
+                    if (overdue) {
+                        startEscalationFromBootLocked(reminder)
+                    } else {
+                        repo.updateFireState(reminder.id, nextFromSchedule, reminder.lastCompletedAt)
+                        startEscalationAtLocked(reminder.copy(nextFireAt = nextFromSchedule), nextFromSchedule)
+                    }
                 }
             }
+    }
+
+    /** Re-arm one persisted escalation row; see [rescheduleAllLocked]. */
+    private suspend fun rearmEscalationRow(esc: ActiveEscalationEntity, recomputeWallClock: Boolean) {
+        val chain = runCatching { ChainJson.decode(esc.chainSnapshotJson) }.getOrNull() ?: return
+        // A wall-clock change shifts what local time-of-day a stored fire time
+        // means. For an escalation that hasn't begun firing, re-derive its
+        // reminder's next occurrence in the current zone and re-arm, so a daily
+        // 09:00 alarm still rings at 09:00 local. An already-firing escalation is
+        // left on its stored time so a TZ change can't silently cancel a live ring.
+        if (recomputeWallClock && time.nowMs() < esc.startedAtMs) {
+            val reminder = repo.getReminder(esc.reminderId)
+            if (reminder != null && reminder.schedule !is Schedule.OnUnlock) {
+                val next = reminder.schedule.nextFireFrom(time.nowMs(), reminder.lastCompletedAt)
+                if (next != null && kotlin.math.abs(next - esc.startedAtMs) > SANITY_TOLERANCE_MS) {
+                    repo.updateFireState(reminder.id, next, reminder.lastCompletedAt)
+                    startEscalationAtLocked(reminder.copy(nextFireAt = next), next)
+                    return
+                }
+            }
+        }
+        // coerceIn (not just coerceAtMost) so a corrupt negative stored index can't
+        // index out of bounds — matching every other nextStageIndex read site.
+        val type = chain.stage(esc.nextStageIndex.coerceIn(0, chain.lastIndex)).type
+        scheduler.scheduleStage(esc.id, esc.nextFireAtMs, type)
     }
 
     // ---- Compound operations for callers OUTSIDE the engine ----------------

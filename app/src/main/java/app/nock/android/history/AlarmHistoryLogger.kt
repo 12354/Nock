@@ -239,12 +239,17 @@ class AlarmHistoryLogger @Inject constructor(
     private fun trimIfNeeded() {
         val len = file.length()
         if (len <= MAX_BYTES) return
-        val text = file.readText()
-        val dropFrom = TRIM_BYTES.coerceAtMost(text.length)
-        val tail = text.substring(dropFrom)
-        // Snap to the next newline so we never leave a half-line at the start.
-        val nl = tail.indexOf('\n')
-        val kept = if (nl >= 0) tail.substring(nl + 1) else tail
+        // Work in BYTES, not chars: file.length()/MAX_BYTES/TRIM_BYTES are all byte
+        // counts, but reminder names are arbitrary user text (emoji, non-ASCII), so
+        // a char-indexed substring would drop far more than TRIM_BYTES of content
+        // for a multibyte history, breaking the amortised-trim guarantee.
+        val bytes = file.readBytes()
+        var start = TRIM_BYTES.coerceAtMost(bytes.size)
+        // Snap forward past the next newline so we never split a UTF-8 code unit or
+        // leave a half-line at the start.
+        while (start < bytes.size && bytes[start] != '\n'.code.toByte()) start++
+        if (start < bytes.size) start++ // skip the newline itself
+        val kept = String(bytes, start, bytes.size - start, Charsets.UTF_8)
         file.writeText("--- history trimmed ---\n$kept")
     }
 

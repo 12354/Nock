@@ -141,7 +141,14 @@ class ManualImportViewModel @Inject constructor(
             val preview = withContext(Dispatchers.IO) { trips.previewEvent(effective, bufferMs) }
             _state.update {
                 if (it.selectedEvent != event || it.location != location) it
-                else it.copy(preview = preview, previewLoading = false)
+                // The buffer slider may have moved while this (slow) route lookup was
+                // in flight. previewEvent baked the launch-time buffer into the result,
+                // so re-frame the freshly-routed preview onto the buffer currently in
+                // state — keeping the new travel data without reverting the slider.
+                else it.copy(
+                    preview = trips.reframeWithBuffer(preview, it.bufferMin * 60_000L),
+                    previewLoading = false
+                )
             }
         }
     }

@@ -642,7 +642,15 @@ class TripSyncManager @Inject constructor(
         val windowEnd = now + TripDefaults.LOOKAHEAD_MS
         tripDao.getAll().forEach { trip ->
             val inScanScope = trip.calendarId in watched && trip.eventStartMs <= windowEnd
-            val gone = trip.eventStartMs < now ||
+            // A trip's loud "leave now" alarm fires at leaveBy (= eventStart −
+            // travel), BEFORE the event starts, and keeps re-ringing/snoozing until
+            // the user presses Done — so an active escalation can legitimately still
+            // be live right at/after eventStart. Don't reclaim a started-event trip
+            // while its escalation is in flight, or a sync landing in that window
+            // silently kills the most important alarm. Once Done'd the row is gone
+            // and the next sync prunes the now-orphan trip normally.
+            val hasLiveEscalation = activeDao.getByReminderId(trip.reminderId) != null
+            val gone = (trip.eventStartMs < now && !hasLiveEscalation) ||
                 (inScanScope && instanceKey(trip.eventId, trip.eventStartMs) !in seen)
             if (gone) {
                 tearDown(trip)

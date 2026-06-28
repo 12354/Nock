@@ -54,18 +54,24 @@ class DriveSyncClient @Inject constructor(
         withContext(Dispatchers.IO) {
         val service = driveService() ?: return@withContext SyncOutcome.NotSignedIn
         try {
-            val json = snapshots.export()
+            val exported = snapshots.export()
             val existing = findSnapshotFileId(service)
             val metadata = com.google.api.services.drive.model.File().apply {
                 name = snapshotName
                 if (existing == null) parents = listOf("appDataFolder")
             }
-            val content = ByteArrayContent("application/json", json.toByteArray(Charsets.UTF_8))
+            val content = ByteArrayContent("application/json", exported.json.toByteArray(Charsets.UTF_8))
             if (existing == null) {
                 service.files().create(metadata, content).setFields("id").execute()
             } else {
                 service.files().update(existing, metadata, content).execute()
             }
+            // Record the just-pushed snapshot as already-applied. Without this the
+            // next pullIfNewer() on THIS device sees its own fresh savedAtMs as
+            // "newer" than the stale local cursor and re-imports it — a needless
+            // wipe-and-replace that also drops the device-local Trips group until
+            // the next calendar sync rebuilds it.
+            settings.set(SettingsRepository.KEY_DRIVE_LAST_REMOTE_MS, exported.savedAtMs.toString())
             settings.set(SettingsRepository.KEY_DRIVE_LAST_SYNC_MS, System.currentTimeMillis().toString())
             SyncOutcome.Ok
         } catch (t: Throwable) {
@@ -82,8 +88,14 @@ class DriveSyncClient @Inject constructor(
             val out = ByteArrayOutputStream()
             service.files().get(fileId).executeMediaAndDownloadTo(out)
             val json = out.toString(Charsets.UTF_8)
-            val merged = snapshots.mergeIfNewer(json)
-            if (merged) SyncOutcome.Ok else SyncOutcome.Ok
+            // Merged new data and "already in sync" are both healthy outcomes; a
+            // remote that downloaded but couldn't be decoded (empty/truncated file
+            // from an interrupted push, or an unsupported version) is a real error
+            // the user should see — not a silent no-op that looks in-sync.
+            when (snapshots.mergeIfNewer(json)) {
+                MergeResult.Merged, MergeResult.NotNewer -> SyncOutcome.Ok
+                MergeResult.Corrupt -> SyncOutcome.Error("remote snapshot is empty or unreadable")
+            }
         } catch (t: Throwable) {
             SyncOutcome.Error(t.message ?: t::class.simpleName ?: "error")
         }

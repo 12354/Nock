@@ -30,6 +30,11 @@ import javax.inject.Inject
 
 data class EditState(
     val reminderId: Long = 0,
+    // True once load() has populated this state from an existing reminder. The
+    // constructor's init coroutine and load() both run on viewModelScope and race
+    // at their first DB suspension; this flag lets init's seed-defaults skip
+    // clobbering an already-loaded reminder's groupId regardless of resume order.
+    val loaded: Boolean = false,
     val name: String = "",
     val groupId: Long = 0,
     val scheduleType: ScheduleKind = ScheduleKind.ONESHOT,
@@ -90,7 +95,10 @@ class EditReminderViewModel @Inject constructor(
             _state.update {
                 it.copy(
                     groups = groups,
-                    groupId = groups.firstOrNull()?.id ?: 0L,
+                    // If load() already populated an existing reminder (it can win
+                    // the race), keep its groupId instead of resetting to the first
+                    // group; only seed a default for a brand-new reminder.
+                    groupId = if (it.loaded) it.groupId else (groups.firstOrNull()?.id ?: 0L),
                     rooms = rooms,
                     roomId = it.roomId ?: rooms.firstOrNull()?.id
                 )
@@ -132,6 +140,7 @@ class EditReminderViewModel @Inject constructor(
             }
             _state.update {
                 it.copy(
+                    loaded = true,
                     reminderId = r.id,
                     name = r.name,
                     groupId = r.groupId,
@@ -160,21 +169,72 @@ class EditReminderViewModel @Inject constructor(
         }
     }
 
-    fun updateName(s: String) = _state.update { it.copy(name = s) }
+    fun updateName(s: String) {
+        cancelPendingAiParse()
+        _state.update { it.copy(name = s) }
+    }
     fun updateLocation(s: String) = _state.update { it.copy(location = s) }
     fun updateBufferMin(min: Int) =
         _state.update { it.copy(bufferMin = min.coerceIn(MIN_TRIP_BUFFER_MIN, MAX_TRIP_BUFFER_MIN)) }
-    fun updateGroup(id: Long) = _state.update { it.copy(groupId = id) }
-    fun updateKind(k: ScheduleKind) = _state.update { it.copy(scheduleType = k) }
-    fun updateOneShot(ms: Long) = _state.update { it.copy(oneShotMs = ms) }
-    fun updateDailyTimes(times: List<Int>) = _state.update { it.copy(dailyTimesMinutes = times) }
-    fun updateWeeklyDays(d: Set<DayOfWeek>) = _state.update { it.copy(weeklyDays = d) }
-    fun updateWeeklyTimes(t: List<Int>) = _state.update { it.copy(weeklyTimesMinutes = t) }
-    fun updateMonthlyDay(d: Int) = _state.update { it.copy(monthlyDay = d) }
-    fun updateMonthlyTime(t: Int) = _state.update { it.copy(monthlyTimeMinutes = t) }
-    fun updateIntervalHours(h: Int) = _state.update { it.copy(intervalHours = h) }
-    fun updateIntervalStart(ms: Long?) = _state.update { it.copy(intervalStartMs = ms) }
-    fun updateRoom(id: Long) = _state.update { it.copy(roomId = id) }
+    fun updateGroup(id: Long) {
+        cancelPendingAiParse()
+        _state.update { it.copy(groupId = id) }
+    }
+    fun updateKind(k: ScheduleKind) {
+        cancelPendingAiParse()
+        _state.update { it.copy(scheduleType = k) }
+    }
+    fun updateOneShot(ms: Long) {
+        cancelPendingAiParse()
+        _state.update { it.copy(oneShotMs = ms) }
+    }
+    fun updateDailyTimes(times: List<Int>) {
+        cancelPendingAiParse()
+        _state.update { it.copy(dailyTimesMinutes = times) }
+    }
+    fun updateWeeklyDays(d: Set<DayOfWeek>) {
+        cancelPendingAiParse()
+        _state.update { it.copy(weeklyDays = d) }
+    }
+    fun updateWeeklyTimes(t: List<Int>) {
+        cancelPendingAiParse()
+        _state.update { it.copy(weeklyTimesMinutes = t) }
+    }
+    fun updateMonthlyDay(d: Int) {
+        cancelPendingAiParse()
+        _state.update { it.copy(monthlyDay = d) }
+    }
+    fun updateMonthlyTime(t: Int) {
+        cancelPendingAiParse()
+        _state.update { it.copy(monthlyTimeMinutes = t) }
+    }
+    fun updateIntervalHours(h: Int) {
+        cancelPendingAiParse()
+        _state.update { it.copy(intervalHours = h) }
+    }
+    fun updateIntervalStart(ms: Long?) {
+        cancelPendingAiParse()
+        _state.update { it.copy(intervalStartMs = ms) }
+    }
+    fun updateRoom(id: Long) {
+        cancelPendingAiParse()
+        _state.update { it.copy(roomId = id) }
+    }
+
+    /**
+     * Abort an in-flight / debounced DeepSeek parse. A manual edit to a field the
+     * AI result would overwrite (group, name, schedule kind/fields) must win over a
+     * parse the user kicked off moments earlier by typing in the natural-language
+     * box — otherwise applyDeepSeek silently reverts the manual change when the
+     * (slow) network result lands. Clearing nlThinking keeps the spinner honest.
+     */
+    private fun cancelPendingAiParse() {
+        if (aiDebounceJob?.isActive == true) {
+            aiDebounceJob?.cancel()
+            aiDebounceJob = null
+            if (_state.value.nlThinking) _state.update { it.copy(nlThinking = false) }
+        }
+    }
     fun updateRoomAfter(minutes: Int) = _state.update { it.copy(roomAfterMinutes = minutes) }
     fun updateRoomFallback(min: Int) =
         _state.update { it.copy(roomFallbackMin = min.coerceIn(MIN_ROOM_FALLBACK_MIN, MAX_ROOM_FALLBACK_MIN)) }
@@ -365,8 +425,15 @@ class EditReminderViewModel @Inject constructor(
 
     private fun buildSchedule(s: EditState): Schedule? = when (s.scheduleType) {
         ScheduleKind.ONESHOT -> Schedule.OneShot(s.oneShotMs)
-        ScheduleKind.DAILY -> Schedule.Daily(s.dailyTimesMinutes)
-        ScheduleKind.WEEKLY -> Schedule.Weekly(s.weeklyDays, s.weeklyTimesMinutes)
+        // A Daily with no times — or a Weekly with no days or no times — has no
+        // occurrence and nextFireFrom returns null forever, so the reminder would
+        // save but silently never fire. Return null to block the save (the editor
+        // surfaces it) instead of persisting a dead reminder.
+        ScheduleKind.DAILY -> s.dailyTimesMinutes.takeIf { it.isNotEmpty() }?.let { Schedule.Daily(it) }
+        ScheduleKind.WEEKLY ->
+            if (s.weeklyDays.isNotEmpty() && s.weeklyTimesMinutes.isNotEmpty())
+                Schedule.Weekly(s.weeklyDays, s.weeklyTimesMinutes)
+            else null
         ScheduleKind.MONTHLY -> Schedule.Monthly(s.monthlyDay, s.monthlyTimeMinutes)
         ScheduleKind.INTERVAL -> {
             val interval = s.intervalHours * 3_600_000L

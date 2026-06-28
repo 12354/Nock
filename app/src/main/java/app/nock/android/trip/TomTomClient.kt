@@ -94,13 +94,18 @@ class TomTomClient @Inject constructor(
     ): RoutingResult = withContext(Dispatchers.IO) {
         val apiKey = key() ?: return@withContext RoutingResult.Error("no TomTom key")
         val locations = "${origin.lat},${origin.lon}:${destination.lat},${destination.lon}"
+        // TomTom rejects an arriveAt in the past with a 4xx. A recompute can be
+        // delivered late (Doze) after the event has already started, so floor the
+        // target a minute into the future — a still-useful depart-soon estimate —
+        // rather than issuing a doomed request that silently falls back to a stale time.
+        val safeArriveBy = maxOf(arriveByMs, System.currentTimeMillis() + 60_000L)
         val url = ("https://api.tomtom.com/routing/1/calculateRoute/" + locations + "/json")
             .toHttpUrl().newBuilder()
             .addQueryParameter("key", apiKey)
             .addQueryParameter("travelMode", travelMode.ifBlank { "car" })
             .addQueryParameter("traffic", "true")
             .addQueryParameter("computeTravelTimeFor", "all")
-            .addQueryParameter("arriveAt", isoOffset(arriveByMs))
+            .addQueryParameter("arriveAt", isoOffset(safeArriveBy))
             .build()
         try {
             client.newCall(Request.Builder().url(url).build()).execute().use { resp ->

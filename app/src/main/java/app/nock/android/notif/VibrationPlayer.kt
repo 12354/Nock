@@ -26,15 +26,21 @@ class VibrationPlayer @Inject constructor(
         val v = vibrator() ?: return
         if (!v.hasVibrator()) return
         try {
+            // USAGE_ALARM, not USAGE_NOTIFICATION: a notification-usage vibration
+            // is silently suppressed whenever the system's notification vibration
+            // is off or the phone is in a ring/DND mode that mutes notification
+            // haptics — which is why this buzz never fired while the alarm stage
+            // (which already uses USAGE_ALARM) always does. A reminder the user
+            // explicitly scheduled should be felt when it fires, so we tag it the
+            // same alarm-priority way the working AlarmService path does.
             val attrs = AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_NOTIFICATION)
+                .setUsage(AudioAttributes.USAGE_ALARM)
                 .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                 .build()
             // repeat = -1: play through once and stop. Drive explicit per-slot
             // amplitudes where the vibrator supports them — the timings-only
             // overload leans on DEFAULT_AMPLITUDE, which leaves some vendors'
-            // vibrators silent (the exact "doesn't buzz" symptom this fixes). The
-            // looping alarm path (AlarmService) uses the same amplitude handling.
+            // vibrators silent. The looping alarm path uses the same handling.
             val timings = pattern.toWaveform()
             val effect = if (v.hasAmplitudeControl()) {
                 VibrationEffect.createWaveform(timings, pattern.toAmplitudes(), -1)

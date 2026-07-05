@@ -16,6 +16,18 @@ class VibrationPatternTest {
         assertArrayEquals(longArrayOf(0L, VibrationPattern.SHORT_MS), wf)
     }
 
+    @Test fun amplitudes_pair_with_waveform_off_slots_silent_on_slots_full() {
+        val p = VibrationPattern(listOf(VibrationPulse.SHORT, VibrationPulse.LONG))
+        val wf = p.toWaveform()
+        val amps = p.toAmplitudes()
+        // One amplitude per timing slot, off (even) silent, on (odd) full strength.
+        assertEquals(wf.size, amps.size)
+        assertArrayEquals(
+            intArrayOf(0, VibrationPattern.MAX_AMPLITUDE, 0, VibrationPattern.MAX_AMPLITUDE),
+            amps
+        )
+    }
+
     @Test fun multi_pulse_waveform_interleaves_gaps_between_pulses_only() {
         val wf = VibrationPattern(
             listOf(VibrationPulse.SHORT, VibrationPulse.LONG, VibrationPulse.SHORT)

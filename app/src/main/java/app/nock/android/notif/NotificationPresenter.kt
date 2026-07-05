@@ -100,6 +100,10 @@ class NotificationPresenter @Inject constructor(
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
             .setAutoCancel(true)
+            // A gentle nudge is fire-and-forget: it needs no acknowledgement, so
+            // the system auto-removes the heads-up a minute after it fires instead
+            // of leaving it lingering in the shade until the user swipes it.
+            .setTimeoutAfter(REGULAR_TIMEOUT_MS)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .build()
         nm.notify(escalationId.toInt(), notif)
@@ -297,5 +301,9 @@ class NotificationPresenter @Inject constructor(
         // Tag for room-window notifications so their per-reminder ids don't
         // collide with the escalation notifications posted by escalationId.toInt().
         const val ROOM_WINDOW_TAG = "room_window"
+
+        // A regular reminder's heads-up self-dismisses a minute after it fires —
+        // there's nothing to acknowledge, so it shouldn't sit in the shade.
+        const val REGULAR_TIMEOUT_MS = 60_000L
     }
 }

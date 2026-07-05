@@ -4,6 +4,8 @@ import app.nock.android.domain.model.EscalationChain
 import app.nock.android.domain.model.Schedule
 import app.nock.android.domain.model.StageConfig
 import app.nock.android.domain.model.StageType
+import app.nock.android.domain.model.VibrationPattern
+import app.nock.android.domain.model.VibrationPulse
 import com.squareup.moshi.JsonAdapter
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.Types
@@ -107,5 +109,20 @@ object ChainJson {
             stages = env.stages.map { StageConfig(StageType.valueOf(it.type), it.offsetMs) },
             repeatIntervalMs = env.repeatIntervalMs
         )
+    }
+}
+
+// A regular reminder's vibration pattern, stored as a compact CSV of pulse names
+// (e.g. "SHORT,LONG,SHORT"). Kept as a plain column value so it rides the reminder
+// row and the Drive snapshot without a nested object.
+object VibrationPatternJson {
+    fun encode(p: VibrationPattern): String = p.pulses.joinToString(",") { it.name }
+
+    fun decode(csv: String?): VibrationPattern? {
+        if (csv.isNullOrBlank()) return null
+        val pulses = csv.split(',').mapNotNull { token ->
+            runCatching { VibrationPulse.valueOf(token.trim()) }.getOrNull()
+        }
+        return if (pulses.isEmpty()) null else VibrationPattern(pulses)
     }
 }

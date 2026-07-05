@@ -7,10 +7,12 @@ import app.nock.android.data.entity.GroupEntity
 import app.nock.android.data.entity.ReminderEntity
 import app.nock.android.data.json.ChainJson
 import app.nock.android.data.json.ScheduleJson
+import app.nock.android.data.json.VibrationPatternJson
 import app.nock.android.domain.model.EscalationChain
 import app.nock.android.domain.model.Group
 import app.nock.android.domain.model.Reminder
 import app.nock.android.domain.model.Schedule
+import app.nock.android.domain.model.VibrationPattern
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
@@ -62,7 +64,9 @@ class NockRepository @Inject constructor(
         schedule: Schedule,
         nextFireAt: Long?,
         lastCompletedAt: Long?,
-        createdAt: Long = System.currentTimeMillis()
+        createdAt: Long = System.currentTimeMillis(),
+        simpleVibration: Boolean = false,
+        vibrationPattern: VibrationPattern? = null,
     ): Long {
         val (type, json) = scheduleAsRow(schedule)
         val entity = ReminderEntity(
@@ -73,7 +77,9 @@ class NockRepository @Inject constructor(
             scheduleJson = json,
             nextFireAt = nextFireAt,
             lastCompletedAt = lastCompletedAt,
-            createdAt = createdAt
+            createdAt = createdAt,
+            simpleVibration = simpleVibration,
+            vibrationPatternCsv = vibrationPattern?.let { VibrationPatternJson.encode(it) },
         )
         val rowId = reminderDao.insert(entity)
         // @Upsert returns the new rowid on the insert path but -1 on the update

@@ -12,6 +12,7 @@ import app.nock.android.domain.model.Reminder
 import app.nock.android.domain.model.Schedule
 import app.nock.android.domain.model.StageConfig
 import app.nock.android.domain.model.StageType
+import app.nock.android.domain.model.VibrationPattern
 import app.nock.android.notif.NotificationPresenter
 import app.nock.android.telegram.TelegramResult
 import app.nock.android.telegram.TelegramSender
@@ -211,7 +212,7 @@ class EscalationEngineFuzzTest {
             // Mirrors ReminderDao.insert (REPLACE): id 0 → assign, else keep, and
             // write the row back to the in-memory store. Lets the engine's
             // saveReminderAndArm path run end-to-end in the concurrent fuzzer.
-            coEvery { repo.saveReminder(any(), any(), any(), any(), any(), any(), any()) } answers {
+            coEvery { repo.saveReminder(any(), any(), any(), any(), any(), any(), any(), any(), any()) } answers {
                 val rid = firstArg<Long>().let { if (it == 0L) nextReminderId++ else it }
                 reminders[rid] = reminder(
                     id = rid,
@@ -220,6 +221,8 @@ class EscalationEngineFuzzTest {
                     nextFireAt = arg<Long?>(4),
                     lastCompletedAt = arg<Long?>(5),
                     createdAt = arg<Long>(6),
+                    simpleVibration = arg<Boolean>(7),
+                    vibrationPattern = arg<VibrationPattern?>(8),
                 )
                 rid
             }

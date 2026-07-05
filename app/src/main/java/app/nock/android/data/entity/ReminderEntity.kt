@@ -25,5 +25,9 @@ data class ReminderEntity(
     val scheduleJson: String,
     val nextFireAt: Long?,
     val lastCompletedAt: Long?,
-    val createdAt: Long
+    val createdAt: Long,
+    // "Regular" reminder: single gentle vibration nudge, no escalation chain.
+    // vibrationPatternCsv holds the arranged short/long pulses (e.g. "SHORT,LONG").
+    val simpleVibration: Boolean = false,
+    val vibrationPatternCsv: String? = null
 )

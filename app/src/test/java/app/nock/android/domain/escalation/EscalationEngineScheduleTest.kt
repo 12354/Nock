@@ -116,7 +116,7 @@ class EscalationEngineScheduleTest {
         // existing row (an edit). Reproduce that here: trusting the return left the
         // engine keyed by -1, so it neither tore down nor re-armed the reminder and
         // the stale escalation lingered on the Today screen.
-        coEvery { h.repo.saveReminder(any(), any(), any(), any(), any(), any(), any()) } returns -1L
+        coEvery { h.repo.saveReminder(any(), any(), any(), any(), any(), any(), any(), any(), any()) } returns -1L
 
         h.engine.saveReminderAndArm(
             id = REMINDER_ID,

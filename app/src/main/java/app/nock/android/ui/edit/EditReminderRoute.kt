@@ -27,8 +27,10 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.MeetingRoom
 import androidx.compose.material.icons.filled.Place
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Timelapse
 import androidx.compose.material.icons.outlined.CalendarMonth
+import androidx.compose.material.icons.outlined.Vibration
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.rememberCoroutineScope
@@ -52,6 +54,8 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.compose.ui.text.input.KeyboardType
 import app.nock.android.R
+import app.nock.android.domain.model.VibrationPattern
+import app.nock.android.domain.model.VibrationPulse
 import app.nock.android.ui.components.NockDatePickerDialog
 import app.nock.android.ui.components.NockTimePickerDialog
 import app.nock.android.ui.components.stageIcon
@@ -225,7 +229,146 @@ fun EditReminderRoute(
                 )
             }
 
-            EscalationSummary(state)
+            VibrationReminderCard(
+                enabled = state.simpleVibration,
+                pattern = state.vibrationPattern,
+                onToggle = vm::updateSimpleVibration,
+                onAdd = vm::addVibrationPulse,
+                onRemove = vm::removeVibrationPulseAt,
+                onPreview = vm::previewVibration,
+            )
+
+            // A regular reminder has no escalation chain, so the group-chain summary
+            // is meaningless for it — hide it and let the vibration card stand alone.
+            if (!state.simpleVibration) {
+                EscalationSummary(state)
+            }
+        }
+    }
+}
+
+/**
+ * The "regular reminder" option: a single gentle vibration nudge, no escalation.
+ * A per-reminder toggle; when on, the user arranges the buzz from short and long
+ * pulses and can feel it with Test. Distinct from the group's escalation chain.
+ */
+@Composable
+private fun VibrationReminderCard(
+    enabled: Boolean,
+    pattern: List<VibrationPulse>,
+    onToggle: (Boolean) -> Unit,
+    onAdd: (VibrationPulse) -> Unit,
+    onRemove: (Int) -> Unit,
+    onPreview: () -> Unit,
+) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        shape = RoundedCornerShape(16.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Outlined.Vibration,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                Spacer(Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        stringResource(R.string.edit_regular_vibration_title),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Medium,
+                    )
+                    Text(
+                        stringResource(R.string.edit_regular_vibration_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(checked = enabled, onCheckedChange = onToggle)
+            }
+
+            AnimatedVisibility(visible = enabled) {
+                Column {
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        stringResource(R.string.edit_regular_vibration_pattern_label)
+                            .uppercase(Locale.getDefault()),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(start = 2.dp, bottom = 8.dp)
+                    )
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        pattern.forEachIndexed { idx, pulse ->
+                            PulseChip(pulse = pulse, onRemove = { onRemove(idx) })
+                        }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        AssistChip(
+                            onClick = { onAdd(VibrationPulse.SHORT) },
+                            label = { Text(stringResource(R.string.edit_regular_vibration_add_short)) },
+                            leadingIcon = { Icon(Icons.Filled.Add, contentDescription = null) }
+                        )
+                        AssistChip(
+                            onClick = { onAdd(VibrationPulse.LONG) },
+                            label = { Text(stringResource(R.string.edit_regular_vibration_add_long)) },
+                            leadingIcon = { Icon(Icons.Filled.Add, contentDescription = null) }
+                        )
+                        AssistChip(
+                            onClick = onPreview,
+                            label = { Text(stringResource(R.string.edit_regular_vibration_test)) },
+                            leadingIcon = { Icon(Icons.Filled.PlayArrow, contentDescription = null) }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** A single pulse in the pattern editor: a short dot or a long bar, tap-to-remove. */
+@Composable
+private fun PulseChip(pulse: VibrationPulse, onRemove: () -> Unit) {
+    val accent = MaterialTheme.colorScheme.primary
+    val isLong = pulse == VibrationPulse.LONG
+    Surface(
+        onClick = onRemove,
+        shape = RoundedCornerShape(8.dp),
+        color = accent.copy(alpha = 0.18f),
+        contentColor = accent,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .height(8.dp)
+                    .width(if (isLong) 28.dp else 8.dp)
+                    .clip(if (isLong) RoundedCornerShape(4.dp) else CircleShape)
+                    .background(accent)
+            )
+            Text(
+                stringResource(
+                    if (isLong) R.string.edit_regular_vibration_long
+                    else R.string.edit_regular_vibration_short
+                ),
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Medium,
+            )
+            Icon(
+                Icons.Filled.Close,
+                contentDescription = stringResource(R.string.remove),
+                modifier = Modifier.size(14.dp)
+            )
         }
     }
 }

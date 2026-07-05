@@ -16,6 +16,7 @@ import app.nock.android.domain.model.Reminder
 import app.nock.android.domain.model.Schedule
 import app.nock.android.domain.model.StageConfig
 import app.nock.android.domain.model.StageType
+import app.nock.android.domain.model.VibrationPattern
 import app.nock.android.domain.time.TimeSource
 import app.nock.android.domain.trip.TripChain
 import app.nock.android.history.AlarmHistoryLogger
@@ -87,6 +88,18 @@ class EscalationEngine @Inject constructor(
      */
     private suspend fun effectiveChainFor(reminder: Reminder, group: Group): EscalationChain {
         val base = repo.effectiveChain(group)
+        // A regular reminder skips the group's escalation entirely: its "chain" is a
+        // single VIBRATE stage fired at the scheduled time (offset 0), after which
+        // onAlarmFired plays the custom pattern once and auto-completes. This wins
+        // over the trip special-case below — a regular reminder never escalates,
+        // whatever group it lives in. The repeat interval is carried but unused (the
+        // stage never repeats), so keep the group's for a valid chain.
+        if (reminder.simpleVibration) {
+            return EscalationChain(
+                stages = listOf(StageConfig(StageType.VIBRATE, 0L)),
+                repeatIntervalMs = base.repeatIntervalMs,
+            )
+        }
         if (group.seedKey == TRIPS_SEED_KEY) {
             calendarTripDao.getByReminderId(reminder.id)?.let { trip ->
                 return TripChain.build(trip.bufferMs, base.repeatIntervalMs)
@@ -349,6 +362,20 @@ class EscalationEngine @Inject constructor(
         val idx = max(storedIdx, dueIdx).coerceAtMost(chain.lastIndex)
         val stage = chain.stage(idx)
 
+        // Regular reminder: a single gentle vibration nudge, no escalation. Play the
+        // configured pattern once, post a dismissable heads-up, then auto-complete —
+        // no Done, no repeat, no next stage. Recurring schedules roll forward exactly
+        // as they do on Done; one-time ones retire. Its chain is a single stage, so
+        // it can never reach the loud stages or the last-stage repeat above.
+        if (reminder.simpleVibration) {
+            val pattern = reminder.vibrationPattern ?: VibrationPattern.DEFAULT
+            notifier.showRegular(reminder, group, escalationId, pattern)
+            history.fired(reminder.name, stage.type, esc.startedAtMs, now)
+            activeDao.delete(esc)
+            advanceAfterCompletionLocked(reminder, now)
+            return null
+        }
+
         // Local, fast notification work happens under the lock; the (slow,
         // killable) Telegram send is deferred to the caller via the returned
         // PendingTelegramSend so it runs outside the lock.
@@ -431,29 +458,37 @@ class EscalationEngine @Inject constructor(
         activeDao.delete(esc)
         if (reminder != null) {
             history.done(reminder.name)
-            // One-time schedules have no future occurrence once dismissed, so
-            // drop the row entirely instead of leaving a "spent" reminder in
-            // the list. See Schedule.isOneTime.
-            if (reminder.schedule.isOneTime) {
-                repo.deleteReminder(reminder)
-            } else {
-                val now = time.nowMs()
-                // Advance past the occurrence just completed. When Done is pressed
-                // during the pre-trigger window — e.g. the SILENT stage fires 10 min
-                // before the due time and the user acknowledges at 07:39 for a 07:40
-                // reminder — `now` is still earlier than this occurrence's trigger, so
-                // nextFireFrom(now) would return the SAME occurrence and re-arm the
-                // chain we're dismissing. Its pre-trigger stage is already in the past,
-                // so the re-armed chain jumps straight to Telegram/alarm and rings
-                // anyway (the bug this guards against). Anchor the search at the
-                // occurrence's own scheduled time so we always move to the next one.
-                val searchFrom = max(now, reminder.nextFireAt ?: now)
-                val next = reminder.schedule.nextFireFrom(searchFrom, now)
-                repo.updateFireState(reminder.id, next, now)
-                if (next != null) {
-                    startEscalationAtLocked(reminder.copy(lastCompletedAt = now, nextFireAt = next), next)
-                }
-            }
+            advanceAfterCompletionLocked(reminder, time.nowMs())
+        }
+    }
+
+    /**
+     * Advance a just-completed reminder to its next occurrence, under the engine
+     * lock. One-time schedules have no future occurrence once done, so the row is
+     * dropped instead of left as a "spent" reminder (see [Schedule.isOneTime]); a
+     * recurring one is rolled forward and re-armed.
+     *
+     * The search is anchored at the occurrence's own scheduled time, never just
+     * [now]: when completion lands during the pre-trigger window — e.g. a SILENT
+     * stage fires 10 min before the due time and the user acknowledges at 07:39 for
+     * a 07:40 reminder — nextFireFrom(now) would return the SAME occurrence and
+     * re-arm the chain being dismissed (whose pre-trigger stage is already in the
+     * past, so it jumps straight to the loud stage). Anchoring at the scheduled time
+     * always moves to the next occurrence.
+     *
+     * Shared by Done, the Today-screen complete, and the regular-reminder
+     * auto-complete so all three retire/advance identically.
+     */
+    private suspend fun advanceAfterCompletionLocked(reminder: Reminder, now: Long) {
+        if (reminder.schedule.isOneTime) {
+            repo.deleteReminder(reminder)
+            return
+        }
+        val searchFrom = max(now, reminder.nextFireAt ?: now)
+        val next = reminder.schedule.nextFireFrom(searchFrom, now)
+        repo.updateFireState(reminder.id, next, now)
+        if (next != null) {
+            startEscalationAtLocked(reminder.copy(lastCompletedAt = now, nextFireAt = next), next)
         }
     }
 
@@ -796,9 +831,14 @@ class EscalationEngine @Inject constructor(
         nextFireAt: Long?,
         lastCompletedAt: Long?,
         createdAt: Long,
+        simpleVibration: Boolean = false,
+        vibrationPattern: VibrationPattern? = null,
     ): Long {
         val savedId = mutex.withLock {
-            val rowId = repo.saveReminder(id, groupId, name, schedule, nextFireAt, lastCompletedAt, createdAt)
+            val rowId = repo.saveReminder(
+                id, groupId, name, schedule, nextFireAt, lastCompletedAt, createdAt,
+                simpleVibration, vibrationPattern,
+            )
             // For an edit the id is already known: @Upsert returns the new rowid only
             // on the insert path and -1 when it updates an existing row, so never trust
             // the return for a known id. Trusting it left edits keyed by -1 — the old
@@ -835,20 +875,7 @@ class EscalationEngine @Inject constructor(
             }
             val reminder = repo.getReminder(reminderId) ?: return@withLock
             history.done(reminder.name)
-            if (reminder.schedule.isOneTime) {
-                repo.deleteReminder(reminder)
-                return@withLock
-            }
-            val now = time.nowMs()
-            // Skip the occurrence just completed (mirrors done()): anchor the search
-            // at the occurrence's own scheduled time so we advance to the next one
-            // instead of re-arming this one when Done lands before the due time.
-            val searchFrom = max(now, reminder.nextFireAt ?: now)
-            val next = reminder.schedule.nextFireFrom(searchFrom, now)
-            repo.updateFireState(reminderId, next, now)
-            if (next != null) {
-                startEscalationAtLocked(reminder.copy(lastCompletedAt = now, nextFireAt = next), next)
-            }
+            advanceAfterCompletionLocked(reminder, time.nowMs())
         }
         flushPendingTelegramDeletions()
     }
@@ -876,6 +903,8 @@ class EscalationEngine @Inject constructor(
             nextFireAt = reminder.nextFireAt,
             lastCompletedAt = reminder.lastCompletedAt,
             createdAt = reminder.createdAt,
+            simpleVibration = reminder.simpleVibration,
+            vibrationPattern = reminder.vibrationPattern,
         )
     }
 

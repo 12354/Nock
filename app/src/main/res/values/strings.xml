@@ -24,6 +24,8 @@
     <string name="channel_silent_desc">Quiet heads-up notifications, no sound.</string>
     <string name="channel_vibrate_name">Vibrating reminders</string>
     <string name="channel_vibrate_desc">Silent heads-up notifications that vibrate, no sound.</string>
+    <string name="channel_regular_name">Regular reminders</string>
+    <string name="channel_regular_desc">A single gentle vibration nudge, no sound and no escalation.</string>
     <string name="channel_prealarm_name">Pre-alarm sound</string>
     <string name="channel_prealarm_desc">Audible heads-up notification before the alarm rings.</string>
     <string name="channel_alarm_name">Loud alarms</string>
@@ -123,6 +125,16 @@
     <string name="edit_interval_start_label">Set start date and time</string>
     <string name="edit_escalation_section">Escalation</string>
     <string name="edit_using_group_chain">Using %1$s group chain</string>
+
+    <!-- Regular (single-vibration) reminder option -->
+    <string name="edit_regular_vibration_title">Regular reminder</string>
+    <string name="edit_regular_vibration_desc">Just one gentle vibration — no escalation or alarm. Good for self-care nudges.</string>
+    <string name="edit_regular_vibration_pattern_label">Vibration pattern</string>
+    <string name="edit_regular_vibration_add_short">Short</string>
+    <string name="edit_regular_vibration_add_long">Long</string>
+    <string name="edit_regular_vibration_test">Test</string>
+    <string name="edit_regular_vibration_short">Short</string>
+    <string name="edit_regular_vibration_long">Long</string>
 
     <!-- Settings: escalation chain -->
     <string name="settings_escalation_chain_title">Escalation chain (global default)</string>

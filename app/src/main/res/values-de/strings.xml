@@ -24,6 +24,8 @@
     <string name="channel_silent_desc">Leise Hinweise ohne Ton.</string>
     <string name="channel_vibrate_name">Vibrierende Erinnerungen</string>
     <string name="channel_vibrate_desc">Lautlose Hinweise, die vibrieren, ohne Ton.</string>
+    <string name="channel_regular_name">Einfache Erinnerungen</string>
+    <string name="channel_regular_desc">Ein einzelnes sanftes Vibrieren, ohne Ton und ohne Eskalation.</string>
     <string name="channel_prealarm_name">Ton vor dem Alarm</string>
     <string name="channel_prealarm_desc">Hörbarer Hinweis, bevor der Alarm klingelt.</string>
     <string name="channel_alarm_name">Laute Alarme</string>
@@ -123,6 +125,16 @@
     <string name="edit_hours_label">Stunden</string>
     <string name="edit_escalation_section">Eskalation</string>
     <string name="edit_using_group_chain">Kette der Gruppe %1$s wird verwendet</string>
+
+    <!-- Einfache Erinnerung (einzelnes Vibrieren) -->
+    <string name="edit_regular_vibration_title">Einfache Erinnerung</string>
+    <string name="edit_regular_vibration_desc">Nur ein sanftes Vibrieren — keine Eskalation, kein Alarm. Gut für Selbstfürsorge-Erinnerungen.</string>
+    <string name="edit_regular_vibration_pattern_label">Vibrationsmuster</string>
+    <string name="edit_regular_vibration_add_short">Kurz</string>
+    <string name="edit_regular_vibration_add_long">Lang</string>
+    <string name="edit_regular_vibration_test">Test</string>
+    <string name="edit_regular_vibration_short">Kurz</string>
+    <string name="edit_regular_vibration_long">Lang</string>
 
     <!-- Settings: escalation chain -->
     <string name="settings_escalation_chain_title">Eskalationskette (globaler Standard)</string>

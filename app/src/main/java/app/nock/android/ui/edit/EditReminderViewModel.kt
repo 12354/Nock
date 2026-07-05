@@ -11,7 +11,10 @@ import app.nock.android.data.entity.WifiRoomEntity
 import app.nock.android.domain.escalation.EscalationEngine
 import app.nock.android.domain.model.Group
 import app.nock.android.domain.model.Schedule
+import app.nock.android.domain.model.VibrationPattern
+import app.nock.android.domain.model.VibrationPulse
 import app.nock.android.history.AlarmHistoryLogger
+import app.nock.android.notif.VibrationPlayer
 import app.nock.android.trip.TripSyncManager
 import app.nock.android.wifi.RoomCheckManager
 import app.nock.android.voice.DeepSeekParseResult
@@ -61,6 +64,11 @@ data class EditState(
     // Dwell guard (minutes): fire only after the user has been in the room this
     // long, so passing through doesn't ring. 0 fires on first detection.
     val roomGraceMin: Int = EditReminderViewModel.DEFAULT_ROOM_GRACE_MIN,
+    // Regular reminder: a single gentle vibration nudge with no escalation. When on,
+    // the reminder fires [vibrationPattern] once and needs no acknowledgement — a
+    // per-reminder option orthogonal to the schedule and the group's chain.
+    val simpleVibration: Boolean = false,
+    val vibrationPattern: List<VibrationPulse> = listOf(VibrationPulse.SHORT),
 )
 
 enum class ScheduleKind { ONESHOT, DAILY, WEEKLY, MONTHLY, INTERVAL, ON_UNLOCK, ROOM }
@@ -75,6 +83,7 @@ class EditReminderViewModel @Inject constructor(
     private val tripSync: TripSyncManager,
     private val wifiRoomDao: WifiRoomDao,
     private val roomChecks: RoomCheckManager,
+    private val vibrationPlayer: VibrationPlayer,
     savedState: SavedStateHandle
 ) : ViewModel() {
 
@@ -154,7 +163,9 @@ class EditReminderViewModel @Inject constructor(
                     roomFallbackMin = (r.schedule as? Schedule.RoomAfter)
                         ?.let { s -> (s.fallbackMs / 60_000L).toInt() } ?: it.roomFallbackMin,
                     roomGraceMin = (r.schedule as? Schedule.RoomAfter)
-                        ?.let { s -> (s.graceMs / 60_000L).toInt() } ?: it.roomGraceMin
+                        ?.let { s -> (s.graceMs / 60_000L).toInt() } ?: it.roomGraceMin,
+                    simpleVibration = r.simpleVibration,
+                    vibrationPattern = r.vibrationPattern?.pulses ?: it.vibrationPattern,
                 )
             }
         }
@@ -180,6 +191,27 @@ class EditReminderViewModel @Inject constructor(
         _state.update { it.copy(roomFallbackMin = min.coerceIn(MIN_ROOM_FALLBACK_MIN, MAX_ROOM_FALLBACK_MIN)) }
     fun updateRoomGrace(min: Int) =
         _state.update { it.copy(roomGraceMin = min.coerceIn(MIN_ROOM_GRACE_MIN, MAX_ROOM_GRACE_MIN)) }
+
+    fun updateSimpleVibration(enabled: Boolean) = _state.update { it.copy(simpleVibration = enabled) }
+
+    /** Append a short or long pulse to the pattern, up to the pattern size cap. */
+    fun addVibrationPulse(pulse: VibrationPulse) = _state.update {
+        if (it.vibrationPattern.size >= VibrationPattern.MAX_PULSES) it
+        else it.copy(vibrationPattern = it.vibrationPattern + pulse)
+    }
+
+    /** Remove one pulse, keeping at least one so the pattern is never empty. */
+    fun removeVibrationPulseAt(index: Int) = _state.update {
+        if (it.vibrationPattern.size <= 1 || index !in it.vibrationPattern.indices) it
+        else it.copy(vibrationPattern = it.vibrationPattern.toMutableList().also { p -> p.removeAt(index) })
+    }
+
+    /** Buzz the current pattern so the user can feel it before saving. */
+    fun previewVibration() {
+        val pattern = _state.value.vibrationPattern.takeIf { it.isNotEmpty() }?.let { VibrationPattern(it) }
+            ?: VibrationPattern.DEFAULT
+        vibrationPlayer.play(pattern)
+    }
 
     fun updateNl(input: String) {
         _state.update {
@@ -311,6 +343,11 @@ class EditReminderViewModel @Inject constructor(
         // the engine lock (as before) let a concurrent alarm fire observe the new
         // trigger against the old escalation row, or slip between the cancel and the
         // re-arm. saveReminderAndArm closes that window.
+        // Persist the arranged pattern only for a regular reminder; an escalating
+        // one keeps a null pattern so toggling the mode is lossless on the row.
+        val pattern = if (s.simpleVibration) {
+            s.vibrationPattern.takeIf { it.isNotEmpty() }?.let { VibrationPattern(it) } ?: VibrationPattern.DEFAULT
+        } else null
         engine.saveReminderAndArm(
             id = s.reminderId,
             groupId = s.groupId,
@@ -319,6 +356,8 @@ class EditReminderViewModel @Inject constructor(
             nextFireAt = nextFire,
             lastCompletedAt = existing?.lastCompletedAt,
             createdAt = existing?.createdAt ?: now,
+            simpleVibration = s.simpleVibration,
+            vibrationPattern = pattern,
         )
         // A saved/edited RoomAfter reminder changes when the next room check is
         // due (and the first ever one starts the self-re-arming check chain).

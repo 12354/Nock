@@ -19,6 +19,12 @@ object Channels {
     const val ALARM = "nock_alarm_v2"
     const val SERVICE = "nock_service"
 
+    // Regular reminders (single gentle vibration, no escalation). The buzz is a
+    // per-reminder custom pattern played directly on the vibrator, so this channel
+    // itself carries no sound and no channel-level vibration — it only governs how
+    // the accompanying heads-up note is shown.
+    const val REGULAR = "nock_regular_v1"
+
     // The quiet, ever-present "you're in this reminder's window — mark it done"
     // notification for room reminders. Low importance and silent so it sits in
     // the shade without alerting; it's a manual completion path, not an alarm.
@@ -65,6 +71,21 @@ class NockNotificationChannels @Inject constructor(
                 description = ctx.getString(R.string.channel_vibrate_desc)
                 setSound(null, null)
                 enableVibration(true)
+                lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
+            }
+        )
+
+        nm.createNotificationChannel(
+            NotificationChannel(
+                Channels.REGULAR,
+                ctx.getString(R.string.channel_regular_name),
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = ctx.getString(R.string.channel_regular_desc)
+                setSound(null, null)
+                // We drive the custom short/long pattern ourselves via
+                // VibrationPlayer, so the channel adds no vibration of its own.
+                enableVibration(false)
                 lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
             }
         )

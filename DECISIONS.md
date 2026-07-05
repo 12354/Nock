@@ -190,6 +190,33 @@ would be a premature abstraction.
   enforces uniqueness).
 - Configurable acknowledgment difficulty (puzzles / QR codes etc.).
 
+## Regular (single-vibration) reminders
+
+A per-reminder option — **not** a group option — for a gentle self-care nudge
+that just buzzes once and runs no escalation chain. Turned on with a switch in
+the reminder editor, orthogonal to the schedule and to the group's chain.
+
+- **Storage.** Two new columns on `reminders`: `simpleVibration` (bool) and
+  `vibrationPatternCsv` (nullable, e.g. `"SHORT,LONG,SHORT"`). Room
+  `MIGRATION_7_8` adds them; the pattern rides the Drive snapshot too
+  (`ReminderSnap`, defaulted so pre-feature snapshots still decode).
+- **Configurable pattern.** The user arranges the buzz from short/long pulses
+  (`VibrationPattern` / `VibrationPulse`). `toWaveform()` renders it to a
+  `VibrationEffect.createWaveform(..., -1)` one-shot (SHORT 180 ms, LONG 600 ms,
+  220 ms gaps). Default is a single short tap; cap is 12 pulses. A "Test" button
+  in the editor plays it live via `VibrationPlayer`.
+- **Firing.** `EscalationEngine.effectiveChainFor` returns a single
+  `VIBRATE @ 0` chain for a regular reminder (this wins over the trips
+  per-reminder buffer). When that stage fires, `onAlarmFired` plays the pattern,
+  posts an ordinary dismissable heads-up (channel `nock_regular_v1`, no
+  Done/Snooze), and **auto-completes** — recurring schedules roll forward and
+  one-time ones retire, via the extracted `advanceAfterCompletionLocked` shared
+  with Done. So there's no acknowledgement, no repeat, and it never reaches the
+  loud stages. All the pre-fire safety (pause, drift, clock-rewind) still applies.
+- This is a narrower, gentler cousin of the per-reminder escalation override
+  that plan.md §11 still defers — it replaces the chain outright rather than
+  tuning it.
+
 ## Off-plan polish that snuck in
 
 - Snooze button on the silent-stage notification: technically the silent

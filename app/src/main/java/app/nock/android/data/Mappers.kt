@@ -4,6 +4,7 @@ import app.nock.android.data.entity.GroupEntity
 import app.nock.android.data.entity.ReminderEntity
 import app.nock.android.data.json.ChainJson
 import app.nock.android.data.json.ScheduleJson
+import app.nock.android.data.json.VibrationPatternJson
 import app.nock.android.domain.model.Group
 import app.nock.android.domain.model.Reminder
 
@@ -30,6 +31,8 @@ fun ReminderEntity.toDomain(): Reminder? {
         schedule = schedule,
         nextFireAt = nextFireAt,
         lastCompletedAt = lastCompletedAt,
-        createdAt = createdAt
+        createdAt = createdAt,
+        simpleVibration = simpleVibration,
+        vibrationPattern = VibrationPatternJson.decode(vibrationPatternCsv),
     )
 }

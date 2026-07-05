@@ -49,7 +49,11 @@ data class ReminderSnap(
     val scheduleJson: String,
     val nextFireAt: Long?,
     val lastCompletedAt: Long?,
-    val createdAt: Long
+    val createdAt: Long,
+    // Regular-reminder fields. Nullable/defaulted so snapshots written before this
+    // feature still decode (Moshi fills them with the defaults).
+    val simpleVibration: Boolean = false,
+    val vibrationPatternCsv: String? = null
 )
 
 @Singleton
@@ -87,7 +91,8 @@ class SnapshotService @Inject constructor(
         }
         val reminders = reminderDao.getAll().filter { it.groupId !in tripsGroupIds }.map {
             ReminderSnap(it.id, it.groupId, it.name, it.scheduleType, it.scheduleJson,
-                it.nextFireAt, it.lastCompletedAt, it.createdAt)
+                it.nextFireAt, it.lastCompletedAt, it.createdAt,
+                it.simpleVibration, it.vibrationPatternCsv)
         }
         val settingsMap = settingsDao.observeAll().first().associate { it.key to it.value }
         val snap = SnapshotV1(
@@ -146,7 +151,9 @@ class SnapshotService @Inject constructor(
                     scheduleJson = it.scheduleJson,
                     nextFireAt = it.nextFireAt,
                     lastCompletedAt = it.lastCompletedAt,
-                    createdAt = it.createdAt
+                    createdAt = it.createdAt,
+                    simpleVibration = it.simpleVibration,
+                    vibrationPatternCsv = it.vibrationPatternCsv,
                 )
             })
             settingsDao.upsertAll(remoteSettings.map { (k, v) -> SettingsEntity(k, v) })

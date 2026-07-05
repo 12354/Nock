@@ -34,7 +34,7 @@ import app.nock.android.data.entity.WifiRoomSampleEntity
         WifiRoomEntity::class,
         WifiRoomSampleEntity::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = true
 )
 abstract class NockDatabase : RoomDatabase() {
@@ -143,6 +143,19 @@ val MIGRATION_6_7 = object : Migration(6, 7) {
         db.execSQL(
             "CREATE INDEX IF NOT EXISTS `index_wifi_room_samples_roomId` " +
                 "ON `wifi_room_samples` (`roomId`)"
+        )
+    }
+}
+
+val MIGRATION_7_8 = object : Migration(7, 8) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // "Regular" (single-vibration, no-escalation) reminder support: a flag and
+        // the arranged short/long vibration pattern, both per reminder.
+        db.execSQL(
+            "ALTER TABLE reminders ADD COLUMN simpleVibration INTEGER NOT NULL DEFAULT 0"
+        )
+        db.execSQL(
+            "ALTER TABLE reminders ADD COLUMN vibrationPatternCsv TEXT"
         )
     }
 }

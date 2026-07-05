@@ -75,6 +75,8 @@ fun reminder(
     nextFireAt: Long? = null,
     lastCompletedAt: Long? = null,
     createdAt: Long = NOW,
+    simpleVibration: Boolean = false,
+    vibrationPattern: app.nock.android.domain.model.VibrationPattern? = null,
 ): Reminder = Reminder(
     id = id,
     groupId = groupId,
@@ -83,6 +85,8 @@ fun reminder(
     nextFireAt = nextFireAt,
     lastCompletedAt = lastCompletedAt,
     createdAt = createdAt,
+    simpleVibration = simpleVibration,
+    vibrationPattern = vibrationPattern,
 )
 
 /** Build an active-escalation row already serialized with [chain]. */

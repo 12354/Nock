@@ -18,6 +18,7 @@ import app.nock.android.alarm.NotificationActionReceiver
 import app.nock.android.data.SettingsRepository
 import app.nock.android.domain.model.Group
 import app.nock.android.domain.model.Reminder
+import app.nock.android.domain.model.VibrationPattern
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -27,6 +28,7 @@ class NotificationPresenter @Inject constructor(
     @ApplicationContext private val ctx: Context,
     private val settings: SettingsRepository,
     private val channels: NockNotificationChannels,
+    private val vibrationPlayer: VibrationPlayer,
 ) {
     private val nm: NotificationManager = ctx.getSystemService()!!
 
@@ -81,6 +83,27 @@ class NotificationPresenter @Inject constructor(
             .setDefaults(NotificationCompat.DEFAULT_VIBRATE)
             .build()
         nm.notify(escalationId.toInt(), notif)
+    }
+
+    /**
+     * A "regular" reminder: a single gentle nudge with a per-reminder short/long
+     * vibration pattern and NO escalation. Unlike every escalation stage this posts
+     * an ordinary, dismissable notification with no Done/Snooze actions — the
+     * reminder auto-completes when it fires, so there is nothing to acknowledge —
+     * and plays [pattern] once on the vibrator.
+     */
+    fun showRegular(reminder: Reminder, group: Group, escalationId: Long, pattern: VibrationPattern) {
+        val notif = NotificationCompat.Builder(ctx, Channels.REGULAR)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle(reminder.name)
+            .setContentText(group.name)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_REMINDER)
+            .setAutoCancel(true)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .build()
+        nm.notify(escalationId.toInt(), notif)
+        vibrationPlayer.play(pattern)
     }
 
     fun showAlarm(reminder: Reminder, group: Group, escalationId: Long) {

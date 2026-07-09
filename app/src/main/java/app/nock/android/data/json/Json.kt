@@ -106,9 +106,35 @@ object ChainJson {
     fun decode(json: String): EscalationChain {
         val env = adapter.fromJson(json)!!
         return EscalationChain(
-            stages = env.stages.map { StageConfig(StageType.valueOf(it.type), it.offsetMs) },
+            stages = env.stages.mapNotNull { st ->
+                parseStageType(st.type)?.let { StageConfig(it, st.offsetMs) }
+            },
             repeatIntervalMs = env.repeatIntervalMs
         )
+    }
+
+    /**
+     * Resolve a persisted stage-type token to a current [StageType], tolerating
+     * legacy names that predate the current enum. A chain persists its stages by
+     * enum name, so a token written by an older build (or restored from an old
+     * Drive snapshot) can name a constant this build no longer has. A bare
+     * `StageType.valueOf` would then throw on that one token and take the whole
+     * chain down with it — and at the group-override decode site
+     * (`Mappers`, wrapped in `runCatching`) that silently discards the user's
+     * custom chain and reverts them to the loud global default, so a group they
+     * configured to nudge gently (e.g. a notification at the due time, ALARM only
+     * minutes later) starts firing a full ALARM at the due time instead. Map the
+     * known legacy alias and skip anything still unrecognized so the rest of the
+     * chain survives.
+     *
+     * `NORMAL` was the original name of the audible heads-up stage now called
+     * `NOTIFICATION` (its `nock_normal` notification channel still lingers in
+     * [app.nock.android.notif.Channels.LEGACY_IDS]); map it so those chains keep
+     * their gentle notification stage.
+     */
+    private fun parseStageType(token: String): StageType? = when (token) {
+        "NORMAL" -> StageType.NOTIFICATION
+        else -> runCatching { StageType.valueOf(token) }.getOrNull()
     }
 }
 

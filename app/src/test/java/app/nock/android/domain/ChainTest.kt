@@ -19,6 +19,66 @@ class ChainTest {
         assertEquals(DefaultChain.CHAIN.repeatIntervalMs, parsed.repeatIntervalMs)
     }
 
+    @Test fun decodes_legacy_normal_token_as_notification() {
+        // A chain persisted by an older build named the audible heads-up stage
+        // "NORMAL"; the enum now calls it NOTIFICATION. Decoding must map the
+        // legacy token instead of throwing (which, at the group-override decode
+        // site, would silently drop the whole chain and fall back to the loud
+        // global default). This is the exact gentle "errands" chain from the
+        // field report: a notification at the due time, ALARM only 10 min later.
+        val json = """
+            {"stages":[
+              {"type":"SILENT","offsetMs":-600000},
+              {"type":"NORMAL","offsetMs":0},
+              {"type":"TELEGRAM","offsetMs":300000},
+              {"type":"ALARM","offsetMs":600000}
+            ],"repeatIntervalMs":600000}
+        """.trimIndent()
+
+        val chain = ChainJson.decode(json)
+
+        assertEquals(
+            listOf(
+                StageConfig(StageType.SILENT, -600000L),
+                StageConfig(StageType.NOTIFICATION, 0L),
+                StageConfig(StageType.TELEGRAM, 300000L),
+                StageConfig(StageType.ALARM, 600000L),
+            ),
+            chain.stages
+        )
+        // The stage due at the scheduled time is the gentle NOTIFICATION, not ALARM.
+        assertEquals(StageType.NOTIFICATION, chain.stage(chain.stageDueAt(0L, 0L)).type)
+    }
+
+    @Test fun skips_unknown_stage_token_instead_of_dropping_chain() {
+        // A single unrecognized token must not take valid stages down with it.
+        val json = """
+            {"stages":[
+              {"type":"SILENT","offsetMs":-600000},
+              {"type":"FLUX_CAPACITOR","offsetMs":-300000},
+              {"type":"ALARM","offsetMs":0}
+            ],"repeatIntervalMs":600000}
+        """.trimIndent()
+
+        val chain = ChainJson.decode(json)
+
+        assertEquals(
+            listOf(
+                StageConfig(StageType.SILENT, -600000L),
+                StageConfig(StageType.ALARM, 0L),
+            ),
+            chain.stages
+        )
+    }
+
+    @Test fun all_unknown_tokens_throw_so_callers_fall_back() {
+        // A chain with nothing decodable yields an empty stage list, which
+        // EscalationChain rejects — callers (Mappers / engine) catch this and
+        // fall back to the default chain rather than arming an empty one.
+        val json = """{"stages":[{"type":"BOGUS","offsetMs":0}],"repeatIntervalMs":600000}"""
+        assertThrows(IllegalArgumentException::class.java) { ChainJson.decode(json) }
+    }
+
     @Test fun cannot_repeat_a_stage_type() {
         assertThrows(IllegalArgumentException::class.java) {
             EscalationChain(

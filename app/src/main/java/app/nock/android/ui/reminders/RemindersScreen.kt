@@ -191,6 +191,7 @@ private fun GroupSection(
                 key(r.id) {
                     SwipeDeletableReminderRow(
                         reminder = r,
+                        tripAlarmAtMs = section.tripAlarmTimes[r.id],
                         paused = paused,
                         onClick = { onClickReminder(r.id) },
                         onDelete = { onDelete(r) },
@@ -210,6 +211,7 @@ private fun GroupSection(
 @Composable
 private fun SwipeDeletableReminderRow(
     reminder: Reminder,
+    tripAlarmAtMs: Long?,
     paused: Boolean,
     onClick: () -> Unit,
     onDelete: () -> Unit,
@@ -267,7 +269,9 @@ private fun SwipeDeletableReminderRow(
                     style = MaterialTheme.typography.bodyLarge
                 )
                 Text(
-                    describe(ctx, reminder),
+                    tripAlarmAtMs?.let {
+                        stringResource(R.string.trip_alarm_time, app.nock.android.ui.components.formatTripTime(it))
+                    } ?: describe(ctx, reminder),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodySmall
                 )

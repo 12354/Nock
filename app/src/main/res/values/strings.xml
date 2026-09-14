@@ -101,6 +101,11 @@
     <string name="edit_name_label">Name</string>
     <string name="edit_location_label">Location</string>
     <string name="edit_trip_buffer_label">Buffer before leaving</string>
+    <string name="trip_alarm_time">Warning alarm: %1$s</string>
+    <string name="trip_driving_duration">Driving time: %1$s</string>
+    <string name="trip_duration_minutes">%1$d min</string>
+    <string name="trip_duration_unknown">Not available</string>
+    <string name="trip_suggested_departure">Leave by: %1$s</string>
     <string name="edit_trip_buffer_value">%1$d min</string>
     <string name="edit_trip_buffer_help">The loud alarm starts at appointment − travel − buffer. The silent warning and vibration alarm come earlier. The departure time stays the same.</string>
     <string name="edit_group_label">Group</string>

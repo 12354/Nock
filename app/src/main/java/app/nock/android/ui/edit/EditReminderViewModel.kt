@@ -11,6 +11,7 @@ import app.nock.android.data.entity.WifiRoomEntity
 import app.nock.android.domain.escalation.EscalationEngine
 import app.nock.android.domain.model.Group
 import app.nock.android.domain.model.Schedule
+import app.nock.android.domain.trip.TripAlarmInfo
 import app.nock.android.domain.model.VibrationPattern
 import app.nock.android.domain.model.VibrationPulse
 import app.nock.android.history.AlarmHistoryLogger
@@ -52,6 +53,7 @@ data class EditState(
     // Per-reminder loud-alarm buffer in whole minutes: the alarm starts at
     // appointment − travel − buffer. Drives this trip's escalation chain alone.
     val bufferMin: Int = EditReminderViewModel.DEFAULT_TRIP_BUFFER_MIN,
+    val tripInfo: TripAlarmInfo? = null,
     val nlInput: String = "",
     val nlThinking: Boolean = false,
     val nlError: String? = null,
@@ -130,6 +132,7 @@ class EditReminderViewModel @Inject constructor(
             // null means it's an ordinary reminder with no editable location.
             val tripLocation = tripSync.tripLocation(reminderId)
             val tripBuffer = tripSync.tripBufferMin(reminderId)
+            val tripInfo = tripSync.tripAlarmInfo(reminderId)
             val kind = when (r.schedule) {
                 is Schedule.OneShot -> ScheduleKind.ONESHOT
                 is Schedule.Daily -> ScheduleKind.DAILY
@@ -156,6 +159,7 @@ class EditReminderViewModel @Inject constructor(
                     isCalendarReminder = tripLocation != null,
                     location = tripLocation.orEmpty(),
                     bufferMin = tripBuffer ?: DEFAULT_TRIP_BUFFER_MIN,
+                    tripInfo = tripInfo,
                     groups = groups,
                     roomId = (r.schedule as? Schedule.RoomAfter)?.roomId ?: it.roomId,
                     roomAfterMinutes = (r.schedule as? Schedule.RoomAfter)?.afterMinutes

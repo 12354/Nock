@@ -5,9 +5,16 @@ import androidx.room.Delete
 import androidx.room.Query
 import androidx.room.Upsert
 import app.nock.android.data.entity.CalendarTripEntity
+import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface CalendarTripDao {
+    @Query("SELECT * FROM calendar_trips")
+    fun observeAll(): Flow<List<CalendarTripEntity>>
+
+    @Query("SELECT * FROM calendar_trips WHERE reminderId = :reminderId")
+    fun observeByReminderId(reminderId: Long): Flow<CalendarTripEntity?>
+
     @Query("SELECT * FROM calendar_trips")
     suspend fun getAll(): List<CalendarTripEntity>
 

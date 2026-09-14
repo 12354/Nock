@@ -6,6 +6,8 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -28,16 +30,22 @@ import androidx.lifecycle.lifecycleScope
 import app.nock.android.R
 import app.nock.android.data.NockRepository
 import app.nock.android.data.dao.ActiveEscalationDao
+import app.nock.android.data.dao.CalendarTripDao
 import app.nock.android.data.json.ChainJson
 import app.nock.android.domain.escalation.EscalationEngine
 import app.nock.android.domain.model.EscalationChain
 import app.nock.android.domain.model.Group
+import app.nock.android.domain.trip.TripAlarmInfo
+import app.nock.android.ui.components.TripAlarmDetails
 import app.nock.android.ui.LocaleHelper
 import app.nock.android.ui.components.StageProgress
 import app.nock.android.ui.components.groupIconFor
 import app.nock.android.ui.theme.NockTheme
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import java.time.LocalDateTime
@@ -51,12 +59,15 @@ class AlarmActivity : ComponentActivity() {
     @Inject lateinit var repo: NockRepository
     @Inject lateinit var engine: EscalationEngine
     @Inject lateinit var activeDao: ActiveEscalationDao
+    @Inject lateinit var tripDao: CalendarTripDao
 
     private val nameState = MutableStateFlow("")
     private val groupState = MutableStateFlow<Group?>(null)
     private val escalationIdState = MutableStateFlow(-1L)
     private val chainState = MutableStateFlow<EscalationChain?>(null)
     private val startedAtState = MutableStateFlow(0L)
+    private val tripState = MutableStateFlow<TripAlarmInfo?>(null)
+    private var bindingJob: Job? = null
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LocaleHelper.wrap(newBase))
@@ -74,11 +85,13 @@ class AlarmActivity : ComponentActivity() {
                 val group by groupState.collectAsState()
                 val chain by chainState.collectAsState()
                 val startedAt by startedAtState.collectAsState()
+                val trip by tripState.collectAsState()
                 AlarmTakeoverScreen(
                     name = name,
                     group = group,
                     chain = chain,
                     startedAtMs = startedAt,
+                    trip = trip,
                     onDone = {
                         val id = escalationIdState.value
                         lifecycleScope.launch {
@@ -123,12 +136,15 @@ class AlarmActivity : ComponentActivity() {
     }
 
     private fun bindFromIntent(intent: Intent?) {
+        bindingJob?.cancel()
         val escalationId = intent?.getLongExtra(IntentExtras.EXTRA_ESCALATION_ID, -1L) ?: -1L
         val intentReminderId = intent?.getLongExtra(IntentExtras.EXTRA_REMINDER_ID, -1L) ?: -1L
         escalationIdState.value = escalationId
         groupState.value = null
         chainState.value = null
-        lifecycleScope.launch {
+        tripState.value = null
+        startedAtState.value = 0L
+        bindingJob = lifecycleScope.launch {
             val esc = if (escalationId >= 0L) activeDao.getById(escalationId) else null
             if (escalationId >= 0L && esc == null) {
                 finish()
@@ -149,6 +165,13 @@ class AlarmActivity : ComponentActivity() {
             if (r != null) {
                 nameState.value = r.name
                 groupState.value = repo.getGroup(r.groupId)
+                // Follow cached routing updates while this alarm is on screen.
+                combine(tripDao.observeByReminderId(r.id), repo.observeReminders()) { trip, reminders ->
+                    val leaveBy = reminders.firstOrNull { it.id == r.id }?.nextFireAt
+                    if (trip != null && trip.location.isNotBlank() && leaveBy != null) {
+                        TripAlarmInfo(leaveBy, trip.lastTravelMs, trip.bufferMs)
+                    } else null
+                }.collect { tripState.value = it }
             }
         }
     }
@@ -160,6 +183,7 @@ private fun AlarmTakeoverScreen(
     group: Group?,
     chain: EscalationChain?,
     startedAtMs: Long,
+    trip: TripAlarmInfo?,
     onDone: () -> Unit,
     onSnooze: () -> Unit
 ) {
@@ -188,87 +212,98 @@ private fun AlarmTakeoverScreen(
                 modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 32.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
+                // Keep Done and Snooze reachable even with long trip names or large text.
+                Column(
+                    modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
+                    horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    if (group != null) {
-                        GroupPill(group = group, accent = accent)
-                    } else {
-                        Spacer(Modifier.size(1.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (group != null) {
+                            GroupPill(group = group, accent = accent)
+                        } else {
+                            Spacer(Modifier.size(1.dp))
+                        }
+                        Spacer(Modifier.weight(1f))
+                        if (chain != null && stageIndex != null) {
+                            Text(
+                                text = stringResource(
+                                    R.string.alarm_stage_of, stageIndex + 1, chain.stages.size
+                                ).uppercase(),
+                                color = onSurfaceVariant,
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
                     }
-                    Spacer(Modifier.weight(1f))
-                    if (chain != null && stageIndex != null) {
+
+                    Spacer(Modifier.height(36.dp))
+                    // Big clock — alarm-clock style. Re-read periodically so the minute
+                    // actually advances while the takeover is on screen.
+                    var clock by remember { mutableStateOf(currentClock()) }
+                    val date = remember { currentDate() }
+                    LaunchedEffect(Unit) {
+                        while (true) {
+                            delay(10_000L)
+                            clock = currentClock()
+                        }
+                    }
+                    Text(
+                        text = clock,
+                        fontSize = 84.sp,
+                        fontFamily = FontFamily.Serif,
+                        fontWeight = FontWeight.Light,
+                        color = onSurface,
+                        letterSpacing = (-2).sp
+                    )
+                    Text(
+                        text = date,
+                        color = onSurfaceVariant,
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+
+                    Spacer(Modifier.height(48.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Filled.Alarm, contentDescription = null, tint = accent)
+                        Spacer(Modifier.width(8.dp))
                         Text(
-                            text = stringResource(
-                                R.string.alarm_stage_of, stageIndex + 1, chain.stages.size
-                            ).uppercase(),
-                            color = onSurfaceVariant,
+                            text = stringResource(R.string.alarm_loud_alarm).uppercase(),
+                            color = accent,
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Medium
                         )
                     }
-                }
-
-                Spacer(Modifier.height(36.dp))
-                // Big clock — alarm-clock style. Re-read periodically so the minute
-                // actually advances while the takeover is on screen.
-                var clock by remember { mutableStateOf(currentClock()) }
-                val date = remember { currentDate() }
-                LaunchedEffect(Unit) {
-                    while (true) {
-                        delay(10_000L)
-                        clock = currentClock()
+                    Spacer(Modifier.height(14.dp))
+                    Text(
+                        text = name,
+                        fontSize = 36.sp,
+                        fontWeight = FontWeight.Normal,
+                        color = onSurface,
+                        textAlign = TextAlign.Center,
+                        lineHeight = 42.sp
+                    )
+                    if (repeatMin != null) {
+                        Spacer(Modifier.height(12.dp))
+                        Text(
+                            text = stringResource(R.string.alarm_subtitle_repeats, repeatMin),
+                            color = onSurfaceVariant,
+                            style = MaterialTheme.typography.bodyMedium,
+                            textAlign = TextAlign.Center
+                        )
                     }
-                }
-                Text(
-                    text = clock,
-                    fontSize = 84.sp,
-                    fontFamily = FontFamily.Serif,
-                    fontWeight = FontWeight.Light,
-                    color = onSurface,
-                    letterSpacing = (-2).sp
-                )
-                Text(
-                    text = date,
-                    color = onSurfaceVariant,
-                    style = MaterialTheme.typography.bodyLarge
-                )
 
-                Spacer(Modifier.height(48.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.Alarm, contentDescription = null, tint = accent)
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = stringResource(R.string.alarm_loud_alarm).uppercase(),
-                        color = accent,
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-                Spacer(Modifier.height(14.dp))
-                Text(
-                    text = name,
-                    fontSize = 36.sp,
-                    fontWeight = FontWeight.Normal,
-                    color = onSurface,
-                    textAlign = TextAlign.Center,
-                    lineHeight = 42.sp
-                )
-                if (repeatMin != null) {
-                    Spacer(Modifier.height(12.dp))
-                    Text(
-                        text = stringResource(R.string.alarm_subtitle_repeats, repeatMin),
-                        color = onSurfaceVariant,
-                        style = MaterialTheme.typography.bodyMedium,
-                        textAlign = TextAlign.Center
-                    )
-                }
+                    if (trip != null) {
+                        Spacer(Modifier.height(20.dp))
+                        TripAlarmDetails(trip)
+                    }
 
-                Spacer(Modifier.weight(1f))
+                    Spacer(Modifier.height(24.dp))
 
-                if (chain != null && stageIndex != null) {
-                    StageProgress(chain = chain, currentIndex = stageIndex, accent = accent)
+                    if (chain != null && stageIndex != null) {
+                        StageProgress(chain = chain, currentIndex = stageIndex, accent = accent)
+                    }
                 }
 
                 Spacer(Modifier.height(32.dp))

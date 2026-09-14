@@ -210,8 +210,8 @@ fun TodayScreen(
                     item("row-${item.reminder.id}") {
                         SwipeDeletableReminderRow(
                             item = item,
-                            timeLabel = formatRowTime(ctx, item.reminder.nextFireAt),
-                            relativeLabel = relativeLabel(ctx, item.reminder.nextFireAt),
+                            timeLabel = formatRowTime(ctx, item.displayTimeMs),
+                            relativeLabel = relativeLabel(ctx, item.displayTimeMs),
                             onClick = { onEditReminder(item.reminder.id) },
                             onDelete = { onDeleteReminder(item.reminder) },
                         )
@@ -554,6 +554,10 @@ private fun ActiveEscalationCard(
             }
             Spacer(Modifier.height(16.dp))
             StageProgress(chain = active.chain, currentIndex = active.nextStageIndex, accent = color)
+            item.trip?.let { trip ->
+                Spacer(Modifier.height(12.dp))
+                app.nock.android.ui.components.TripAlarmDetails(trip)
+            }
             Spacer(Modifier.height(14.dp))
             val ctx = LocalContext.current
             // nextStageIndex is the stage that fires next at nextFireAtMs, so it
@@ -615,10 +619,10 @@ private fun groupByBucket(items: List<TodayItem>): List<TodaySection> {
     val laterDays = mutableListOf<TodayItem>()
 
     items
-        .filter { !it.isActive && it.reminder.nextFireAt != null && it.reminder.nextFireAt <= horizonCutoff }
-        .sortedBy { it.reminder.nextFireAt }
+        .filter { !it.isActive && (it.displayTimeMs?.let { time -> time <= horizonCutoff } == true) }
+        .sortedBy { it.displayTimeMs }
         .forEach { item ->
-            val ms = item.reminder.nextFireAt ?: return@forEach
+            val ms = item.displayTimeMs ?: return@forEach
             val date = LocalDateTime.ofInstant(Instant.ofEpochMilli(ms), ZoneId.systemDefault()).toLocalDate()
             when {
                 date == today && ms <= nextHourCutoff -> nextHour += item

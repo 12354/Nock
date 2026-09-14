@@ -101,6 +101,11 @@
     <string name="edit_name_label">Name</string>
     <string name="edit_location_label">Ort</string>
     <string name="edit_trip_buffer_label">Vorlauf vor der Abfahrt</string>
+    <string name="trip_alarm_time">Vorwarnung: %1$s</string>
+    <string name="trip_driving_duration">Fahrzeit: %1$s</string>
+    <string name="trip_duration_minutes">%1$d Min.</string>
+    <string name="trip_duration_unknown">Nicht verfügbar</string>
+    <string name="trip_suggested_departure">Losfahren bis: %1$s</string>
     <string name="edit_trip_buffer_value">%1$d Min.</string>
     <string name="edit_trip_buffer_help">Der laute Alarm startet bei Termin − Fahrzeit − Vorlauf. Leiser Hinweis und Vibrationsalarm kommen davor. Die Abfahrtszeit bleibt unverändert.</string>
     <string name="edit_group_label">Gruppe</string>

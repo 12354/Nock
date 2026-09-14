@@ -17,6 +17,7 @@ import app.nock.android.domain.time.TimeSource
 import app.nock.android.domain.trip.TripChain
 import app.nock.android.domain.trip.TripDefaults
 import app.nock.android.domain.trip.TripMath
+import app.nock.android.domain.trip.TripAlarmInfo
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -449,6 +450,14 @@ class TripSyncManager @Inject constructor(
      */
     suspend fun tripBufferMin(reminderId: Long): Int? =
         tripDao.getByReminderId(reminderId)?.let { (it.bufferMs / 60_000L).toInt() }
+
+    /** Cached trip context for the editor; opening it must not trigger routing. */
+    suspend fun tripAlarmInfo(reminderId: Long): TripAlarmInfo? {
+        val trip = tripDao.getByReminderId(reminderId) ?: return null
+        if (trip.location.isBlank()) return null
+        val leaveBy = repo.getReminder(reminderId)?.nextFireAt ?: return null
+        return TripAlarmInfo(leaveBy, trip.lastTravelMs, trip.bufferMs)
+    }
 
     /**
      * Persist a user-edited per-reminder [bufferMin] for the trip behind

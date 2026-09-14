@@ -181,6 +181,12 @@ fun EditReminderRoute(
                         .padding(horizontal = 16.dp)
                 )
                 TripBufferField(state.bufferMin, vm::updateBufferMin)
+                state.tripInfo?.let { trip ->
+                    app.nock.android.ui.components.TripAlarmDetails(
+                        trip = trip.copy(leaveByMs = state.oneShotMs, bufferMs = state.bufferMin * 60_000L),
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                    )
+                }
             }
 
             GroupSelector(

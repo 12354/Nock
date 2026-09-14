@@ -6,12 +6,14 @@ import app.nock.android.data.NockRepository
 import app.nock.android.data.SeedData
 import app.nock.android.data.SettingsRepository
 import app.nock.android.data.dao.ActiveEscalationDao
+import app.nock.android.data.dao.CalendarTripDao
 import app.nock.android.data.dao.GroupDao
 import app.nock.android.data.json.ChainJson
 import app.nock.android.domain.escalation.EscalationEngine
 import app.nock.android.domain.model.EscalationChain
 import app.nock.android.domain.model.Group
 import app.nock.android.domain.model.Reminder
+import app.nock.android.domain.trip.TripAlarmInfo
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -35,11 +37,9 @@ data class ActiveEscalationInfo(
     val nextStageIndex: Int,
     val nextFireAtMs: Long,
     /**
-     * True once the chain has actually begun escalating, i.e. the reminder's
-     * trigger time has been reached. While the trigger is still in the future
-     * the row exists but only the pre-trigger stage is queued — the reminder is
-     * merely *armed*, nothing has fired, and it should render as an upcoming
-     * item rather than the live "firing now" card.
+     * True once the main alarm time is reached (departure minus buffer for
+     * trips). Earlier quiet stages can already have fired while the reminder
+     * still appears in the upcoming list.
      */
     val hasStarted: Boolean,
 )
@@ -48,7 +48,10 @@ data class TodayItem(
     val reminder: Reminder,
     val group: Group,
     val active: ActiveEscalationInfo?,
+    val trip: TripAlarmInfo? = null,
 ) {
+    val displayTimeMs: Long? get() = trip?.alarmAtMs ?: reminder.nextFireAt
+
     /** Currently escalating *and* the chain has actually started firing. */
     val isActive: Boolean get() = active != null && active.hasStarted
 }
@@ -61,6 +64,7 @@ class TodayViewModel @Inject constructor(
     private val activeDao: ActiveEscalationDao,
     private val settings: SettingsRepository,
     private val seed: SeedData,
+    private val tripDao: CalendarTripDao,
 ) : ViewModel() {
 
     init {
@@ -87,13 +91,18 @@ class TodayViewModel @Inject constructor(
         repo.observeReminders(),
         repo.observeGroups(),
         activeDao.observeAll(),
+        tripDao.observeAll(),
         ticker
-    ) { reminders, groups, active, _ ->
+    ) { reminders, groups, active, trips, _ ->
         val now = System.currentTimeMillis()
         val byId = groups.associateBy { it.id }
         val activeByReminder = active.associateBy { it.reminderId }
+        val tripsByReminder = trips.associateBy { it.reminderId }
         reminders.mapNotNull { r ->
             val g = byId[r.groupId] ?: return@mapNotNull null
+            val trip = tripsByReminder[r.id]?.let { t ->
+                r.nextFireAt?.let { TripAlarmInfo(it, t.lastTravelMs, t.bufferMs) }
+            }
             val a = activeByReminder[r.id]?.let { ent ->
                 val chain = runCatching { ChainJson.decode(ent.chainSnapshotJson) }.getOrNull()
                 if (chain != null) ActiveEscalationInfo(
@@ -101,10 +110,10 @@ class TodayViewModel @Inject constructor(
                     chain = chain,
                     nextStageIndex = ent.nextStageIndex.coerceIn(0, chain.lastIndex),
                     nextFireAtMs = ent.nextFireAtMs,
-                    hasStarted = now >= ent.startedAtMs,
+                    hasStarted = now >= (trip?.alarmAtMs ?: ent.startedAtMs),
                 ) else null
             }
-            TodayItem(r, g, a)
+            TodayItem(r, g, a, trip)
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 

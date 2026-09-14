@@ -5,10 +5,12 @@ import androidx.lifecycle.viewModelScope
 import app.nock.android.data.NockRepository
 import app.nock.android.data.SettingsRepository
 import app.nock.android.data.dao.GroupDao
+import app.nock.android.data.dao.CalendarTripDao
 import app.nock.android.data.entity.PendingVoiceReminderEntity
 import app.nock.android.domain.escalation.EscalationEngine
 import app.nock.android.domain.model.Group
 import app.nock.android.domain.model.Reminder
+import app.nock.android.domain.trip.TripAlarmInfo
 import app.nock.android.voice.PendingVoiceProcessor
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
@@ -18,7 +20,11 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-data class GroupSection(val group: Group, val reminders: List<Reminder>)
+data class GroupSection(
+    val group: Group,
+    val reminders: List<Reminder>,
+    val tripAlarmTimes: Map<Long, Long> = emptyMap(),
+)
 
 @HiltViewModel
 class RemindersViewModel @Inject constructor(
@@ -27,14 +33,28 @@ class RemindersViewModel @Inject constructor(
     private val groupDao: GroupDao,
     private val settings: SettingsRepository,
     private val pendingProcessor: PendingVoiceProcessor,
+    private val tripDao: CalendarTripDao,
 ) : ViewModel() {
 
     val sections: StateFlow<List<GroupSection>> = combine(
         repo.observeGroups(),
-        repo.observeReminders()
-    ) { groups, reminders ->
+        repo.observeReminders(),
+        tripDao.observeAll(),
+    ) { groups, reminders, trips ->
         val byGroup = reminders.groupBy { it.groupId }
-        groups.map { g -> GroupSection(g, byGroup[g.id].orEmpty()) }
+        val tripsByReminder = trips.associateBy { it.reminderId }
+        val alarmTimes = reminders.mapNotNull { r ->
+            val trip = tripsByReminder[r.id] ?: return@mapNotNull null
+            val leaveBy = r.nextFireAt ?: return@mapNotNull null
+            r.id to TripAlarmInfo(leaveBy, trip.lastTravelMs, trip.bufferMs).alarmAtMs
+        }.toMap()
+        groups.map { g ->
+            GroupSection(
+                g,
+                byGroup[g.id].orEmpty().sortedBy { alarmTimes[it.id] ?: it.nextFireAt ?: Long.MAX_VALUE },
+                alarmTimes,
+            )
+        }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val pending: StateFlow<List<PendingVoiceReminderEntity>> = pendingProcessor.observePending()

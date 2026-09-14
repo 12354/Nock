@@ -42,7 +42,7 @@ data class ManualImportUiState(
     val imported: Boolean = false,
     /**
      * Buffer (in whole minutes) chosen on the preview's slider: how long before
-     * departure the first heads-up fires, so the reminder starts at
+     * departure the loud alarm fires, so the alarm starts at
      * `appointment − travel − buffer`. Seeded from the configured trip default.
      */
     val bufferMin: Int = ManualImportViewModel.DEFAULT_BUFFER_MIN,
@@ -245,7 +245,7 @@ class ManualImportViewModel @Inject constructor(
     }
 
     companion object {
-        /** Slider bounds for the heads-up buffer, in minutes. */
+        /** Slider bounds for the loud alarm's pre-departure buffer, in minutes. */
         const val MIN_BUFFER_MIN = 5
         const val MAX_BUFFER_MIN = 120
         const val DEFAULT_BUFFER_MIN = 30

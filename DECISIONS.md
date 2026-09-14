@@ -230,8 +230,10 @@ the reminder editor, orthogonal to the schedule and to the group's chain.
   override surface is the "Custom chain" toggle inside each group's
   editor.
 - **Per-reminder trip buffer.** Each calendar-imported trip carries its own
-  heads-up buffer (`CalendarTripEntity.bufferMs`), so the reminder starts at
-  `appointment − travel − buffer`. This is a genuine per-reminder escalation
+  alarm buffer (`CalendarTripEntity.bufferMs`), so the loud alarm starts at
+  `appointment − travel − buffer`. The entire escalation chain is shifted earlier:
+  silent is another buffer before the loud alarm, vibration another buffer/3
+  before it. The departure time stays `appointment − travel`. This is a per-reminder escalation
   override for trips, narrower than the general per-reminder override that
   plan.md §11 still defers: the engine special-cases the on-demand "trips"
   group — `EscalationEngine.effectiveChainFor` builds that reminder's chain

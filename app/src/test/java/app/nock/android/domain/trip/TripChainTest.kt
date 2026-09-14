@@ -9,13 +9,32 @@ class TripChainTest {
 
     private val m = 60_000L
 
-    @Test fun build_anchorsAlarmAtDeparture() {
+    @Test fun build_startsLoudAlarmWithBufferBeforeDeparture() {
         val chain = TripChain.build(bufferMs = 30 * m, repeatIntervalMs = 10 * m)
         assertEquals(StageType.SILENT, chain.stages.first().type)
-        assertEquals(-30 * m, chain.stages.first().offsetMs)
+        assertEquals(-60 * m, chain.stages.first().offsetMs)
         assertEquals(StageType.ALARM, chain.stages.last().type)
-        assertEquals(0L, chain.stages.last().offsetMs) // loud alarm exactly at leave-by
+        assertEquals(-30 * m, chain.stages.last().offsetMs)
         assertEquals(10 * m, chain.repeatIntervalMs)
+    }
+
+    @Test fun dentist_alarmAt0937_doesNotMoveDepartureAt1007() {
+        val appointment = (10 * 60 + 30) * m
+        val leaveBy = TripMath.leaveBy(appointment, 23 * m)
+        val chain = TripChain.build(30 * m, 10 * m)
+        assertEquals((10 * 60 + 7) * m, leaveBy)
+        assertEquals((9 * 60 + 37) * m, leaveBy + chain.stages.last().offsetMs)
+        assertEquals(
+            listOf((9 * 60 + 7) * m, (9 * 60 + 27) * m, (9 * 60 + 37) * m),
+            chain.stages.map { leaveBy + it.offsetMs },
+        )
+    }
+
+    @Test fun build_alarmHonorsSmallAndZeroBuffers() {
+        for (buffer in listOf(0L, 30_000L, 5 * m, 30 * m, 120 * m)) {
+            val chain = TripChain.build(buffer, 10 * m)
+            assertEquals(-buffer, chain.stages.last().offsetMs)
+        }
     }
 
     @Test fun build_offsetsStrictlyIncreasingAndTypesUnique() {

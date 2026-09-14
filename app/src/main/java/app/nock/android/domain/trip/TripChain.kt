@@ -9,9 +9,12 @@ import app.nock.android.domain.model.StageType
  * anchored at the reminder's scheduled time, which for a trip is `leaveBy`
  * (= eventStart − travel). Offsets are therefore relative to departure:
  *
- *   SILENT        @ −buffer        "start wrapping up, you leave in <buffer>"
- *   ALARM_VIBRATE @ −buffer/3      escalate as departure nears
- *   ALARM         @ 0 (leaveBy)    you must leave now — loud, repeats until Done
+ *   SILENT        @ −2×buffer          first quiet warning
+ *   ALARM_VIBRATE @ −buffer − buffer/3 last quiet warning
+ *   ALARM         @ −buffer            loud alarm with time to prepare to leave
+ *
+ * The buffer belongs to the loud alarm. Earlier stages retain their spacing
+ * before that alarm; departure itself remains eventStart − travel.
  *
  * The Trips group stores this as its override chain, so trip reminders reuse the
  * existing per-group escalation machinery untouched: only the offsets differ
@@ -24,16 +27,17 @@ object TripChain {
     private const val MIN_MID_LEAD_MS = 60_000L
 
     fun build(bufferMs: Long, repeatIntervalMs: Long): EscalationChain {
-        val buffer = bufferMs.coerceAtLeast(MIN_BUFFER_MS)
-        // Mid (vibrate) stage sits a third of the way from heads-up to departure,
+        val alarmLead = bufferMs.coerceAtLeast(0L)
+        val buffer = alarmLead.coerceAtLeast(MIN_BUFFER_MS)
+        // Mid (vibrate) stage sits a third of the way before the loud alarm,
         // but never closer than a minute to the silent stage so the two never
         // collapse onto the same offset (which the chain forbids).
         val midLead = (buffer / 3).coerceAtLeast(MIN_MID_LEAD_MS).coerceAtMost(buffer - MIN_MID_LEAD_MS)
         return EscalationChain(
             stages = listOf(
-                StageConfig(StageType.SILENT, -buffer),
-                StageConfig(StageType.ALARM_VIBRATE, -midLead),
-                StageConfig(StageType.ALARM, 0L),
+                StageConfig(StageType.SILENT, -alarmLead - buffer),
+                StageConfig(StageType.ALARM_VIBRATE, -alarmLead - midLead),
+                StageConfig(StageType.ALARM, -alarmLead),
             ),
             repeatIntervalMs = repeatIntervalMs,
         )

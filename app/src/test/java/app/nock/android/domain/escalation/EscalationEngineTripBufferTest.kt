@@ -2,7 +2,9 @@ package app.nock.android.domain.escalation
 
 import app.nock.android.data.entity.CalendarTripEntity
 import app.nock.android.domain.model.StageType
+import app.nock.android.domain.model.Schedule
 import io.mockk.coEvery
+import io.mockk.verify
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -44,9 +46,8 @@ class EscalationEngineTripBufferTest {
 
         val row = h.dao.rows.values.single()
         assertEquals(0, row.nextStageIndex)
-        // SILENT fires `buffer` before departure: leaveBy − 20 min, NOT the
-        // group/global default. = appointment − travel − buffer.
-        assertEquals(leaveBy - 20 * MIN, row.nextFireAtMs)
+        // The loud alarm leads departure by 20 min, with SILENT another 20 min earlier.
+        assertEquals(leaveBy - 40 * MIN, row.nextFireAtMs)
     }
 
     @Test fun non_trip_reminder_in_trips_group_falls_back_to_group_chain() = runTest {
@@ -73,16 +74,43 @@ class EscalationEngineTripBufferTest {
         // Armed first with a 45-min buffer…
         coEvery { h.calendarTripDao.getByReminderId(r.id) } returns tripRow(r.id, 45 * MIN)
         h.engine.startEscalationAt(r, leaveBy)
-        assertEquals(leaveBy - 45 * MIN, h.dao.rows.values.single().nextFireAtMs)
+        assertEquals(leaveBy - 90 * MIN, h.dao.rows.values.single().nextFireAtMs)
 
         // …then the user shortens it to 15 min and it is re-armed.
         coEvery { h.calendarTripDao.getByReminderId(r.id) } returns tripRow(r.id, 15 * MIN)
         h.engine.startEscalationAt(r, leaveBy)
-        assertEquals(leaveBy - 15 * MIN, h.dao.rows.values.single().nextFireAtMs)
+        assertEquals(leaveBy - 30 * MIN, h.dao.rows.values.single().nextFireAtMs)
         // And only the freshly-armed chain remains.
         assertEquals(1, h.dao.rows.size)
         assertEquals(StageType.SILENT, h.dao.rows.values.single().let {
             app.nock.android.data.json.ChainJson.decode(it.chainSnapshotJson).stages.first().type
         })
+    }
+
+    @Test fun loudAlarm_ringsAt0937_andRepeatsBefore1007Departure() = runTest {
+        val leaveBy = epochMs(2026, 9, 15, 10, 7)
+        val alarmAt = epochMs(2026, 9, 15, 9, 37)
+        val h = EngineHarness(now = epochMs(2026, 9, 15, 8, 0))
+        val r = reminder(schedule = Schedule.OneShot(leaveBy), nextFireAt = leaveBy)
+        h.stubReminderAndGroup(r, group().copy(seedKey = "trips"))
+        coEvery { h.calendarTripDao.getByReminderId(r.id) } returns tripRow(r.id, 30 * MIN)
+        h.engine.startEscalationAt(r, leaveBy)
+
+        // Deliver both quiet stages at their scheduled times.
+        repeat(2) {
+            val row = h.dao.rows.values.single()
+            h.clock.now = row.nextFireAtMs
+            h.engine.onAlarmFired(row.id)
+        }
+        val alarm = h.dao.rows.values.single()
+        assertEquals(alarmAt, alarm.nextFireAtMs)
+        assertEquals(leaveBy, alarm.startedAtMs)
+        verify { h.scheduler.scheduleStage(alarm.id, alarmAt, StageType.ALARM) }
+
+        h.clock.now = alarmAt
+        h.engine.onAlarmFired(alarm.id)
+        verify { h.notifier.showAlarm(any(), any(), alarm.id) }
+        assertEquals(alarmAt + 10 * MIN, h.dao.rows.values.single().nextFireAtMs)
+        assertEquals(leaveBy, r.nextFireAt)
     }
 }

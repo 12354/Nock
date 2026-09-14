@@ -49,7 +49,7 @@ data class EditState(
     // imported from the calendar; isCalendarReminder gates their visibility.
     val isCalendarReminder: Boolean = false,
     val location: String = "",
-    // Per-reminder heads-up buffer in whole minutes: the reminder starts at
+    // Per-reminder loud-alarm buffer in whole minutes: the alarm starts at
     // appointment − travel − buffer. Drives this trip's escalation chain alone.
     val bufferMin: Int = EditReminderViewModel.DEFAULT_TRIP_BUFFER_MIN,
     val nlInput: String = "",

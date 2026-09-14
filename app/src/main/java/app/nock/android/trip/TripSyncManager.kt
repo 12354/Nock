@@ -61,7 +61,7 @@ data class TripPreview(
  *   travel = TomTom(arriveAt = eventStart, traffic)   // geocode origin+dest first
  *   leaveBy = eventStart − travel
  *   reminder = OneShot(leaveBy) in the Trips group     // engine escalates to a
- *                                                       // loud alarm at leaveBy
+ *                                                       // loud alarm at leaveBy − buffer
  *   schedule a recompute at the next of leaveBy − {3h, 1h, 15m}
  *
  * A failed routing call never drops the warning: it falls back to the last good
@@ -444,7 +444,7 @@ class TripSyncManager @Inject constructor(
     // --- Editing an imported trip's buffer ---
 
     /**
-     * This trip's heads-up buffer in whole minutes, or null when [reminderId] isn't
+     * This trip's loud-alarm buffer in whole minutes, or null when [reminderId] isn't
      * a calendar-imported trip — lets the editor decide whether to show the field.
      */
     suspend fun tripBufferMin(reminderId: Long): Int? =
@@ -452,7 +452,7 @@ class TripSyncManager @Inject constructor(
 
     /**
      * Persist a user-edited per-reminder [bufferMin] for the trip behind
-     * [reminderId] and re-arm it so the new heads-up lead takes effect immediately.
+     * [reminderId] and re-arm it so the entire chain uses the new alarm lead immediately.
      * No re-routing: only the escalation offsets depend on the buffer, so the cached
      * travel estimate and leave-by are reused. Returns true when the value changed
      * (so the caller can skip redundant work); no-op for a non-trip reminder.

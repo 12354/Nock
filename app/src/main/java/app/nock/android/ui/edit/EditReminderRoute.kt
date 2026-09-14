@@ -166,7 +166,7 @@ fun EditReminderRoute(
 
             // Location and buffer are editable only for reminders imported from the
             // calendar; location drives the traffic-aware leave-by (changing it
-            // re-routes), buffer sets this reminder's own heads-up lead.
+            // re-routes), buffer sets this reminder's own loud-alarm lead.
             if (state.isCalendarReminder) {
                 OutlinedTextField(
                     value = state.location,
@@ -374,8 +374,8 @@ private fun PulseChip(pulse: VibrationPulse, onRemove: () -> Unit) {
 }
 
 /**
- * Per-reminder heads-up buffer for a calendar-imported reminder: how long before
- * departure the first nudge fires, so the reminder starts at
+ * Per-reminder alarm buffer for a calendar-imported reminder: how long before
+ * departure the loud alarm fires, so the alarm starts at
  * appointment − travel − buffer. Snaps to whole 5-minute steps.
  */
 @Composable

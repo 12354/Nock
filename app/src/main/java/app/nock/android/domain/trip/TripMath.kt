@@ -8,9 +8,9 @@ package app.nock.android.domain.trip
  *
  *   leaveBy = eventStart − travelTime(traffic)
  *
- * The escalation chain (see [TripChain]) is anchored at `leaveBy`: a silent
- * heads-up fires `buffer` before it and the chain escalates to a loud alarm
- * exactly at `leaveBy` — the moment the user must physically depart.
+ * The escalation chain (see [TripChain]) is anchored at `leaveBy`: the loud
+ * alarm fires `buffer` before departure, with quiet warnings preceding it.
+ * The buffer does not change the moment the user must physically depart.
  */
 object TripMath {
 

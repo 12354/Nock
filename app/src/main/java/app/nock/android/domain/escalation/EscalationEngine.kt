@@ -80,7 +80,7 @@ class EscalationEngine @Inject constructor(
 
     /**
      * The escalation chain to arm [reminder] with. Calendar-imported trips carry a
-     * per-reminder heads-up buffer (edited in the reminder editor), so their chain
+     * per-reminder loud-alarm buffer (edited in the reminder editor), so their chain
      * is built from that buffer rather than the shared Trips-group default — this is
      * what makes the buffer truly per-reminder. The chain is snapshotted at arm time
      * (chainSnapshotJson), so each trip keeps the lead time it was armed with.

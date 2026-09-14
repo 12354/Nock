@@ -102,7 +102,7 @@
     <string name="edit_location_label">Location</string>
     <string name="edit_trip_buffer_label">Buffer before leaving</string>
     <string name="edit_trip_buffer_value">%1$d min</string>
-    <string name="edit_trip_buffer_help">The first heads-up fires this long before you need to leave — the reminder starts at appointment − travel − buffer.</string>
+    <string name="edit_trip_buffer_help">The loud alarm starts at appointment − travel − buffer. The silent warning and vibration alarm come earlier. The departure time stays the same.</string>
     <string name="edit_group_label">Group</string>
     <string name="edit_schedule_label">Schedule</string>
     <string name="schedule_kind_once">Once</string>
@@ -320,7 +320,7 @@
     <string name="trips_enable">Enable calendar alarms</string>
     <string name="trips_tomtom_key">TomTom API key</string>
     <string name="trips_home_address">Home address (trip start)</string>
-    <string name="trips_buffer_minutes">Heads-up before leaving (minutes)</string>
+    <string name="trips_buffer_minutes">Alarm buffer before leaving (minutes)</string>
     <string name="trips_test_route">Test route</string>
     <string name="trips_sync_now">Sync now</string>
     <string name="trips_status_synced">Calendar synced.</string>
@@ -386,7 +386,7 @@
     <string name="trips_manual_duration_min">%1$d min</string>
     <string name="trips_manual_duration_h_min">%1$d h %2$d min</string>
     <string name="trips_manual_buffer_title">Buffer before leaving</string>
-    <string name="trips_manual_buffer_help">The first heads-up fires this long before you need to leave — the reminder starts at appointment − travel − buffer.</string>
+    <string name="trips_manual_buffer_help">The loud alarm starts at appointment − travel − buffer. The silent warning and vibration alarm come earlier. The departure time stays the same.</string>
 
     <!-- Settings: Alarm history -->
     <string name="settings_alarm_history_title">Alarm history</string>

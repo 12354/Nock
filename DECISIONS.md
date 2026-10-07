@@ -217,6 +217,44 @@ the reminder editor, orthogonal to the schedule and to the group's chain.
   that plan.md §11 still defers — it replaces the chain outright rather than
   tuning it.
 
+## Pause while a Bluetooth device is connected ("driving mode")
+
+The user picks paired Bluetooth devices (Settings → Notifications → "Pause while
+connected"); while any of them is connected — typically the car — alarms are
+held so nothing distracts the driver.
+
+- **Scope.** Global, not per group: it's about where the user is, not what the
+  reminder is. Every stage is held (silent, vibrate, Telegram, loud), including
+  regular single-vibration reminders. Already-posted notifications stay in the
+  shade (they're silent and still offer Done).
+- **Held, not lost — and not delayed.** When a stage comes due while paused,
+  `onAlarmFired` shows/sends nothing and leaves the cursor alone; it re-arms the
+  row for a recheck every `BLUETOOTH_RECHECK_MS` (5 min) and records it as held.
+  When the pause ends, the normal stage-due-at-now catch-up fires whatever stage
+  the timeline has reached — same rule as snooze: the pause buys silence but
+  never pushes the loud alarm out. A held loud stage is re-armed with its own
+  type, so it still rings as a `setAlarmClock` alarm afterwards.
+- **Connect** (`ACL_CONNECTED` for a selected device) silences anything ringing
+  right now and closes an on-screen `AlarmActivity`; its next fire (the repeat
+  or the next stage) is then held like any other.
+  `EscalationReceiver` skips its eager full-screen launch while paused.
+- **Disconnect** (`ACL_DISCONNECTED`, or Bluetooth turned off) brings each held
+  escalation forward to fire now — unless its row changed since it was held
+  (Done, snoozed from the notification, re-armed by an edit), detected by the
+  stored recheck time no longer matching. The 5-min recheck bounds the delay if
+  the broadcast is missed. Unpicking the device in Settings also resumes.
+- **Is it connected?** Android has no public per-device API. We ask the hidden
+  but greylisted `BluetoothDevice.isConnected()` and fall back to a set tracked
+  from ACL broadcasts when that's unavailable (`BluetoothPausePolicy`).
+- **Storage.** SharedPreferences (`bluetooth_pause`), not the Room settings
+  table: `EscalationReceiver` must answer "paused?" synchronously inside the
+  short background-activity-launch grant. Device-local by design (pairings are
+  per phone), so it's not part of the Drive snapshot.
+- **Permissions.** `BLUETOOTH_CONNECT` (runtime, Android 12+) to list paired
+  devices and receive the ACL broadcasts; `BLUETOOTH` (install-time,
+  `maxSdkVersion 30`) before that. The ACL broadcasts are on the implicit-
+  broadcast exemption list, so the receiver lives in the manifest.
+
 ## Off-plan polish that snuck in
 
 - Snooze button on the silent-stage notification: technically the silent

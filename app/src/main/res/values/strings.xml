@@ -258,6 +258,14 @@
     <string name="settings_prealarm_sound_default">Default notification sound</string>
     <string name="settings_prealarm_sound_silent">Silent</string>
     <string name="settings_prealarm_sound_custom">Custom sound</string>
+    <string name="settings_bt_pause_title">Pause while connected</string>
+    <string name="settings_bt_pause_desc">Alarms and reminder notifications are held while one of these Bluetooth devices is connected — for example your car, so nothing distracts you while driving. Held alarms ring as soon as the device disconnects.</string>
+    <string name="settings_bt_pause_unavailable">This device has no Bluetooth.</string>
+    <string name="settings_bt_pause_permission_help">Allow Nearby devices access so Nock can list your paired Bluetooth devices and notice when they connect.</string>
+    <string name="settings_bt_pause_grant">Allow Bluetooth access</string>
+    <string name="settings_bt_pause_no_devices">No paired Bluetooth devices. Pair your car in the system Bluetooth settings first.</string>
+    <string name="settings_bt_pause_connected">Connected</string>
+    <string name="settings_bt_pause_active">Alarms paused — connected to %1$s</string>
 
     <string name="default_reminder_name">Reminder</string>
 

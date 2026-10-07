@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.lifecycleScope
 import app.nock.android.R
+import app.nock.android.bluetooth.BluetoothPauseMonitor
 import app.nock.android.data.NockRepository
 import app.nock.android.data.dao.ActiveEscalationDao
 import app.nock.android.data.dao.CalendarTripDao
@@ -60,6 +61,7 @@ class AlarmActivity : ComponentActivity() {
     @Inject lateinit var engine: EscalationEngine
     @Inject lateinit var activeDao: ActiveEscalationDao
     @Inject lateinit var tripDao: CalendarTripDao
+    @Inject lateinit var bluetoothPause: BluetoothPauseMonitor
 
     private val nameState = MutableStateFlow("")
     private val groupState = MutableStateFlow<Group?>(null)
@@ -78,6 +80,12 @@ class AlarmActivity : ComponentActivity() {
         applyAlarmWindowFlags()
         nameState.value = getString(R.string.alarm_title)
         bindFromIntent(intent)
+
+        // A paused Bluetooth device (e.g. the car) connected while this alarm was
+        // on screen: the engine has silenced and held it, so get out of the way.
+        lifecycleScope.launch {
+            bluetoothPause.pauseStarted.collect { finish() }
+        }
 
         setContent {
             NockTheme {

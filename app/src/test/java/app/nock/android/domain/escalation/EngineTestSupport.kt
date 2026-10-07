@@ -125,10 +125,11 @@ class EngineHarness(now: Long = NOW) {
     val telegram: TelegramSender = mockk(relaxed = true)
     val history: AlarmHistoryLogger = mockk(relaxed = true)
     val calendarTripDao: CalendarTripDao = mockk(relaxed = true)
+    val bluetoothPause = FakeBluetoothPauseGate()
 
     val engine = app.nock.android.domain.escalation.EscalationEngine(
         repo, dao, settings, scheduler, notifier, telegram, clock, history, pendingDeletionDao,
-        calendarTripDao
+        calendarTripDao, bluetoothPause
     )
 
     init {

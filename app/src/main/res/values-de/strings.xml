@@ -258,6 +258,14 @@
     <string name="settings_prealarm_sound_default">Standard-Benachrichtigungston</string>
     <string name="settings_prealarm_sound_silent">Lautlos</string>
     <string name="settings_prealarm_sound_custom">Eigener Ton</string>
+    <string name="settings_bt_pause_title">Pausieren, solange verbunden</string>
+    <string name="settings_bt_pause_desc">Alarme und Erinnerungsbenachrichtigungen werden zurückgehalten, solange eines dieser Bluetooth-Geräte verbunden ist — zum Beispiel dein Auto, damit dich beim Fahren nichts ablenkt. Zurückgehaltene Alarme klingeln, sobald die Verbindung getrennt wird.</string>
+    <string name="settings_bt_pause_unavailable">Dieses Gerät hat kein Bluetooth.</string>
+    <string name="settings_bt_pause_permission_help">Erlaube den Zugriff auf Geräte in der Nähe, damit Nock deine gekoppelten Bluetooth-Geräte anzeigen und ihre Verbindung erkennen kann.</string>
+    <string name="settings_bt_pause_grant">Bluetooth-Zugriff erlauben</string>
+    <string name="settings_bt_pause_no_devices">Keine gekoppelten Bluetooth-Geräte. Kopple dein Auto zuerst in den Bluetooth-Einstellungen des Systems.</string>
+    <string name="settings_bt_pause_connected">Verbunden</string>
+    <string name="settings_bt_pause_active">Alarme pausiert — verbunden mit %1$s</string>
 
     <string name="default_reminder_name">Erinnerung</string>
 

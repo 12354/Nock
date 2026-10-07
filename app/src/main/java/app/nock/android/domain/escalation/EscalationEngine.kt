@@ -2,6 +2,7 @@ package app.nock.android.domain.escalation
 
 import app.nock.android.alarm.AlarmScheduler
 import app.nock.android.alarm.AlarmService
+import app.nock.android.bluetooth.BluetoothPauseGate
 import app.nock.android.data.NockRepository
 import app.nock.android.data.SettingsRepository
 import app.nock.android.data.dao.ActiveEscalationDao
@@ -40,6 +41,7 @@ class EscalationEngine @Inject constructor(
     private val history: AlarmHistoryLogger,
     private val pendingDeletionDao: PendingTelegramDeletionDao,
     private val calendarTripDao: CalendarTripDao,
+    private val bluetoothPause: BluetoothPauseGate,
 ) {
     // All escalation-state mutations are serialized through this mutex. The
     // engine is driven by independent BroadcastReceivers (alarm delivery, Done/
@@ -362,6 +364,22 @@ class EscalationEngine @Inject constructor(
         val idx = max(storedIdx, dueIdx).coerceAtMost(chain.lastIndex)
         val stage = chain.stage(idx)
 
+        // A Bluetooth device the user picked (e.g. the car) is connected: hold the
+        // alarm instead of distracting the driver. Nothing is shown or sent and the
+        // cursor stays put; the escalation is re-armed for a periodic recheck and
+        // remembered so the disconnect can bring it forward (resumeAfterBluetoothPause).
+        // When it does fire, the stage-due-at-now catch-up above picks the stage
+        // the timeline has reached by then — like a snooze, the pause buys silence
+        // but never delays the escalation. Re-armed with the due stage's own type so
+        // a held loud stage still rings as a setAlarmClock alarm afterwards.
+        if (bluetoothPause.isActive()) {
+            val recheckAt = now + BLUETOOTH_RECHECK_MS
+            activeDao.update(esc.copy(nextFireAtMs = recheckAt))
+            scheduler.scheduleStage(esc.id, recheckAt, stage.type)
+            bluetoothPause.markDeferred(esc.id, recheckAt)
+            return null
+        }
+
         // Regular reminder: a single gentle vibration nudge, no escalation. Play the
         // configured pattern once, post a dismissable heads-up, then auto-complete —
         // no Done, no repeat, no next stage. Recurring schedules roll forward exactly
@@ -560,6 +578,52 @@ class EscalationEngine @Inject constructor(
                 .forEach { cancelActiveLocked(it.id) }
         }
         flushPendingTelegramDeletions()
+    }
+
+    /**
+     * A selected Bluetooth device just connected. Silence anything ringing right
+     * now; its row keeps its next fire (the repeat or the next stage), which
+     * onAlarmFiredLocked then holds for as long as the device stays connected.
+     * Its posted notification is left in the shade — silent, and still offering
+     * Done.
+     */
+    suspend fun onBluetoothPauseStarted() {
+        mutex.withLock {
+            if (!bluetoothPause.isActive()) return@withLock
+            val ringingId = AlarmService.ringingEscalationId ?: return@withLock
+            if (activeDao.getById(ringingId) == null) return@withLock
+            notifier.stopAlarm()
+        }
+    }
+
+    /**
+     * The Bluetooth pause may have ended (a selected device disconnected,
+     * Bluetooth was turned off, or the selection changed). If no selected device
+     * is still connected, bring every held escalation forward so it fires now;
+     * onAlarmFired then rings the stage due by now. An escalation whose row has
+     * changed since it was held (Done, snoozed, re-armed by an edit) is left on
+     * its own schedule — the stored recheck time no longer matching tells us so.
+     */
+    suspend fun resumeAfterBluetoothPause() {
+        mutex.withLock {
+            if (bluetoothPause.isActive()) return@withLock
+            val now = time.nowMs()
+            bluetoothPause.takeDeferred().forEach { (escalationId, recheckAt) ->
+                val esc = activeDao.getById(escalationId) ?: return@forEach
+                if (esc.nextFireAtMs != recheckAt) return@forEach
+                val chain = runCatching { ChainJson.decode(esc.chainSnapshotJson) }.getOrNull()
+                    ?: settings.getStageChain()
+                // A held stage was already due, so this is "now"; never earlier
+                // than the cursor's own due time, which would ring it early.
+                val storedIdx = esc.nextStageIndex.coerceIn(0, chain.lastIndex)
+                val fireAt = max(now + 1_000L, esc.startedAtMs + chain.stage(storedIdx).offsetMs)
+                val dueType = chain.stage(
+                    max(storedIdx, chain.stageDueAt(esc.startedAtMs, fireAt)).coerceAtMost(chain.lastIndex)
+                ).type
+                activeDao.update(esc.copy(nextFireAtMs = fireAt))
+                scheduler.scheduleStage(esc.id, fireAt, dueType)
+            }
+        }
     }
 
     // Editing a group's chain/timing only writes the group row; the escalations
@@ -936,6 +1000,11 @@ class EscalationEngine @Inject constructor(
         // alarms are floored a second out when scheduled, so legitimate jitter
         // stays well under this; anything earlier is a real disagreement.
         private const val SANITY_TOLERANCE_MS = 1_000L
+
+        // How often a held (Bluetooth-paused) escalation wakes to re-check the
+        // pause. The disconnect broadcast normally resumes it right away; this
+        // bounds the delay if that broadcast is missed.
+        internal const val BLUETOOTH_RECHECK_MS = 5 * 60_000L
 
         // Seed key of the on-demand calendar-import ("Appointments") group whose
         // reminders carry a per-reminder trip buffer. Matches TripSyncManager.

@@ -123,6 +123,39 @@ class BluetoothPauseMonitor @Inject constructor(
             if (id != null && at != null) id to at else null
         }.toMap()
 
+    // ---- Collected alarm ----------------------------------------------------
+
+    override fun collect(leadId: Long, followerIds: Collection<Long>) {
+        val followers = followerIds.toSet() - leadId
+        val next = collectedEntries()
+            .filterKeys { it !in followers && it != leadId }
+            .mapValues { (_, lead) -> if (lead in followers) leadId else lead } +
+            followers.associateWith { leadId }
+        saveCollected(next)
+    }
+
+    override fun followersOf(leadId: Long): Set<Long> =
+        collectedEntries().filterValues { it == leadId }.keys
+
+    override fun leadOf(escalationId: Long): Long? = collectedEntries()[escalationId]
+
+    override fun uncollect(escalationId: Long) {
+        saveCollected(collectedEntries().filter { (f, l) -> f != escalationId && l != escalationId })
+    }
+
+    /** follower escalationId → lead escalationId */
+    private fun collectedEntries(): Map<Long, Long> =
+        prefs.getStringSet(KEY_COLLECTED, emptySet()).orEmpty().mapNotNull { token ->
+            val parts = token.split(':')
+            val follower = parts.getOrNull(0)?.toLongOrNull()
+            val lead = parts.getOrNull(1)?.toLongOrNull()
+            if (follower != null && lead != null) follower to lead else null
+        }.toMap()
+
+    private fun saveCollected(entries: Map<Long, Long>) {
+        prefs.edit().putStringSet(KEY_COLLECTED, entries.map { "${it.key}:${it.value}" }.toSet()).apply()
+    }
+
     // ---- Platform ---------------------------------------------------------
 
     /** BLUETOOTH_CONNECT is a runtime permission from Android 12; before that it's install-time. */
@@ -175,6 +208,7 @@ class BluetoothPauseMonitor @Inject constructor(
         private const val KEY_SELECTED = "selected"
         private const val KEY_CONNECTED = "connected"
         private const val KEY_DEFERRED = "deferred"
+        private const val KEY_COLLECTED = "collected"
         private const val KEY_NAME_PREFIX = "name:"
     }
 }

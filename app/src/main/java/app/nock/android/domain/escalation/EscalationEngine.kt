@@ -288,6 +288,14 @@ class EscalationEngine @Inject constructor(
             activeDao.delete(esc)
             return null
         }
+        // Part of a collected alarm (see resumeAfterBluetoothPause): the lead rings
+        // for it, so a stray alarm of its own (e.g. a boot replay) must not. If the
+        // lead is somehow gone without handing over, fall back to firing alone.
+        bluetoothPause.leadOf(esc.id)?.let { leadId ->
+            if (activeDao.getById(leadId) != null) return null
+            bluetoothPause.uncollect(esc.id)
+        }
+
         val chain = runCatching { ChainJson.decode(esc.chainSnapshotJson) }.getOrNull()
             ?: settings.getStageChain()
 
@@ -385,12 +393,21 @@ class EscalationEngine @Inject constructor(
         // no Done, no repeat, no next stage. Recurring schedules roll forward exactly
         // as they do on Done; one-time ones retire. Its chain is a single stage, so
         // it can never reach the loud stages or the last-stage repeat above.
+        // A collected alarm presents every reminder riding along with it under one
+        // title — on the notification, the takeover and the Telegram message.
+        val shown = collectedTitleLocked(esc.id)?.let { reminder.copy(name = it) } ?: reminder
+
         if (reminder.simpleVibration) {
             val pattern = reminder.vibrationPattern ?: VibrationPattern.DEFAULT
-            notifier.showRegular(reminder, group, escalationId, pattern)
+            notifier.showRegular(shown, group, escalationId, pattern)
             history.fired(reminder.name, stage.type, esc.startedAtMs, now)
+            // Only single-vibration reminders lead a collection with no escalating
+            // member (CollectedAlarm.pickLead), so they all auto-complete together.
+            val followers = bluetoothPause.followersOf(esc.id)
+            bluetoothPause.uncollect(esc.id)
             activeDao.delete(esc)
             advanceAfterCompletionLocked(reminder, now)
+            followers.forEach { doneLocked(it) }
             return null
         }
 
@@ -400,20 +417,20 @@ class EscalationEngine @Inject constructor(
         var pendingSend: PendingTelegramSend? = null
         when (stage.type) {
             StageType.SILENT -> {
-                notifier.showSilent(reminder, group, escalationId)
-                if (group.telegramSilentMirror) pendingSend = PendingTelegramSend(reminder, silent = true)
+                notifier.showSilent(shown, group, escalationId)
+                if (group.telegramSilentMirror) pendingSend = PendingTelegramSend(shown, silent = true)
             }
             StageType.VIBRATE -> {
-                notifier.showVibrate(reminder, group, escalationId)
-                if (group.telegramSilentMirror) pendingSend = PendingTelegramSend(reminder, silent = true)
+                notifier.showVibrate(shown, group, escalationId)
+                if (group.telegramSilentMirror) pendingSend = PendingTelegramSend(shown, silent = true)
             }
             StageType.TELEGRAM -> {
-                notifier.showTelegram(reminder, group, escalationId)
-                pendingSend = PendingTelegramSend(reminder, silent = false)
+                notifier.showTelegram(shown, group, escalationId)
+                pendingSend = PendingTelegramSend(shown, silent = false)
             }
-            StageType.NOTIFICATION -> notifier.showPreAlarm(reminder, group, escalationId)
-            StageType.ALARM_VIBRATE -> notifier.showAlarmVibrate(reminder, group, escalationId)
-            StageType.ALARM -> notifier.showAlarm(reminder, group, escalationId)
+            StageType.NOTIFICATION -> notifier.showPreAlarm(shown, group, escalationId)
+            StageType.ALARM_VIBRATE -> notifier.showAlarmVibrate(shown, group, escalationId)
+            StageType.ALARM -> notifier.showAlarm(shown, group, escalationId)
         }
         history.fired(reminder.name, stage.type, esc.startedAtMs, now)
 
@@ -445,6 +462,9 @@ class EscalationEngine @Inject constructor(
 
     private suspend fun doneLocked(escalationId: Long) {
         val esc = activeDao.getById(escalationId) ?: return
+        // Done on a collected alarm completes every reminder riding along with it.
+        val followers = bluetoothPause.followersOf(esc.id)
+        bluetoothPause.uncollect(esc.id)
         scheduler.cancel(esc.id)
         notifier.cancel(esc.id)
         // Only silence the ringing alarm if it's THIS escalation's. Done'ing a
@@ -478,6 +498,7 @@ class EscalationEngine @Inject constructor(
             history.done(reminder.name)
             advanceAfterCompletionLocked(reminder, time.nowMs())
         }
+        followers.forEach { doneLocked(it) }
     }
 
     /**
@@ -608,9 +629,10 @@ class EscalationEngine @Inject constructor(
         mutex.withLock {
             if (bluetoothPause.isActive()) return@withLock
             val now = time.nowMs()
-            bluetoothPause.takeDeferred().forEach { (escalationId, recheckAt) ->
-                val esc = activeDao.getById(escalationId) ?: return@forEach
-                if (esc.nextFireAtMs != recheckAt) return@forEach
+            val released = bluetoothPause.takeDeferred().mapNotNull { (escalationId, recheckAt) ->
+                val esc = activeDao.getById(escalationId) ?: return@mapNotNull null
+                if (esc.nextFireAtMs != recheckAt) return@mapNotNull null
+                val reminder = repo.getReminder(esc.reminderId) ?: return@mapNotNull null
                 val chain = runCatching { ChainJson.decode(esc.chainSnapshotJson) }.getOrNull()
                     ?: settings.getStageChain()
                 // A held stage was already due, so this is "now"; never earlier
@@ -620,10 +642,78 @@ class EscalationEngine @Inject constructor(
                 val dueType = chain.stage(
                     max(storedIdx, chain.stageDueAt(esc.startedAtMs, fireAt)).coerceAtMost(chain.lastIndex)
                 ).type
-                activeDao.update(esc.copy(nextFireAtMs = fireAt))
-                scheduler.scheduleStage(esc.id, fireAt, dueType)
+                Released(esc, fireAt, CollectedAlarm.Candidate(
+                    escalationId = esc.id,
+                    name = reminder.name,
+                    dueStage = dueType,
+                    startedAtMs = esc.startedAtMs,
+                    simpleVibration = reminder.simpleVibration,
+                ))
             }
+            if (released.isEmpty()) return@withLock
+
+            // Everything held during the drive comes due at once. Rather than a
+            // burst of alarms one after another, release ONE collected alarm: the
+            // lead rings (as loud as the most urgent reminder) under a title naming
+            // them all, and the others ride along silently until its Done.
+            val lead = released.first {
+                it.candidate == CollectedAlarm.pickLead(released.map { r -> r.candidate })
+            }
+            released.filter { it !== lead }.forEach { follower ->
+                scheduler.cancel(follower.esc.id)
+                notifier.cancel(follower.esc.id)
+            }
+            if (released.size > 1) {
+                bluetoothPause.collect(lead.esc.id, released.filter { it !== lead }.map { it.esc.id })
+            }
+            activeDao.update(lead.esc.copy(nextFireAtMs = lead.fireAt))
+            scheduler.scheduleStage(lead.esc.id, lead.fireAt, lead.candidate.dueStage)
         }
+    }
+
+    private data class Released(
+        val esc: ActiveEscalationEntity,
+        val fireAt: Long,
+        val candidate: CollectedAlarm.Candidate,
+    )
+
+    /**
+     * The collected alarm's title for [escalationId] when it leads one (its own
+     * name plus every reminder riding along), else null. Read by AlarmActivity.
+     */
+    suspend fun collectedTitle(escalationId: Long): String? =
+        mutex.withLock { collectedTitleLocked(escalationId) }
+
+    private suspend fun collectedTitleLocked(escalationId: Long): String? {
+        val followers = bluetoothPause.followersOf(escalationId)
+        if (followers.isEmpty()) return null
+        val lead = activeDao.getById(escalationId) ?: return null
+        val leadName = repo.getReminder(lead.reminderId)?.name ?: return null
+        val names = followers.sorted().mapNotNull { id ->
+            activeDao.getById(id)?.let { repo.getReminder(it.reminderId)?.name }
+        }
+        return CollectedAlarm.title(leadName, names).takeIf { names.isNotEmpty() }
+    }
+
+    /**
+     * [escalationId] is being torn down other than by Done (moved, edited,
+     * deleted). If it leads a collected alarm, the reminders riding along must not
+     * be stranded: the first surviving one takes over as lead and fires now, the
+     * rest stay collected under it. If it is a follower, it simply leaves.
+     */
+    private suspend fun handOverCollectionLocked(escalationId: Long) {
+        val followers = bluetoothPause.followersOf(escalationId)
+        bluetoothPause.uncollect(escalationId)
+        val alive = followers.sorted().mapNotNull { activeDao.getById(it) }
+        val newLead = alive.firstOrNull() ?: return
+        if (alive.size > 1) bluetoothPause.collect(newLead.id, alive.drop(1).map { it.id })
+        val chain = runCatching { ChainJson.decode(newLead.chainSnapshotJson) }.getOrNull()
+            ?: settings.getStageChain()
+        val fireAt = time.nowMs() + 1_000L
+        val idx = max(newLead.nextStageIndex, chain.stageDueAt(newLead.startedAtMs, fireAt))
+            .coerceIn(0, chain.lastIndex)
+        activeDao.update(newLead.copy(nextFireAtMs = fireAt))
+        scheduler.scheduleStage(newLead.id, fireAt, chain.stage(idx).type)
     }
 
     // Editing a group's chain/timing only writes the group row; the escalations
@@ -676,6 +766,7 @@ class EscalationEngine @Inject constructor(
 
     private suspend fun cancelActiveLocked(reminderId: Long) {
         val esc = activeDao.getByReminderId(reminderId) ?: return
+        handOverCollectionLocked(esc.id)
         scheduler.cancel(esc.id)
         notifier.cancel(esc.id)
         // If this reminder is the one currently ringing, tear down the alarm
@@ -820,6 +911,8 @@ class EscalationEngine @Inject constructor(
     private suspend fun rescheduleAllLocked(recomputeWallClock: Boolean = false) {
             activeDao.getAll().forEach { esc ->
                 val chain = runCatching { ChainJson.decode(esc.chainSnapshotJson) }.getOrNull() ?: return@forEach
+                // Riding along with a collected alarm: its lead's alarm covers it.
+                if (bluetoothPause.leadOf(esc.id)?.let { activeDao.getById(it) } != null) return@forEach
                 // A wall-clock change shifts what local time-of-day a stored fire
                 // time means. For an escalation that hasn't begun firing, re-derive
                 // its reminder's next occurrence in the current zone and re-arm, so

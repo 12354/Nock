@@ -171,7 +171,9 @@ class AlarmActivity : ComponentActivity() {
             val reminderId = if (intentReminderId >= 0L) intentReminderId else esc?.reminderId ?: -1L
             val r = if (reminderId >= 0L) repo.getReminder(reminderId) else null
             if (r != null) {
-                nameState.value = r.name
+                // A collected alarm (several reminders held during a Bluetooth
+                // pause, released together) shows every reminder it stands for.
+                nameState.value = esc?.let { engine.collectedTitle(it.id) } ?: r.name
                 groupState.value = repo.getGroup(r.groupId)
                 // Follow cached routing updates while this alarm is on screen.
                 combine(tripDao.observeByReminderId(r.id), repo.observeReminders()) { trip, reminders ->

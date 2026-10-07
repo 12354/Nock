@@ -3,6 +3,7 @@ package app.nock.android.domain.escalation
 import app.nock.android.alarm.AlarmService
 import app.nock.android.domain.model.StageType
 import io.mockk.clearMocks
+import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.verify
 import kotlinx.coroutines.test.runTest
@@ -180,5 +181,112 @@ class EscalationEngineBluetoothPauseTest {
 
         verify { h.notifier.showAlarm(any(), any(), row.id) }
         assertTrue(h.bluetoothPause.deferred.isEmpty())
+    }
+
+    // --- Collected alarm -----------------------------------------------------
+
+    private val otherId = 43L
+
+    /**
+     * Two reminders held during one drive: [REMINDER_ID] (row 1) reached only the
+     * SILENT stage, [otherId] (row 2) is at the loud ALARM — so row 2 must lead.
+     */
+    private suspend fun twoHeld(h: EngineHarness): Pair<Long, Long> {
+        h.stubReminderAndGroup(reminder(id = otherId), group())
+        val quiet = activeEntity(id = 101L, reminderId = REMINDER_ID, startedAtMs = NOW + 10 * MIN, nextStageIndex = 0, nextFireAtMs = NOW)
+        val loud = activeEntity(id = 102L, reminderId = otherId, startedAtMs = NOW - 10 * MIN, nextStageIndex = 3, nextFireAtMs = NOW)
+        h.dao.upsert(quiet)
+        h.dao.upsert(loud)
+        h.engine.onAlarmFired(quiet.id)
+        h.engine.onAlarmFired(loud.id)
+        h.bluetoothPause.active = false
+        clearMocks(h.scheduler, h.notifier)
+        return quiet.id to loud.id
+    }
+
+    @Test fun several_held_alarms_are_released_as_one_collected_alarm() = runTest {
+        val h = pausedHarness()
+        val (quiet, loud) = twoHeld(h)
+
+        h.engine.resumeAfterBluetoothPause()
+
+        // Only the lead is armed; the follower's own alarm and notification go.
+        verify { h.scheduler.scheduleStage(loud, NOW + 1_000L, StageType.ALARM) }
+        verify(exactly = 0) { h.scheduler.scheduleStage(quiet, any(), any()) }
+        verify { h.scheduler.cancel(quiet) }
+        verify { h.notifier.cancel(quiet) }
+        assertEquals(mapOf(quiet to loud), h.bluetoothPause.collected)
+
+        // The lead rings once, under a title naming both reminders.
+        h.clock.set(NOW + 1_000L)
+        h.engine.onAlarmFired(loud)
+        verify(exactly = 1) {
+            h.notifier.showAlarm(match { it.name == "Reminder $otherId · Reminder $REMINDER_ID" }, any(), loud)
+        }
+        verify(exactly = 0) { h.notifier.showSilent(any(), any(), any()) }
+    }
+
+    @Test fun a_stray_alarm_for_a_follower_does_not_ring() = runTest {
+        val h = pausedHarness()
+        val (quiet, _) = twoHeld(h)
+        h.engine.resumeAfterBluetoothPause()
+
+        h.engine.onAlarmFired(quiet)
+
+        verify(exactly = 0) { h.notifier.showSilent(any(), any(), any()) }
+        verify(exactly = 0) { h.scheduler.scheduleStage(quiet, any(), any()) }
+    }
+
+    @Test fun done_on_the_collected_alarm_completes_every_reminder_in_it() = runTest {
+        val h = pausedHarness()
+        val (quiet, loud) = twoHeld(h)
+        h.engine.resumeAfterBluetoothPause()
+
+        h.engine.done(loud)
+
+        // Both daily reminders moved on to their next occurrence (tomorrow).
+        assertTrue(h.dao.getByReminderId(REMINDER_ID)!!.startedAtMs > NOW + 10 * MIN)
+        assertTrue(h.dao.getByReminderId(otherId)!!.startedAtMs > NOW + 10 * MIN)
+        assertTrue(h.bluetoothPause.collected.isEmpty())
+        coVerify { h.history.done("Reminder $REMINDER_ID") }
+        coVerify { h.history.done("Reminder $otherId") }
+    }
+
+    @Test fun snooze_on_the_collected_alarm_keeps_the_collection() = runTest {
+        val h = pausedHarness()
+        val (quiet, loud) = twoHeld(h)
+        h.engine.resumeAfterBluetoothPause()
+
+        h.engine.snooze(loud)
+
+        assertEquals(mapOf(quiet to loud), h.bluetoothPause.collected)
+        verify(exactly = 0) { h.scheduler.scheduleStage(quiet, any(), any()) }
+    }
+
+    @Test fun cancelling_the_lead_hands_the_collection_over() = runTest {
+        val h = pausedHarness()
+        val (quiet, loud) = twoHeld(h)
+        h.engine.resumeAfterBluetoothPause()
+        clearMocks(h.scheduler)
+
+        // The lead's reminder is deleted/moved: the follower must not be stranded.
+        h.engine.cancelActive(otherId)
+
+        verify { h.scheduler.scheduleStage(quiet, NOW + 1_000L, any()) }
+        assertTrue(h.bluetoothPause.collected.isEmpty())
+        assertEquals(null, h.dao.getById(loud))
+    }
+
+    @Test fun reboot_does_not_rearm_followers() = runTest {
+        val h = pausedHarness()
+        val (quiet, loud) = twoHeld(h)
+        coEvery { h.repo.getAllReminders() } returns emptyList()
+        h.engine.resumeAfterBluetoothPause()
+        clearMocks(h.scheduler)
+
+        h.engine.rescheduleAll()
+
+        verify(exactly = 0) { h.scheduler.scheduleStage(quiet, any(), any()) }
+        verify { h.scheduler.scheduleStage(loud, any(), any()) }
     }
 }

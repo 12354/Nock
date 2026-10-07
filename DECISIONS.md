@@ -243,6 +243,20 @@ held so nothing distracts the driver.
   (Done, snoozed from the notification, re-armed by an edit), detected by the
   stored recheck time no longer matching. The 5-min recheck bounds the delay if
   the broadcast is missed. Unpicking the device in Settings also resumes.
+- **Collected alarm.** When the pause ends with several reminders held, they
+  are released as ONE alarm instead of a burst one after another
+  (`CollectedAlarm`). One held escalation leads — a real escalating reminder over
+  a single-vibration one, then the most urgent due stage, then the longest
+  waiting — and walks its own chain; it is presented (notification, takeover,
+  Telegram) under a title naming them all, e.g. `Meds · Feed cat · Call mom`
+  (four names, then `+N`). The others ride along silently: their own alarms and
+  stale notifications are cleared and boot replay skips them. Done on the
+  collected alarm completes every reminder in it; Snooze snoozes the group. If
+  the lead is torn down any other way (edited, moved, deleted), the first
+  surviving follower takes over and fires right away, so none is stranded.
+  Collections never nest: a new release that includes an old lead merges its
+  followers. The follower→lead mapping lives next to the held set in
+  SharedPreferences.
 - **Is it connected?** Android has no public per-device API. We ask the hidden
   but greylisted `BluetoothDevice.isConnected()` and fall back to a set tracked
   from ACL broadcasts when that's unavailable (`BluetoothPausePolicy`).

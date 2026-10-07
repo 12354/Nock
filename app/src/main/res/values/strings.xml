@@ -240,6 +240,12 @@
     <string name="alarm_stage_of">Stage %1$d of %2$d</string>
     <string name="alarm_subtitle_repeats">Earlier nudges weren\'t acknowledged · repeats every %1$d min</string>
     <string name="alarm_snooze_minutes">Snooze %1$d min</string>
+    <plurals name="alarm_collected_title">
+        <item quantity="one">%1$d reminder waiting</item>
+        <item quantity="other">%1$d reminders waiting</item>
+    </plurals>
+    <string name="alarm_snooze_all">Snooze all</string>
+    <string name="alarm_snooze_all_minutes">Snooze all %1$d min</string>
     <string name="notification_alarm_suffix">%1$s — alarm</string>
 
     <!-- Stage types (StageType enum) -->

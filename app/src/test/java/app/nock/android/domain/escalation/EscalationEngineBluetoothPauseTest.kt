@@ -237,19 +237,59 @@ class EscalationEngineBluetoothPauseTest {
         verify(exactly = 0) { h.scheduler.scheduleStage(quiet, any(), any()) }
     }
 
-    @Test fun done_on_the_collected_alarm_completes_every_reminder_in_it() = runTest {
+    @Test fun done_on_the_lead_completes_only_it_and_the_next_takes_over() = runTest {
+        val h = pausedHarness()
+        val (quiet, loud) = twoHeld(h)
+        h.engine.resumeAfterBluetoothPause()
+        clearMocks(h.scheduler)
+
+        val next = h.engine.doneInCollection(loud)
+
+        // The lead's reminder moved on to tomorrow; the other is still due now.
+        coVerify { h.history.done("Reminder $otherId") }
+        coVerify(exactly = 0) { h.history.done("Reminder $REMINDER_ID") }
+        assertEquals(quiet, next)
+        verify { h.scheduler.scheduleStage(quiet, NOW + 1_000L, any()) }
+        assertTrue(h.bluetoothPause.collected.isEmpty())
+    }
+
+    @Test fun done_on_a_follower_leaves_the_rest_collected() = runTest {
         val h = pausedHarness()
         val (quiet, loud) = twoHeld(h)
         h.engine.resumeAfterBluetoothPause()
 
-        h.engine.done(loud)
+        val next = h.engine.doneInCollection(quiet)
 
-        // Both daily reminders moved on to their next occurrence (tomorrow).
-        assertTrue(h.dao.getByReminderId(REMINDER_ID)!!.startedAtMs > NOW + 10 * MIN)
-        assertTrue(h.dao.getByReminderId(otherId)!!.startedAtMs > NOW + 10 * MIN)
-        assertTrue(h.bluetoothPause.collected.isEmpty())
         coVerify { h.history.done("Reminder $REMINDER_ID") }
-        coVerify { h.history.done("Reminder $otherId") }
+        coVerify(exactly = 0) { h.history.done("Reminder $otherId") }
+        assertEquals(loud, next)
+        assertTrue(h.bluetoothPause.collected.isEmpty())
+    }
+
+    @Test fun snoozing_one_reminder_takes_it_out_of_the_collection() = runTest {
+        val h = pausedHarness()
+        val (quiet, loud) = twoHeld(h)
+        h.engine.resumeAfterBluetoothPause()
+        clearMocks(h.scheduler)
+
+        val next = h.engine.snoozeInCollection(quiet)
+
+        // Snoozed on its own: re-armed one repeat interval out, no longer collected.
+        verify { h.scheduler.scheduleStage(quiet, NOW + 10 * MIN, any()) }
+        assertEquals(loud, next)
+        assertTrue(h.bluetoothPause.collected.isEmpty())
+    }
+
+    @Test fun collected_items_list_the_lead_first() = runTest {
+        val h = pausedHarness()
+        val (quiet, loud) = twoHeld(h)
+        h.engine.resumeAfterBluetoothPause()
+
+        val items = h.engine.collectedItems(loud)
+
+        assertEquals(listOf(loud, quiet), items.map { it.escalationId })
+        assertEquals(listOf("Reminder $otherId", "Reminder $REMINDER_ID"), items.map { it.name })
+        assertTrue(h.engine.collectedItems(quiet).isEmpty())
     }
 
     @Test fun snooze_on_the_collected_alarm_keeps_the_collection() = runTest {

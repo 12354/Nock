@@ -240,6 +240,12 @@
     <string name="alarm_stage_of">Stufe %1$d von %2$d</string>
     <string name="alarm_subtitle_repeats">Frühere Hinweise wurden ignoriert · wiederholt sich alle %1$d Min</string>
     <string name="alarm_snooze_minutes">%1$d Min. schlummern</string>
+    <plurals name="alarm_collected_title">
+        <item quantity="one">%1$d Erinnerung wartet</item>
+        <item quantity="other">%1$d Erinnerungen warten</item>
+    </plurals>
+    <string name="alarm_snooze_all">Alle schlummern</string>
+    <string name="alarm_snooze_all_minutes">Alle %1$d Min. schlummern</string>
     <string name="notification_alarm_suffix">%1$s — Alarm</string>
 
     <!-- Stage types (StageType enum) -->

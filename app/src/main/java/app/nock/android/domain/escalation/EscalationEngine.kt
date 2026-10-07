@@ -410,6 +410,13 @@ class EscalationEngine @Inject constructor(
             followers.forEach { doneLocked(it) }
             return null
         }
+        // Single-vibration reminders riding along need no acknowledgement: they
+        // were named in this collected alarm's title, which is their nudge, so
+        // they auto-complete now exactly as they would have firing alone.
+        bluetoothPause.followersOf(esc.id).forEach { followerId ->
+            val follower = activeDao.getById(followerId) ?: return@forEach
+            if (repo.getReminder(follower.reminderId)?.simpleVibration == true) doneLocked(followerId)
+        }
 
         // Local, fast notification work happens under the lock; the (slow,
         // killable) Telegram send is deferred to the caller via the returned
@@ -462,9 +469,10 @@ class EscalationEngine @Inject constructor(
 
     private suspend fun doneLocked(escalationId: Long) {
         val esc = activeDao.getById(escalationId) ?: return
-        // Done on a collected alarm completes every reminder riding along with it.
-        val followers = bluetoothPause.followersOf(esc.id)
-        bluetoothPause.uncollect(esc.id)
+        // Done completes only THIS reminder, even inside a collected alarm — they
+        // are usually separate to-dos. If it led one, the next reminder in it takes
+        // over (and fires now); if it rode along, it just leaves.
+        handOverCollectionLocked(esc.id)
         scheduler.cancel(esc.id)
         notifier.cancel(esc.id)
         // Only silence the ringing alarm if it's THIS escalation's. Done'ing a
@@ -498,7 +506,6 @@ class EscalationEngine @Inject constructor(
             history.done(reminder.name)
             advanceAfterCompletionLocked(reminder, time.nowMs())
         }
-        followers.forEach { doneLocked(it) }
     }
 
     /**
@@ -679,11 +686,8 @@ class EscalationEngine @Inject constructor(
 
     /**
      * The collected alarm's title for [escalationId] when it leads one (its own
-     * name plus every reminder riding along), else null. Read by AlarmActivity.
+     * name plus every reminder riding along), else null.
      */
-    suspend fun collectedTitle(escalationId: Long): String? =
-        mutex.withLock { collectedTitleLocked(escalationId) }
-
     private suspend fun collectedTitleLocked(escalationId: Long): String? {
         val followers = bluetoothPause.followersOf(escalationId)
         if (followers.isEmpty()) return null
@@ -701,11 +705,11 @@ class EscalationEngine @Inject constructor(
      * be stranded: the first surviving one takes over as lead and fires now, the
      * rest stay collected under it. If it is a follower, it simply leaves.
      */
-    private suspend fun handOverCollectionLocked(escalationId: Long) {
+    private suspend fun handOverCollectionLocked(escalationId: Long): Long? {
         val followers = bluetoothPause.followersOf(escalationId)
         bluetoothPause.uncollect(escalationId)
         val alive = followers.sorted().mapNotNull { activeDao.getById(it) }
-        val newLead = alive.firstOrNull() ?: return
+        val newLead = alive.firstOrNull() ?: return null
         if (alive.size > 1) bluetoothPause.collect(newLead.id, alive.drop(1).map { it.id })
         val chain = runCatching { ChainJson.decode(newLead.chainSnapshotJson) }.getOrNull()
             ?: settings.getStageChain()
@@ -714,7 +718,67 @@ class EscalationEngine @Inject constructor(
             .coerceIn(0, chain.lastIndex)
         activeDao.update(newLead.copy(nextFireAtMs = fireAt))
         scheduler.scheduleStage(newLead.id, fireAt, chain.stage(idx).type)
+        return newLead.id
     }
+
+    /** One reminder in a collected alarm, as the alarm screen lists it. */
+    data class CollectedItem(val escalationId: Long, val reminderId: Long, val name: String, val group: Group?)
+
+    /**
+     * The reminders a collected alarm led by [leadId] stands for — the lead first,
+     * then the rest in order. Empty when [leadId] leads no collection.
+     */
+    suspend fun collectedItems(leadId: Long): List<CollectedItem> = mutex.withLock {
+        val followers = bluetoothPause.followersOf(leadId)
+        if (followers.isEmpty()) return@withLock emptyList()
+        (listOf(leadId) + followers.sorted()).mapNotNull { id ->
+            val esc = activeDao.getById(id) ?: return@mapNotNull null
+            val reminder = repo.getReminder(esc.reminderId) ?: return@mapNotNull null
+            CollectedItem(id, reminder.id, reminder.name, repo.getGroup(reminder.groupId))
+        }
+    }
+
+    /**
+     * Done for ONE reminder of a collected alarm (the alarm screen's per-row
+     * button). Returns the escalation now leading what's left, or null when
+     * nothing is left.
+     */
+    suspend fun doneInCollection(escalationId: Long): Long? {
+        val next = mutex.withLock {
+            val members = collectionMembersLocked(escalationId)
+            doneLocked(escalationId)
+            remainingLeadLocked(members - escalationId)
+        }
+        flushPendingTelegramDeletions()
+        return next
+    }
+
+    /**
+     * Snooze ONE reminder of a collected alarm: it leaves the collection and
+     * snoozes on its own, the others stay collected (the next one taking over as
+     * lead if needed). Snoozing the whole collection is plain [snooze] on its lead.
+     * Returns the escalation now leading what's left, or null.
+     */
+    suspend fun snoozeInCollection(escalationId: Long): Long? {
+        val next = mutex.withLock {
+            val members = collectionMembersLocked(escalationId)
+            snoozeLocked(escalationId)
+            handOverCollectionLocked(escalationId)
+            remainingLeadLocked(members - escalationId)
+        }
+        flushPendingTelegramDeletions()
+        return next
+    }
+
+    /** Every escalation in the collection [escalationId] belongs to, lead first. */
+    private fun collectionMembersLocked(escalationId: Long): List<Long> {
+        val lead = bluetoothPause.leadOf(escalationId) ?: escalationId
+        return listOf(lead) + bluetoothPause.followersOf(lead).sorted()
+    }
+
+    /** Of the surviving [members], the one now leading (not riding along with another). */
+    private suspend fun remainingLeadLocked(members: List<Long>): Long? =
+        members.firstOrNull { activeDao.getById(it) != null && bluetoothPause.leadOf(it) == null }
 
     // Editing a group's chain/timing only writes the group row; the escalations
     // already armed for its reminders keep the chain they snapshotted when armed,

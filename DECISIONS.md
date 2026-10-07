@@ -247,16 +247,24 @@ held so nothing distracts the driver.
   are released as ONE alarm instead of a burst one after another
   (`CollectedAlarm`). One held escalation leads — a real escalating reminder over
   a single-vibration one, then the most urgent due stage, then the longest
-  waiting — and walks its own chain; it is presented (notification, takeover,
-  Telegram) under a title naming them all, e.g. `Meds · Feed cat · Call mom`
-  (four names, then `+N`). The others ride along silently: their own alarms and
-  stale notifications are cleared and boot replay skips them. Done on the
-  collected alarm completes every reminder in it; Snooze snoozes the group. If
-  the lead is torn down any other way (edited, moved, deleted), the first
-  surviving follower takes over and fires right away, so none is stranded.
-  Collections never nest: a new release that includes an old lead merges its
-  followers. The follower→lead mapping lives next to the held set in
-  SharedPreferences.
+  waiting — and walks its own chain, so the alarm is as loud as the most urgent
+  reminder. The others ride along silently: their own alarms and stale
+  notifications are cleared and boot replay skips them.
+  - **Each reminder is acknowledged on its own** — they're usually separate
+    to-dos. The takeover lists them ("3 reminders waiting"), each with its own
+    Done and Snooze; Done completes only that reminder, Snooze takes it out of
+    the collection and snoozes it alone. "Snooze all" at the bottom snoozes the
+    collection together. When the lead is ticked off, the next reminder takes
+    over and fires right away at its own due stage; the screen stays up until
+    the list is empty.
+  - The notification's title names them all (`Meds · Bins · Parcel`, four names
+    then `+N`); its Done completes the first-named one (the next takes over and
+    reposts), its Snooze snoozes all.
+  - Single-vibration reminders riding along auto-complete when the collected
+    alarm first fires — the title naming them is their nudge.
+  - If the lead is torn down any other way (edited, moved, deleted) the first
+    surviving follower takes over, so none is stranded. Collections never nest.
+    The follower→lead mapping lives next to the held set in SharedPreferences.
 - **Is it connected?** Android has no public per-device API. We ask the hidden
   but greylisted `BluetoothDevice.isConnected()` and fall back to a set tracked
   from ACL broadcasts when that's unavailable (`BluetoothPausePolicy`).

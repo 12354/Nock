@@ -240,6 +240,12 @@
     <string name="alarm_stage_of">Stufe %1$d von %2$d</string>
     <string name="alarm_subtitle_repeats">Frühere Hinweise wurden ignoriert · wiederholt sich alle %1$d Min</string>
     <string name="alarm_snooze_minutes">%1$d Min. schlummern</string>
+    <plurals name="alarm_collected_title">
+        <item quantity="one">%1$d Erinnerung wartet</item>
+        <item quantity="other">%1$d Erinnerungen warten</item>
+    </plurals>
+    <string name="alarm_snooze_all">Alle schlummern</string>
+    <string name="alarm_snooze_all_minutes">Alle %1$d Min. schlummern</string>
     <string name="notification_alarm_suffix">%1$s — Alarm</string>
 
     <!-- Stage types (StageType enum) -->
@@ -258,6 +264,14 @@
     <string name="settings_prealarm_sound_default">Standard-Benachrichtigungston</string>
     <string name="settings_prealarm_sound_silent">Lautlos</string>
     <string name="settings_prealarm_sound_custom">Eigener Ton</string>
+    <string name="settings_bt_pause_title">Pausieren, solange verbunden</string>
+    <string name="settings_bt_pause_desc">Alarme und Erinnerungsbenachrichtigungen werden zurückgehalten, solange eines dieser Bluetooth-Geräte verbunden ist — zum Beispiel dein Auto, damit dich beim Fahren nichts ablenkt. Zurückgehaltene Alarme klingeln, sobald die Verbindung getrennt wird.</string>
+    <string name="settings_bt_pause_unavailable">Dieses Gerät hat kein Bluetooth.</string>
+    <string name="settings_bt_pause_permission_help">Erlaube den Zugriff auf Geräte in der Nähe, damit Nock deine gekoppelten Bluetooth-Geräte anzeigen und ihre Verbindung erkennen kann.</string>
+    <string name="settings_bt_pause_grant">Bluetooth-Zugriff erlauben</string>
+    <string name="settings_bt_pause_no_devices">Keine gekoppelten Bluetooth-Geräte. Kopple dein Auto zuerst in den Bluetooth-Einstellungen des Systems.</string>
+    <string name="settings_bt_pause_connected">Verbunden</string>
+    <string name="settings_bt_pause_active">Alarme pausiert — verbunden mit %1$s</string>
 
     <string name="default_reminder_name">Erinnerung</string>
 

@@ -20,6 +20,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -28,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.lifecycleScope
 import app.nock.android.R
+import app.nock.android.bluetooth.BluetoothPauseMonitor
 import app.nock.android.data.NockRepository
 import app.nock.android.data.dao.ActiveEscalationDao
 import app.nock.android.data.dao.CalendarTripDao
@@ -60,6 +62,7 @@ class AlarmActivity : ComponentActivity() {
     @Inject lateinit var engine: EscalationEngine
     @Inject lateinit var activeDao: ActiveEscalationDao
     @Inject lateinit var tripDao: CalendarTripDao
+    @Inject lateinit var bluetoothPause: BluetoothPauseMonitor
 
     private val nameState = MutableStateFlow("")
     private val groupState = MutableStateFlow<Group?>(null)
@@ -67,6 +70,8 @@ class AlarmActivity : ComponentActivity() {
     private val chainState = MutableStateFlow<EscalationChain?>(null)
     private val startedAtState = MutableStateFlow(0L)
     private val tripState = MutableStateFlow<TripAlarmInfo?>(null)
+    // The reminders a collected alarm stands for (empty for an ordinary alarm).
+    private val itemsState = MutableStateFlow<List<EscalationEngine.CollectedItem>>(emptyList())
     private var bindingJob: Job? = null
 
     override fun attachBaseContext(newBase: Context) {
@@ -79,6 +84,12 @@ class AlarmActivity : ComponentActivity() {
         nameState.value = getString(R.string.alarm_title)
         bindFromIntent(intent)
 
+        // A paused Bluetooth device (e.g. the car) connected while this alarm was
+        // on screen: the engine has silenced and held it, so get out of the way.
+        lifecycleScope.launch {
+            bluetoothPause.pauseStarted.collect { finish() }
+        }
+
         setContent {
             NockTheme {
                 val name by nameState.collectAsState()
@@ -86,12 +97,16 @@ class AlarmActivity : ComponentActivity() {
                 val chain by chainState.collectAsState()
                 val startedAt by startedAtState.collectAsState()
                 val trip by tripState.collectAsState()
+                val items by itemsState.collectAsState()
                 AlarmTakeoverScreen(
                     name = name,
                     group = group,
                     chain = chain,
                     startedAtMs = startedAt,
                     trip = trip,
+                    items = items,
+                    onItemDone = { id -> lifecycleScope.launch { continueWith(engine.doneInCollection(id)) } },
+                    onItemSnooze = { id -> lifecycleScope.launch { continueWith(engine.snoozeInCollection(id)) } },
                     onDone = {
                         val id = escalationIdState.value
                         lifecycleScope.launch {
@@ -109,6 +124,15 @@ class AlarmActivity : ComponentActivity() {
                 )
             }
         }
+    }
+
+    /** After ticking off one reminder of a collected alarm: show what's left, or leave. */
+    private fun continueWith(nextLeadId: Long?) {
+        if (nextLeadId == null) {
+            finish()
+            return
+        }
+        bindFromIntent(Intent().putExtra(IntentExtras.EXTRA_ESCALATION_ID, nextLeadId))
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -143,6 +167,7 @@ class AlarmActivity : ComponentActivity() {
         groupState.value = null
         chainState.value = null
         tripState.value = null
+        itemsState.value = emptyList()
         startedAtState.value = 0L
         bindingJob = lifecycleScope.launch {
             val esc = if (escalationId >= 0L) activeDao.getById(escalationId) else null
@@ -156,6 +181,7 @@ class AlarmActivity : ComponentActivity() {
             if (esc != null) {
                 chainState.value = runCatching { ChainJson.decode(esc.chainSnapshotJson) }.getOrNull()
                 startedAtState.value = esc.startedAtMs
+                itemsState.value = engine.collectedItems(esc.id)
             }
             // The receiver launches us without a reminderId (it only knows the
             // escalation), so fall back to the escalation row's reminderId to
@@ -178,16 +204,25 @@ class AlarmActivity : ComponentActivity() {
 }
 
 @Composable
-private fun AlarmTakeoverScreen(
+internal fun AlarmTakeoverScreen(
     name: String,
     group: Group?,
     chain: EscalationChain?,
     startedAtMs: Long,
     trip: TripAlarmInfo?,
+    items: List<EscalationEngine.CollectedItem> = emptyList(),
+    onItemDone: (Long) -> Unit = {},
+    onItemSnooze: (Long) -> Unit = {},
     onDone: () -> Unit,
     onSnooze: () -> Unit
 ) {
-    val accent = group?.color?.let { Color(it) } ?: MaterialTheme.colorScheme.primary
+    // A collected alarm — several reminders held during a Bluetooth pause and
+    // released together. They're usually separate to-dos, so each gets its own
+    // Done and Snooze instead of one Done for the lot.
+    val collected = items.size >= 2
+    // The reminders may come from different groups, so a collected alarm takes the
+    // app accent rather than the first reminder's group tint; each row shows its own.
+    val accent = group?.takeIf { !collected }?.color?.let { Color(it) } ?: MaterialTheme.colorScheme.primary
     val surface = MaterialTheme.colorScheme.surface
     val onSurface = MaterialTheme.colorScheme.onSurface
     val onSurfaceVariant = MaterialTheme.colorScheme.onSurfaceVariant
@@ -221,7 +256,7 @@ private fun AlarmTakeoverScreen(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        if (group != null) {
+                        if (group != null && !collected) {
                             GroupPill(group = group, accent = accent)
                         } else {
                             Spacer(Modifier.size(1.dp))
@@ -276,7 +311,24 @@ private fun AlarmTakeoverScreen(
                         )
                     }
                     Spacer(Modifier.height(14.dp))
-                    Text(
+                    if (collected) {
+                        Text(
+                            text = pluralStringResource(R.plurals.alarm_collected_title, items.size, items.size),
+                            fontSize = 28.sp,
+                            color = onSurface,
+                            textAlign = TextAlign.Center,
+                        )
+                        Spacer(Modifier.height(16.dp))
+                        items.forEach { item ->
+                            CollectedItemRow(
+                                item = item,
+                                fallbackAccent = accent,
+                                onDone = { onItemDone(item.escalationId) },
+                                onSnooze = { onItemSnooze(item.escalationId) },
+                            )
+                            Spacer(Modifier.height(10.dp))
+                        }
+                    } else Text(
                         text = name,
                         fontSize = 36.sp,
                         fontWeight = FontWeight.Normal,
@@ -294,7 +346,7 @@ private fun AlarmTakeoverScreen(
                         )
                     }
 
-                    if (trip != null) {
+                    if (trip != null && !collected) {
                         Spacer(Modifier.height(20.dp))
                         TripAlarmDetails(trip)
                     }
@@ -308,7 +360,8 @@ private fun AlarmTakeoverScreen(
 
                 Spacer(Modifier.height(32.dp))
                 // Extra-large pill Done button — the design's primary affordance.
-                Button(
+                // A collected alarm has a Done per reminder instead.
+                if (!collected) Button(
                     onClick = onDone,
                     modifier = Modifier
                         .height(80.dp)
@@ -331,12 +384,70 @@ private fun AlarmTakeoverScreen(
                     Text(
                         // Snoozing the loud alarm re-rings one repeat interval out
                         // (EscalationEngine.snoozeLocked), so say that number.
-                        text = if (repeatMin != null)
-                            stringResource(R.string.alarm_snooze_minutes, repeatMin)
-                        else stringResource(R.string.snooze),
+                        text = when {
+                            collected && repeatMin != null ->
+                                stringResource(R.string.alarm_snooze_all_minutes, repeatMin)
+                            collected -> stringResource(R.string.alarm_snooze_all)
+                            repeatMin != null -> stringResource(R.string.alarm_snooze_minutes, repeatMin)
+                            else -> stringResource(R.string.snooze)
+                        },
                         color = onSurface,
                         fontSize = 16.sp
                     )
+                }
+            }
+        }
+    }
+}
+
+/** One reminder of a collected alarm, with its own Done and Snooze. */
+@Composable
+private fun CollectedItemRow(
+    item: EscalationEngine.CollectedItem,
+    fallbackAccent: Color,
+    onDone: () -> Unit,
+    onSnooze: () -> Unit,
+) {
+    val accent = item.group?.color?.let { Color(it) } ?: fallbackAccent
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = RoundedCornerShape(20.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(modifier = Modifier.padding(start = 16.dp, end = 12.dp, top = 14.dp, bottom = 10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (item.group != null) {
+                    Icon(
+                        imageVector = groupIconFor(item.group.icon),
+                        contentDescription = item.group.name,
+                        tint = accent,
+                        modifier = Modifier.size(20.dp),
+                    )
+                    Spacer(Modifier.width(10.dp))
+                }
+                Text(
+                    text = item.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TextButton(onClick = onSnooze) {
+                    Icon(Icons.Outlined.Snooze, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(stringResource(R.string.snooze))
+                }
+                Spacer(Modifier.width(8.dp))
+                Button(onClick = onDone, shape = RoundedCornerShape(100.dp)) {
+                    Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(stringResource(R.string.done))
                 }
             }
         }

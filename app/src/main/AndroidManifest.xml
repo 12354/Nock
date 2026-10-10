@@ -31,6 +31,13 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
 
+    <!-- Pause alarms while a chosen Bluetooth device (e.g. the car) is connected.
+         BLUETOOTH_CONNECT (Android 12+) lists paired devices and is required to
+         receive the ACL connect/disconnect broadcasts; older releases use the
+         install-time BLUETOOTH permission instead. -->
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+
     <queries>
         <intent>
             <action android:name="android.intent.action.RINGTONE_PICKER" />
@@ -163,6 +170,18 @@
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
                 <action android:name="android.intent.action.TIME_SET" />
                 <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- ACL connect/disconnect are exempt from the implicit-broadcast limits,
+             so this wakes the app to pause/resume alarms for chosen devices. -->
+        <receiver
+            android:name=".bluetooth.BluetoothConnectionReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.bluetooth.device.action.ACL_CONNECTED" />
+                <action android:name="android.bluetooth.device.action.ACL_DISCONNECTED" />
+                <action android:name="android.bluetooth.adapter.action.STATE_CHANGED" />
             </intent-filter>
         </receiver>
 

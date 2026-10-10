@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import androidx.core.content.getSystemService
 import android.os.PowerManager
+import app.nock.android.bluetooth.BluetoothPauseGate
 import app.nock.android.di.ApplicationScope
 import app.nock.android.domain.escalation.EscalationEngine
 import dagger.hilt.android.AndroidEntryPoint
@@ -16,6 +17,7 @@ import javax.inject.Inject
 class EscalationReceiver : BroadcastReceiver() {
 
     @Inject lateinit var engine: EscalationEngine
+    @Inject lateinit var bluetoothPause: BluetoothPauseGate
     @Inject @ApplicationScope lateinit var scope: CoroutineScope
 
     override fun onReceive(context: Context, intent: Intent) {
@@ -32,7 +34,12 @@ class EscalationReceiver : BroadcastReceiver() {
         // user opened the app. Only loud stages are flagged; AlarmActivity
         // re-checks the escalation and finishes itself if it was already
         // Done/Snoozed, so an occasional stale launch is harmless.
-        if (intent.getBooleanExtra(IntentExtras.EXTRA_IS_LOUD_STAGE, false)) {
+        //
+        // Not while the Bluetooth pause is on (e.g. driving): the engine holds
+        // the stage instead of ringing it, so a takeover would only distract.
+        if (intent.getBooleanExtra(IntentExtras.EXTRA_IS_LOUD_STAGE, false) &&
+            !bluetoothPause.isActive()
+        ) {
             launchAlarmTakeover(context, escalationId)
         }
 

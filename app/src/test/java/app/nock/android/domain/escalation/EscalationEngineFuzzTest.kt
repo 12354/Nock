@@ -176,7 +176,7 @@ class EscalationEngineFuzzTest {
         private val calendarTripDao: app.nock.android.data.dao.CalendarTripDao = mockk(relaxed = true) {
             coEvery { getByReminderId(any()) } returns null
         }
-        private val engine = EscalationEngine(repo, dao, settings, scheduler, notifier, telegram, clock, history, pendingDeletionDao, calendarTripDao)
+        private val engine = EscalationEngine(repo, dao, settings, scheduler, notifier, telegram, clock, history, pendingDeletionDao, calendarTripDao, FakeBluetoothPauseGate())
 
         init {
             // A plain group, one that mirrors silent stages to Telegram, and one

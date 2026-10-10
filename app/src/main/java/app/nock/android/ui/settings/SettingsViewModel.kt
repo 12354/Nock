@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.nock.android.R
+import app.nock.android.bluetooth.BluetoothDeviceInfo
+import app.nock.android.bluetooth.BluetoothPauseMonitor
 import app.nock.android.data.NockRepository
 import app.nock.android.data.SeedGroupLocaleSync
 import app.nock.android.data.SettingsRepository
@@ -31,6 +33,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -61,6 +64,24 @@ data class SettingsState(
     val preAlarmSoundUri: String? = null,
 )
 
+/** A row in the "pause while connected" device picker. */
+data class BluetoothPauseDevice(
+    val info: BluetoothDeviceInfo,
+    val selected: Boolean,
+    val connected: Boolean,
+)
+
+data class BluetoothPauseState(
+    val bluetoothAvailable: Boolean = true,
+    val hasPermission: Boolean = false,
+    // Paired devices, plus any selected device that is no longer paired so it
+    // can still be unticked.
+    val devices: List<BluetoothPauseDevice> = emptyList(),
+) {
+    /** Names of selected devices connected right now — alarms are paused while non-empty. */
+    val pausedBy: List<String> get() = devices.filter { it.selected && it.connected }.map { it.info.name }
+}
+
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     @ApplicationContext private val ctx: Context,
@@ -76,6 +97,7 @@ class SettingsViewModel @Inject constructor(
     private val tripSyncLog: TripSyncLog,
     private val tomtom: TomTomClient,
     private val calendar: CalendarRepository,
+    private val bluetoothPauseMonitor: BluetoothPauseMonitor,
     @ApplicationScope private val appScope: CoroutineScope,
 ) : ViewModel() {
 
@@ -311,6 +333,39 @@ class SettingsViewModel @Inject constructor(
                     else ctx.getString(R.string.trips_status_error)
                 }
             }
+        }
+    }
+
+    private val _bluetoothPause = MutableStateFlow(BluetoothPauseState())
+    val bluetoothPause: StateFlow<BluetoothPauseState> = _bluetoothPause.asStateFlow()
+
+    /** Re-read paired devices, permission and connection state (on screen resume / after changes). */
+    fun refreshBluetoothPause() {
+        val m = bluetoothPauseMonitor
+        val selected = m.selectedAddresses()
+        val connected = m.connectedSelected()
+        val bonded = m.bondedDevices()
+        val bondedAddresses = bonded.map { it.address }.toSet()
+        val unpairedSelected = (selected - bondedAddresses).map { addr ->
+            BluetoothDeviceInfo(addr, m.selectedName(addr) ?: addr)
+        }
+        _bluetoothPause.value = BluetoothPauseState(
+            bluetoothAvailable = m.isBluetoothAvailable(),
+            hasPermission = m.hasPermission(),
+            devices = (bonded + unpairedSelected).map {
+                BluetoothPauseDevice(it, selected = it.address in selected, connected = it.address in connected)
+            },
+        )
+    }
+
+    fun setBluetoothPauseDevice(device: BluetoothDeviceInfo, selected: Boolean) {
+        bluetoothPauseMonitor.setSelected(device, selected)
+        refreshBluetoothPause()
+        // The selection decides whether the pause is on right now: picking the
+        // device you're connected to starts it; unpicking it may end it.
+        appScope.launch {
+            if (bluetoothPauseMonitor.isActive()) engine.onBluetoothPauseStarted()
+            else engine.resumeAfterBluetoothPause()
         }
     }
 

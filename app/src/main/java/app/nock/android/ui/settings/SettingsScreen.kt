@@ -238,6 +238,7 @@ fun NotificationsSettingsScreen(
             StageChainSection(chain = it, onChange = vm::setChain)
         }
         PreAlarmSoundSection(state.preAlarmSoundUri, vm)
+        BluetoothPauseSection(vm)
         GroupsSection(state.groups, onEditGroup, onAddGroup = { onEditGroup(0L) })
     }
 }
@@ -290,6 +291,92 @@ private fun PreAlarmSoundSection(soundUri: String?, vm: SettingsViewModel) {
             }
             launcher.launch(intent)
         }) { Text(stringResource(R.string.settings_prealarm_sound_choose)) }
+    }
+}
+
+/**
+ * "Pause while connected": pick Bluetooth devices (e.g. the car) that hold all
+ * alarms while connected, so nothing distracts the driver. Held alarms ring once
+ * the device disconnects.
+ */
+@Composable
+private fun BluetoothPauseSection(vm: SettingsViewModel) {
+    val bt by vm.bluetoothPause.collectAsState()
+
+    // Paired devices, permission and connection state change outside the app;
+    // re-read whenever the screen comes back to the foreground.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) vm.refreshBluetoothPause()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    val permLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { vm.refreshBluetoothPause() }
+
+    SectionCard(stringResource(R.string.settings_bt_pause_title)) {
+        Text(
+            stringResource(R.string.settings_bt_pause_desc),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.outline,
+        )
+        Spacer(Modifier.height(8.dp))
+        when {
+            !bt.bluetoothAvailable -> Text(
+                stringResource(R.string.settings_bt_pause_unavailable),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            !bt.hasPermission -> {
+                Text(
+                    stringResource(R.string.settings_bt_pause_permission_help),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Spacer(Modifier.height(8.dp))
+                Button(onClick = {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        permLauncher.launch(android.Manifest.permission.BLUETOOTH_CONNECT)
+                    }
+                }) { Text(stringResource(R.string.settings_bt_pause_grant)) }
+            }
+            else -> {
+                if (bt.pausedBy.isNotEmpty()) {
+                    Text(
+                        stringResource(R.string.settings_bt_pause_active, bt.pausedBy.joinToString(", ")),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                }
+                if (bt.devices.isEmpty()) {
+                    Text(
+                        stringResource(R.string.settings_bt_pause_no_devices),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+                bt.devices.forEach { d ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(
+                            checked = d.selected,
+                            onCheckedChange = { vm.setBluetoothPauseDevice(d.info, it) },
+                        )
+                        Column {
+                            Text(d.info.name, style = MaterialTheme.typography.bodyMedium)
+                            if (d.connected) {
+                                Text(
+                                    stringResource(R.string.settings_bt_pause_connected),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.outline,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

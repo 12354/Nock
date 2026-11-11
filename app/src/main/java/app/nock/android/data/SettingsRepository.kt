@@ -40,6 +40,10 @@ class SettingsRepository @Inject constructor(
         // from these calendars become trip alarms; empty/unset means none.
         const val KEY_TRIP_CALENDAR_IDS = "trip_calendar_ids"
 
+        // Epoch millis until which EVERY group is paused (the "pause all"
+        // switch), on top of each group's own pausedUntilMs. Unset = not paused.
+        const val KEY_GLOBAL_PAUSED_UNTIL = "global_paused_until_ms"
+
         const val DEFAULT_DEEPSEEK_MODEL = "deepseek-v4-flash"
         const val DEFAULT_DEEPSEEK_BASE_URL = "https://api.deepseek.com"
     }
@@ -52,6 +56,18 @@ class SettingsRepository @Inject constructor(
     suspend fun setStageChain(c: EscalationChain) {
         dao.set(SettingsEntity(KEY_STAGE_CHAIN, ChainJson.encode(c)))
     }
+
+    /** End of the "pause all" window, or null when it is unset. Callers compare
+     *  against the current time, exactly as with a group's pausedUntilMs. */
+    suspend fun getGlobalPauseUntil(): Long? = dao.get(KEY_GLOBAL_PAUSED_UNTIL)?.toLongOrNull()
+
+    suspend fun setGlobalPauseUntil(untilMs: Long?) {
+        if (untilMs == null) dao.delete(KEY_GLOBAL_PAUSED_UNTIL)
+        else dao.set(SettingsEntity(KEY_GLOBAL_PAUSED_UNTIL, untilMs.toString()))
+    }
+
+    fun observeGlobalPauseUntil(): Flow<Long?> =
+        observeAll().map { it[KEY_GLOBAL_PAUSED_UNTIL]?.toLongOrNull() }
 
     suspend fun get(key: String): String? = dao.get(key)
     suspend fun set(key: String, value: String) = dao.set(SettingsEntity(key, value))

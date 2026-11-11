@@ -135,6 +135,8 @@ class EngineHarness(now: Long = NOW) {
     init {
         // Sensible defaults; individual tests override as needed.
         coEvery { settings.getStageChain() } returns TEST_CHAIN
+        // "Pause all" off unless a test turns it on.
+        coEvery { settings.getGlobalPauseUntil() } returns null
         coEvery { repo.effectiveChain(any()) } returns TEST_CHAIN
         // Non-trip reminders by default: no trip row, so the group chain is used.
         coEvery { calendarTripDao.getByReminderId(any()) } returns null

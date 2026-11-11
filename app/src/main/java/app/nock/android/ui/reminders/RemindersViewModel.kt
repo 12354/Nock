@@ -92,6 +92,24 @@ class RemindersViewModel @Inject constructor(
         }
     }
 
+    /** End of the "pause all" window as stored (may already be in the past). */
+    val globalPauseUntil: StateFlow<Long?> = settings.observeGlobalPauseUntil()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /** Pause every group — and so every reminder — until [untilMs]. */
+    fun pauseAllUntil(untilMs: Long) {
+        viewModelScope.launch { settings.setGlobalPauseUntil(untilMs) }
+    }
+
+    fun unpauseAll() {
+        viewModelScope.launch {
+            settings.setGlobalPauseUntil(null)
+            // Same reasoning as unpauseGroup, for every group at once. Groups
+            // still under their own pause stay untouched.
+            engine.rearmAllGroups()
+        }
+    }
+
     fun saveGroup(g: Group, sortIndex: Int = 0) {
         viewModelScope.launch { repo.upsertGroup(g, sortIndex) }
     }

@@ -140,7 +140,7 @@ class EscalationEngine @Inject constructor(
         val group = repo.getGroup(reminder.groupId) ?: return
         val chain = effectiveChainFor(reminder, group)
         val now = time.nowMs()
-        if (group.isPaused(now)) return
+        if (isPaused(group, now)) return
 
         // OnUnlock reminders use the unlock event itself as the trigger, not
         // as a "deadline" to warn before. Pre-trigger stages (offset ≤ 0) and
@@ -188,7 +188,7 @@ class EscalationEngine @Inject constructor(
 
     private suspend fun startEscalationFromBootLocked(reminder: Reminder) {
         val group = repo.getGroup(reminder.groupId) ?: return
-        if (group.isPaused(time.nowMs())) return
+        if (isPaused(group, time.nowMs())) return
         val chain = effectiveChainFor(reminder, group)
         val firstOffset = chain.stages.first().offsetMs
         val now = time.nowMs()
@@ -301,15 +301,17 @@ class EscalationEngine @Inject constructor(
 
         val now = time.nowMs()
 
-        // The group was paused after this escalation was armed. Don't ring; push
+        // The group (or everything, via the global pause) was paused after this
+        // escalation was armed. Don't ring; push
         // the next fire out to when the pause ends and re-evaluate then (if the
         // pause has been extended again, this repeats; if it has been lifted, the
         // stage due at that point rings). Pausing therefore suppresses the alarm
         // without losing it. nextStageIndex is left untouched so the same stage is
         // reconsidered when the pause lifts. Unpausing early re-arms the group
         // (see rearmGroup / unpauseGroup) to restore the original, earlier time.
-        if (group.isPaused(now)) {
-            val resumeAt = max(group.pausedUntilMs ?: now, now + 1_000L)
+        val pausedUntil = pausedUntil(group, now)
+        if (pausedUntil != null) {
+            val resumeAt = max(pausedUntil, now + 1_000L)
             val pendingType = chain.stage(esc.nextStageIndex.coerceIn(0, chain.lastIndex)).type
             activeDao.update(esc.copy(nextFireAtMs = resumeAt))
             scheduler.scheduleStage(esc.id, resumeAt, pendingType)
@@ -780,6 +782,39 @@ class EscalationEngine @Inject constructor(
     private suspend fun remainingLeadLocked(members: List<Long>): Long? =
         members.firstOrNull { activeDao.getById(it) != null && bluetoothPause.leadOf(it) == null }
 
+    /**
+     * When the pause covering [group] ends: the later of the group's own pause and
+     * the global "pause all", counting only those still running at [now]. Null
+     * when neither is active. Both are plain "pause until" windows, so the engine
+     * treats them identically — the global one just applies to every group.
+     */
+    private suspend fun pausedUntil(group: Group, now: Long): Long? {
+        val own = group.pausedUntilMs?.takeIf { it > now }
+        val global = settings.getGlobalPauseUntil()?.takeIf { it > now }
+        return listOfNotNull(own, global).maxOrNull()
+    }
+
+    private suspend fun isPaused(group: Group, now: Long): Boolean = pausedUntil(group, now) != null
+
+    /** Whether [reminder]'s stages are currently being held by a pause. */
+    suspend fun isReminderPaused(reminder: Reminder): Boolean {
+        val group = repo.getGroup(reminder.groupId) ?: return false
+        return isPaused(group, time.nowMs())
+    }
+
+    /**
+     * Re-arm every group's reminders — the global-pause counterpart of
+     * [rearmGroup], run when "pause all" is lifted early. Groups still under their
+     * own pause are skipped by rearmGroupLocked, as is everything if the global
+     * pause is somehow still active.
+     */
+    suspend fun rearmAllGroups() {
+        mutex.withLock {
+            repo.getGroups().forEach { rearmGroupLocked(it.id) }
+        }
+        flushPendingTelegramDeletions()
+    }
+
     // Editing a group's chain/timing only writes the group row; the escalations
     // already armed for its reminders keep the chain they snapshotted when armed,
     // so a changed chain wouldn't take effect until each reminder next fires (or a
@@ -790,8 +825,8 @@ class EscalationEngine @Inject constructor(
     // any Telegram it already sent) and re-arms from the reminder's current trigger
     // at the stage that is due now under the new chain.
     //
-    // Paused groups are left untouched — pause owns arming, and startEscalationAt
-    // would tear the chain down without re-arming.
+    // Paused groups (their own pause or "pause all") are left untouched — pause
+    // owns arming, and startEscalationAt would tear the chain down without re-arming.
     suspend fun rearmGroup(groupId: Long) {
         mutex.withLock { rearmGroupLocked(groupId) }
         flushPendingTelegramDeletions()
@@ -799,7 +834,7 @@ class EscalationEngine @Inject constructor(
 
     private suspend fun rearmGroupLocked(groupId: Long) {
         val group = repo.getGroup(groupId) ?: return
-        if (group.isPaused(time.nowMs())) return
+        if (isPaused(group, time.nowMs())) return
         repo.getAllReminders()
             .filter { it.groupId == groupId }
             .forEach { reminder ->
@@ -907,7 +942,7 @@ class EscalationEngine @Inject constructor(
             // must not ring; the deadline case is owned by the armed chain.
             if (now >= deadline || now < deadline - schedule.fallbackMs) return@withLock false
             val group = repo.getGroup(reminder.groupId) ?: return@withLock false
-            if (group.isPaused(now)) return@withLock false
+            if (isPaused(group, now)) return@withLock false
 
             // Tear down the chain armed for the fallback deadline, undoing any
             // lead-in side effects it already produced — a posted stage

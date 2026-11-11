@@ -189,6 +189,13 @@ class AlarmActivity : ComponentActivity() {
             val reminderId = if (intentReminderId >= 0L) intentReminderId else esc?.reminderId ?: -1L
             val r = if (reminderId >= 0L) repo.getReminder(reminderId) else null
             if (r != null) {
+                // A paused reminder's stage is held by the engine rather than rung
+                // (its group's pause or "pause all"), but EscalationReceiver can't
+                // check that synchronously before launching us — so bow out here.
+                if (engine.isReminderPaused(r)) {
+                    finish()
+                    return@launch
+                }
                 nameState.value = r.name
                 groupState.value = repo.getGroup(r.groupId)
                 // Follow cached routing updates while this alarm is on screen.

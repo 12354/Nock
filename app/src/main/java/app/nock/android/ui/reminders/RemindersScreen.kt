@@ -48,6 +48,9 @@ fun RemindersScreen(
 ) {
     val sections by vm.sections.collectAsState()
     val pending by vm.pending.collectAsState()
+    val globalPauseUntil by vm.globalPauseUntil.collectAsState()
+    val globallyPaused = globalPauseUntil?.let { it > System.currentTimeMillis() } == true
+    var showPauseAllDialog by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val undoVm: ReminderUndoViewModel = hiltViewModel()
@@ -57,7 +60,17 @@ fun RemindersScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.reminders)) }
+                title = { Text(stringResource(R.string.reminders)) },
+                actions = {
+                    IconButton(onClick = { showPauseAllDialog = true }) {
+                        Icon(
+                            imageVector = if (globallyPaused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
+                            contentDescription = stringResource(
+                                if (globallyPaused) R.string.resume_all else R.string.pause_all
+                            ),
+                        )
+                    }
+                }
             )
         },
         snackbarHost = {
@@ -73,6 +86,15 @@ fun RemindersScreen(
             modifier = Modifier.fillMaxSize().padding(padding),
             contentPadding = PaddingValues(bottom = 144.dp)
         ) {
+            if (globallyPaused) {
+                item(key = "pause-all-banner") {
+                    PauseAllBanner(
+                        untilMs = globalPauseUntil!!,
+                        onEdit = { showPauseAllDialog = true },
+                        onResume = { vm.unpauseAll() },
+                    )
+                }
+            }
             items(pending, key = { "pending-${it.id}" }) { entry ->
                 Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
                     PendingVoiceCard(
@@ -87,7 +109,8 @@ fun RemindersScreen(
                     var pauseDialogFor by remember { mutableStateOf<Group?>(null) }
                     GroupSection(
                         section = section,
-                        isFirst = index == 0 && pending.isEmpty(),
+                        isFirst = index == 0 && pending.isEmpty() && !globallyPaused,
+                        globallyPaused = globallyPaused,
                         onPauseToggle = { pauseDialogFor = section.group },
                         onClickReminder = onEditReminder,
                         onClickGroup = { onEditGroup(section.group.id) },
@@ -124,19 +147,61 @@ fun RemindersScreen(
             }
         }
     }
+    if (showPauseAllDialog) {
+        PauseUntilDialog(
+            currentPauseUntilMs = globalPauseUntil,
+            onDismiss = { showPauseAllDialog = false },
+            onPick = { until -> vm.pauseAllUntil(until) },
+            onResume = { vm.unpauseAll() },
+            title = stringResource(R.string.pause_all_dialog_title),
+        )
+    }
+}
+
+/** Shown above the groups while "pause all" is active. */
+@Composable
+private fun PauseAllBanner(untilMs: Long, onEdit: () -> Unit, onResume: () -> Unit) {
+    val ctx = LocalContext.current
+    Surface(
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp)
+            .clickable(onClick = onEdit),
+    ) {
+        Row(
+            modifier = Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Filled.Pause, contentDescription = null, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(12.dp))
+            Text(
+                stringResource(R.string.pause_all_banner, formatPauseUntil(ctx, untilMs)),
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.weight(1f),
+            )
+            TextButton(onClick = onResume) { Text(stringResource(R.string.resume)) }
+        }
+    }
 }
 
 @Composable
 private fun GroupSection(
     section: GroupSection,
     isFirst: Boolean,
+    globallyPaused: Boolean,
     onPauseToggle: () -> Unit,
     onClickReminder: (Long) -> Unit,
     onClickGroup: () -> Unit,
     onDelete: (Reminder) -> Unit,
 ) {
     val now = System.currentTimeMillis()
-    val paused = section.group.isPaused(now)
+    val ownPause = section.group.isPaused(now)
+    // Reminders are held by either pause; the group's own button and chip still
+    // reflect only its own pause, so it can be set independently.
+    val paused = ownPause || globallyPaused
     Column(modifier = Modifier.padding(bottom = 8.dp)) {
         Row(
             modifier = Modifier
@@ -155,7 +220,7 @@ private fun GroupSection(
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Medium
                     )
-                    if (paused) {
+                    if (ownPause) {
                         Spacer(Modifier.width(8.dp))
                         PausedChip(section.group.pausedUntilMs)
                     }
@@ -172,8 +237,8 @@ private fun GroupSection(
             }
             IconButton(onClick = onPauseToggle) {
                 Icon(
-                    imageVector = if (paused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
-                    contentDescription = stringResource(if (paused) R.string.resume else R.string.pause),
+                    imageVector = if (ownPause) Icons.Filled.PlayArrow else Icons.Filled.Pause,
+                    contentDescription = stringResource(if (ownPause) R.string.resume else R.string.pause),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }

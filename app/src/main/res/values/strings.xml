@@ -81,6 +81,10 @@
     <string name="pause_pick_custom">Pick date &amp; time…</string>
     <string name="pause_resume_now">Resume now</string>
     <string name="pause_until_tomorrow_at">tomorrow %1$s</string>
+    <string name="pause_all">Pause all reminders</string>
+    <string name="resume_all">Resume all reminders</string>
+    <string name="pause_all_dialog_title">Pause everything until…</string>
+    <string name="pause_all_banner">All reminders paused until %1$s</string>
     <string name="schedule_once">Once</string>
     <string name="schedule_daily_at">Daily at %1$s</string>
     <string name="schedule_days_at">%1$s at %2$s</string>

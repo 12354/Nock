@@ -81,6 +81,10 @@
     <string name="pause_pick_custom">Datum &amp; Uhrzeit wählen…</string>
     <string name="pause_resume_now">Jetzt fortsetzen</string>
     <string name="pause_until_tomorrow_at">morgen %1$s</string>
+    <string name="pause_all">Alle Erinnerungen pausieren</string>
+    <string name="resume_all">Alle Erinnerungen fortsetzen</string>
+    <string name="pause_all_dialog_title">Alles pausieren bis…</string>
+    <string name="pause_all_banner">Alle Erinnerungen pausiert bis %1$s</string>
 
     <string name="schedule_once">Einmalig</string>
     <string name="schedule_daily_at">Täglich um %1$s</string>

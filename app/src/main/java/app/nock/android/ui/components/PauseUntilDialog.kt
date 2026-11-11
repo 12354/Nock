@@ -37,6 +37,7 @@ fun PauseUntilDialog(
     onDismiss: () -> Unit,
     onPick: (untilMs: Long) -> Unit,
     onResume: () -> Unit,
+    title: String? = null,
 ) {
     val ctx = LocalContext.current
     val now = System.currentTimeMillis()
@@ -52,7 +53,7 @@ fun PauseUntilDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.pause_dialog_title)) },
+        title = { Text(title ?: stringResource(R.string.pause_dialog_title)) },
         text = {
             Column {
                 if (isPaused) {
